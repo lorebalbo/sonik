@@ -2,10 +2,12 @@
 
 DeckLayoutManager::DeckLayoutManager (DeckStateManager& deckState,
                                       AudioEngine& engine,
-                                      AudioFileLoader& loader)
+                                      AudioFileLoader& loader,
+                                      WaveformManager& waveformMgr)
     : deckStateManager (deckState),
       audioEngine (engine),
       audioFileLoader (loader),
+      waveformManager (waveformMgr),
       decksNode (deckState.getStateTree().getChildWithName (IDs::Decks))
 {
     decksNode.addListener (this);
@@ -31,7 +33,7 @@ void DeckLayoutManager::rebuildDeckShells()
     for (const auto& id : ids)
     {
         auto shell = std::make_unique<DeckShellComponent> (
-            deckStateManager, audioEngine, audioFileLoader, id);
+            deckStateManager, audioEngine, audioFileLoader, waveformManager, id);
 
         shell->onRemoveRequested = [this] (const juce::String& deckId)
         {

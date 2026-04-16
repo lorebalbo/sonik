@@ -39,6 +39,9 @@ public:
     /// Clear the audio buffer for a deck. Called on the message thread.
     void clearDeckBuffer (const juce::String& deckId);
 
+    /// Retrieve the audio buffer for a deck (message thread only).
+    AudioBufferHolder::Ptr getDeckBuffer (const juce::String& deckId);
+
     /// Send a transport command to a deck. Thread-safe, lock-free.
     void sendTransportCommand (const juce::String& deckId, TransportCommand cmd);
 

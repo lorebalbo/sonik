@@ -4,6 +4,7 @@
 #include "../DeckStateManager.h"
 #include "../../AudioEngine/AudioEngine.h"
 #include "../../AudioEngine/AudioFileLoader.h"
+#include "../../Waveform/WaveformManager.h"
 #include "DeckShellComponent.h"
 #include <vector>
 #include <memory>
@@ -14,7 +15,8 @@ class DeckLayoutManager final : public juce::Component,
 public:
     DeckLayoutManager (DeckStateManager& deckState,
                        AudioEngine& engine,
-                       AudioFileLoader& loader);
+                       AudioFileLoader& loader,
+                       WaveformManager& waveformMgr);
     ~DeckLayoutManager() override;
 
     void resized() override;
@@ -34,6 +36,7 @@ private:
     DeckStateManager& deckStateManager;
     AudioEngine&      audioEngine;
     AudioFileLoader&  audioFileLoader;
+    WaveformManager&  waveformManager;
     juce::ValueTree   decksNode;
 
     std::vector<std::unique_ptr<DeckShellComponent>> deckShells;

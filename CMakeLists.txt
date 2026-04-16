@@ -76,6 +76,16 @@ target_sources(Sonik PRIVATE
     Source/Features/Deck/UI/DeckLayoutManager.cpp
     Source/Features/Deck/UI/GlobalToolbar.h
     Source/Features/Deck/UI/MainContentComponent.h
+    Source/Features/Waveform/WaveformData.h
+    Source/Features/Waveform/WaveformAnalyzer.h
+    Source/Features/Waveform/WaveformAnalyzer.cpp
+    Source/Features/Waveform/WaveformManager.h
+    Source/Features/Waveform/WaveformManager.cpp
+    Source/Features/Waveform/WaveformComponent.h
+    Source/Features/Waveform/OverviewWaveform.h
+    Source/Features/Waveform/OverviewWaveform.cpp
+    Source/Features/Waveform/DetailWaveform.h
+    Source/Features/Waveform/DetailWaveform.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -109,12 +119,17 @@ add_executable(SonikTests
     Tests/AudioEngineTests.cpp
     Tests/AudioFileLoaderTests.cpp
     Tests/TransportTests.cpp
+    Tests/WaveformTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
     Source/Features/AudioEngine/AudioFileLoader.cpp
     Source/Features/Deck/UI/DeckShellComponent.cpp
     Source/Features/Deck/UI/DeckLayoutManager.cpp
+    Source/Features/Waveform/WaveformAnalyzer.cpp
+    Source/Features/Waveform/WaveformManager.cpp
+    Source/Features/Waveform/OverviewWaveform.cpp
+    Source/Features/Waveform/DetailWaveform.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests)

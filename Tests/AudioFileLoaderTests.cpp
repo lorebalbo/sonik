@@ -493,7 +493,7 @@ private:
 
     void testResetTrackSpecificStateClearsLoading()
     {
-        beginTest ("Deck state - resetTrackSpecificState restores loading to idle");
+        beginTest ("Deck state - ejectTrack restores loading to idle");
         DeckContext ctx;
         ctx.mgr->addDeck(); // A
 

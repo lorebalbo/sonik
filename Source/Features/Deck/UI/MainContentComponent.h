@@ -4,6 +4,7 @@
 #include "../DeckStateManager.h"
 #include "../../AudioEngine/AudioEngine.h"
 #include "../../AudioEngine/AudioFileLoader.h"
+#include "../../Waveform/WaveformManager.h"
 #include "GlobalToolbar.h"
 #include "DeckLayoutManager.h"
 
@@ -13,12 +14,13 @@ class MainContentComponent final : public juce::Component,
 public:
     MainContentComponent (DeckStateManager& deckState,
                           AudioEngine& engine,
-                          AudioFileLoader& loader)
+                          AudioFileLoader& loader,
+                          WaveformManager& waveformMgr)
         : deckStateManager (deckState),
           audioEngine (engine),
           rootState (deckState.getStateTree()),
           toolbar (deckState),
-          layoutManager (deckState, engine, loader)
+          layoutManager (deckState, engine, loader, waveformMgr)
     {
         setOpaque (true);
         setWantsKeyboardFocus (true);

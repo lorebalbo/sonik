@@ -171,6 +171,12 @@ bool DeckStateManager::ejectTrack (const juce::String& deckId)
 
     auto deckTree = getDeckState (deckId);
     resetTrackSpecificState (deckTree);
+
+    // Reset loading state on eject
+    deckTree.setProperty (IDs::loadingStatus,   "idle", nullptr);
+    deckTree.setProperty (IDs::loadingProgress, 0.0f,   nullptr);
+    deckTree.setProperty (IDs::loadingError,    "",     nullptr);
+
     deckTree.setProperty (IDs::playbackStatus, "empty", nullptr);
     return true;
 }
@@ -374,10 +380,8 @@ void DeckStateManager::resetTrackSpecificState (juce::ValueTree& deckTree)
     deckTree.setProperty (IDs::pitch,           0.0f, nullptr);
     deckTree.setProperty (IDs::speedMultiplier, 1.0f, nullptr);
 
-    // Reset loading state
-    deckTree.setProperty (IDs::loadingStatus,   "idle", nullptr);
-    deckTree.setProperty (IDs::loadingProgress, 0.0f,   nullptr);
-    deckTree.setProperty (IDs::loadingError,    "",     nullptr);
+    // NOTE: loadingStatus/loadingProgress/loadingError are NOT reset here.
+    // They are managed exclusively by AudioFileLoader (loadFile/cancelLoad/deliverBuffer).
 
     // Reset TrackMetadata
     auto trackMeta = deckTree.getChildWithName (IDs::TrackMetadata);

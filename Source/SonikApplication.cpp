@@ -36,7 +36,12 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     audioFileLoader = std::make_unique<AudioFileLoader> (
         *deckStateManager, *audioEngine, audioEngine->getSampleRate());
 
-    mainWindow = std::make_unique<MainWindow> (*audioFileLoader, *deckStateManager, *audioEngine);
+    // Create the waveform manager (PRD-0006)
+    waveformManager = std::make_unique<WaveformManager> (
+        *deckStateManager, *trackDatabase, *audioEngine);
+
+    mainWindow = std::make_unique<MainWindow> (
+        *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager);
 }
 
 void SonikApplication::shutdown()
@@ -48,6 +53,9 @@ void SonikApplication::shutdown()
 
     // Stop file loader before engine
     audioFileLoader.reset();
+
+    // Stop waveform manager before engine
+    waveformManager.reset();
 
     // Stop audio engine BEFORE destroying DeckStateManager
     audioEngine.reset();

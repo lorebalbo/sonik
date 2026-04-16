@@ -322,6 +322,9 @@ void AudioFileLoader::deliverBuffer (const juce::String& deckId,
     auto deckTree = deckStateManager.getDeckState (deckId);
     if (deckTree.isValid())
     {
+        // setDeckBuffer resets atomic playbackStatus to stopped; mirror that in the ValueTree
+        deckTree.setProperty (IDs::playbackStatus,  "stopped", nullptr);
+
         deckTree.setProperty (IDs::loadingStatus,   "idle", nullptr);
         deckTree.setProperty (IDs::loadingProgress,  1.0f,  nullptr);
         deckTree.setProperty (IDs::loadingError,     "",     nullptr);

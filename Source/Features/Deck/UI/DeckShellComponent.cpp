@@ -3,10 +3,12 @@
 DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
                                         AudioEngine& engine,
                                         AudioFileLoader& loader,
+                                        WaveformManager& waveformMgr,
                                         const juce::String& id)
     : deckStateManager (deckState),
       audioEngine (engine),
       audioFileLoader (loader),
+      waveformManager (waveformMgr),
       deckId (id),
       deckTree (deckState.getDeckState (id)),
       rootState (deckState.getStateTree())
@@ -97,7 +99,7 @@ void DeckShellComponent::paint (juce::Graphics& g)
     paintHeader (g, headerArea);
 
     // Content
-    if (! isTrackLoaded())
+    if (! isTrackLoaded() || waveformComponent == nullptr)
         paintEmptyState (g, contentBounds);
 
     // Drag overlay
@@ -190,6 +192,10 @@ void DeckShellComponent::resized()
     {
         removeButton.setTooltip ({});
     }
+
+    // Waveform component in content area
+    if (waveformComponent != nullptr && isTrackLoaded())
+        waveformComponent->setBounds (bounds);
 }
 
 // --- Mouse ---
@@ -270,8 +276,58 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
             {
                 if (safeThis != nullptr)
                 {
+                    // Remove waveform if track was ejected
+                    if (! safeThis->isTrackLoaded() && safeThis->waveformComponent != nullptr)
+                    {
+                        safeThis->removeChildComponent (safeThis->waveformComponent.get());
+                        safeThis->waveformComponent.reset();
+                    }
+
                     safeThis->resized(); // update remove button state
                     safeThis->repaint();
+                }
+            });
+        }
+    }
+
+    // Waveform analysis status changed
+    if (tree.hasType (IDs::Waveform) && property == IDs::analysisStatus)
+    {
+        // Check if this waveform node belongs to our deck tree
+        if (tree.getParent() == deckTree)
+        {
+            juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
+            {
+                if (safeThis == nullptr)
+                    return;
+
+                auto status = safeThis->deckTree.getChildWithName (IDs::Waveform)
+                                  .getProperty (IDs::analysisStatus).toString();
+
+                if (status == "done")
+                {
+                    auto data = safeThis->waveformManager.getWaveformData (safeThis->deckId);
+                    if (data != nullptr)
+                    {
+                        if (safeThis->waveformComponent == nullptr)
+                        {
+                            safeThis->waveformComponent = std::make_unique<WaveformComponent>();
+                            safeThis->addAndMakeVisible (*safeThis->waveformComponent);
+
+                            safeThis->waveformComponent->onSeek = [safeThis] (int64_t pos)
+                            {
+                                if (safeThis != nullptr)
+                                    safeThis->audioEngine.seekDeck (safeThis->deckId, pos);
+                            };
+                        }
+
+                        safeThis->waveformComponent->setWaveformData (data);
+                        safeThis->waveformComponent->setAudioState (
+                            safeThis->deckStateManager.getAudioState (safeThis->deckId));
+
+                        safeThis->resized();
+                        safeThis->repaint();
+                    }
                 }
             });
         }

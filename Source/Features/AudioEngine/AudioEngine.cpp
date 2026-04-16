@@ -168,6 +168,15 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
     }
 }
 
+AudioBufferHolder::Ptr AudioEngine::getDeckBuffer (const juce::String& deckId)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return nullptr;
+
+    return deckSources[static_cast<size_t> (slot)].bufferHolder;
+}
+
 void AudioEngine::clearDeckBuffer (const juce::String& deckId)
 {
     int slot = deckIdToSlot (deckId);

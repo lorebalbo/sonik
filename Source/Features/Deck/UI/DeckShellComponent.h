@@ -5,6 +5,8 @@
 #include "../DeckStateManager.h"
 #include "../../AudioEngine/AudioEngine.h"
 #include "../../AudioEngine/AudioFileLoader.h"
+#include "../../Waveform/WaveformComponent.h"
+#include "../../Waveform/WaveformManager.h"
 
 class DeckShellComponent final : public juce::Component,
                                   public juce::FileDragAndDropTarget,
@@ -14,6 +16,7 @@ public:
     DeckShellComponent (DeckStateManager& deckState,
                         AudioEngine& engine,
                         AudioFileLoader& loader,
+                        WaveformManager& waveformMgr,
                         const juce::String& deckId);
     ~DeckShellComponent() override;
 
@@ -54,12 +57,15 @@ private:
     DeckStateManager& deckStateManager;
     AudioEngine&      audioEngine;
     AudioFileLoader&  audioFileLoader;
+    WaveformManager&  waveformManager;
     juce::String      deckId;
     juce::ValueTree   deckTree;
     juce::ValueTree   rootState;
 
     juce::TextButton  removeButton;
     bool              isDragOver = false;
+
+    std::unique_ptr<WaveformComponent> waveformComponent;
 
     static constexpr int headerHeight       = 32;
     static constexpr int activeIndicatorWidth = 3;

@@ -43,6 +43,10 @@ public:
     std::optional<TrackPersistentData> loadTrackData (const juce::String& filePath,
                                                       const juce::String& contentHash);
 
+    // Waveform cache (PRD-0006)
+    void storeWaveformData (const juce::String& contentHash, const juce::MemoryBlock& data);
+    bool loadWaveformData (const juce::String& contentHash, juce::MemoryBlock& data);
+
 private:
     void createTables();
     void exec (const juce::String& sql);

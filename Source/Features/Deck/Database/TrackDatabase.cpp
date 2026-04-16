@@ -41,6 +41,12 @@ void TrackDatabase::createTables()
           "  key_manually_adjusted  INTEGER DEFAULT 0,"
           "  PRIMARY KEY (file_path, content_hash)"
           ");");
+
+    exec ("CREATE TABLE IF NOT EXISTS waveform_cache ("
+          "  content_hash TEXT PRIMARY KEY,"
+          "  data         BLOB,"
+          "  created_at   INTEGER"
+          ");");
 }
 
 void TrackDatabase::exec (const juce::String& sql)
@@ -181,4 +187,55 @@ std::optional<TrackPersistentData> TrackDatabase::loadTrackData (const juce::Str
 
     sqlite3_finalize (stmt);
     return result;
+}
+
+void TrackDatabase::storeWaveformData (const juce::String& contentHash,
+                                       const juce::MemoryBlock& data)
+{
+    if (dbHandle == nullptr)
+        return;
+
+    const char* sql =
+        "INSERT OR REPLACE INTO waveform_cache (content_hash, data, created_at) VALUES (?, ?, ?);";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text (stmt, 1, contentHash.toRawUTF8(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_blob (stmt, 2, data.getData(), static_cast<int> (data.getSize()), SQLITE_TRANSIENT);
+        sqlite3_bind_int64 (stmt, 3, static_cast<sqlite3_int64> (juce::Time::currentTimeMillis() / 1000));
+        sqlite3_step (stmt);
+        sqlite3_finalize (stmt);
+    }
+}
+
+bool TrackDatabase::loadWaveformData (const juce::String& contentHash,
+                                      juce::MemoryBlock& data)
+{
+    if (dbHandle == nullptr)
+        return false;
+
+    const char* sql = "SELECT data FROM waveform_cache WHERE content_hash = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) != SQLITE_OK)
+        return false;
+
+    sqlite3_bind_text (stmt, 1, contentHash.toRawUTF8(), -1, SQLITE_TRANSIENT);
+
+    bool found = false;
+    if (sqlite3_step (stmt) == SQLITE_ROW)
+    {
+        const void* blob = sqlite3_column_blob (stmt, 0);
+        int blobSize = sqlite3_column_bytes (stmt, 0);
+
+        if (blob != nullptr && blobSize > 0)
+        {
+            data.replaceAll (blob, static_cast<size_t> (blobSize));
+            found = true;
+        }
+    }
+
+    sqlite3_finalize (stmt);
+    return found;
 }
