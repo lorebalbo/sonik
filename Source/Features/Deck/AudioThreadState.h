@@ -1,0 +1,122 @@
+#pragma once
+
+#include <atomic>
+#include <cstdint>
+#include <array>
+#include <juce_data_structures/juce_data_structures.h>
+#include "DeckIdentifiers.h"
+
+// Playback status codes for lock-free audio thread access
+enum class PlaybackStatusCode : int
+{
+    empty   = 0,
+    stopped = 1,
+    playing = 2,
+    paused  = 3
+};
+
+// Plain-old-data struct with only std::atomic members.
+// The audio thread reads these; the message thread writes them via AudioStateSync.
+struct DeckAudioState
+{
+    std::atomic<float>    gain            { 1.0f };
+    std::atomic<float>    speedMultiplier { 1.0f };
+    std::atomic<int>      playbackStatus  { static_cast<int> (PlaybackStatusCode::empty) };
+    std::atomic<int64_t>  playheadPosition { 0 };
+    std::atomic<int64_t>  tempCuePosition { -1 };
+    std::atomic<bool>     quantizeEnabled { false };
+    std::atomic<bool>     slipEnabled     { false };
+    std::atomic<bool>     keyLockEnabled  { false };
+};
+
+// Syncs ValueTree property changes to DeckAudioState atomics on the message thread.
+class AudioStateSync final : private juce::ValueTree::Listener
+{
+public:
+    AudioStateSync (juce::ValueTree deckTree, DeckAudioState& audioState)
+        : tree (deckTree), state (audioState)
+    {
+        tree.addListener (this);
+        syncAll();
+    }
+
+    ~AudioStateSync() override
+    {
+        tree.removeListener (this);
+    }
+
+    AudioStateSync (const AudioStateSync&) = delete;
+    AudioStateSync& operator= (const AudioStateSync&) = delete;
+
+private:
+    void syncAll()
+    {
+        state.gain.store (static_cast<float> (tree.getProperty (IDs::gain, 1.0f)),
+                          std::memory_order_relaxed);
+        state.speedMultiplier.store (static_cast<float> (tree.getProperty (IDs::speedMultiplier, 1.0f)),
+                                    std::memory_order_relaxed);
+        state.playbackStatus.store (statusStringToCode (tree.getProperty (IDs::playbackStatus, "empty")),
+                                   std::memory_order_relaxed);
+        state.quantizeEnabled.store (static_cast<bool> (tree.getProperty (IDs::quantizeEnabled, false)),
+                                    std::memory_order_relaxed);
+        state.slipEnabled.store (static_cast<bool> (tree.getProperty (IDs::slipEnabled, false)),
+                                std::memory_order_relaxed);
+        state.keyLockEnabled.store (static_cast<bool> (tree.getProperty (IDs::keyLockEnabled, false)),
+                                   std::memory_order_relaxed);
+
+        auto playhead = tree.getChildWithName (IDs::Playhead);
+        if (playhead.isValid())
+            state.playheadPosition.store (static_cast<int64_t> (playhead.getProperty (IDs::position, 0)),
+                                         std::memory_order_relaxed);
+
+        auto tempCue = tree.getChildWithName (IDs::TempCue);
+        if (tempCue.isValid())
+            state.tempCuePosition.store (static_cast<int64_t> (tempCue.getProperty (IDs::position, -1)),
+                                        std::memory_order_relaxed);
+    }
+
+    void valueTreePropertyChanged (juce::ValueTree& changedTree,
+                                   const juce::Identifier& property) override
+    {
+        if (changedTree == tree)
+        {
+            if (property == IDs::gain)
+                state.gain.store (static_cast<float> (changedTree[property]), std::memory_order_relaxed);
+            else if (property == IDs::speedMultiplier)
+                state.speedMultiplier.store (static_cast<float> (changedTree[property]), std::memory_order_relaxed);
+            else if (property == IDs::playbackStatus)
+                state.playbackStatus.store (statusStringToCode (changedTree[property]), std::memory_order_relaxed);
+            else if (property == IDs::quantizeEnabled)
+                state.quantizeEnabled.store (static_cast<bool> (changedTree[property]), std::memory_order_relaxed);
+            else if (property == IDs::slipEnabled)
+                state.slipEnabled.store (static_cast<bool> (changedTree[property]), std::memory_order_relaxed);
+            else if (property == IDs::keyLockEnabled)
+                state.keyLockEnabled.store (static_cast<bool> (changedTree[property]), std::memory_order_relaxed);
+        }
+        else if (changedTree.hasType (IDs::Playhead) && property == IDs::position)
+        {
+            state.playheadPosition.store (static_cast<int64_t> (changedTree[property]), std::memory_order_relaxed);
+        }
+        else if (changedTree.hasType (IDs::TempCue) && property == IDs::position)
+        {
+            state.tempCuePosition.store (static_cast<int64_t> (changedTree[property]), std::memory_order_relaxed);
+        }
+    }
+
+    void valueTreeChildAdded (juce::ValueTree&, juce::ValueTree&) override {}
+    void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override {}
+    void valueTreeChildOrderChanged (juce::ValueTree&, int, int) override {}
+    void valueTreeParentChanged (juce::ValueTree&) override {}
+
+    static int statusStringToCode (const juce::var& v)
+    {
+        auto s = v.toString();
+        if (s == "playing") return static_cast<int> (PlaybackStatusCode::playing);
+        if (s == "paused")  return static_cast<int> (PlaybackStatusCode::paused);
+        if (s == "stopped") return static_cast<int> (PlaybackStatusCode::stopped);
+        return static_cast<int> (PlaybackStatusCode::empty);
+    }
+
+    juce::ValueTree tree;
+    DeckAudioState& state;
+};
