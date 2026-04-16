@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ROADMAP TEMPLATE
+  ════════════════════════════════════════════════════════════════════════════
+  This file is the single source of truth for the implementation lifecycle
+  of a feature defined in a PRD and its associated ADR.
+
+  STATUS VALUES
+  ─────────────
+  For macro tasks and subtasks:
+    pending     → Not yet started.
+    in-progress → Actively being worked on.
+    done        → Implementation complete; awaiting validation.
+    validated   → Passed all validation scenarios successfully.
+    failed      → Validation was run and one or more scenarios did not pass.
+
+  EDITING RULES
+  ─────────────
+  - Never edit status attributes manually. Always use the update script:
+      ./.agents/scripts/update_roadmap.sh
+  - Do not remove or reorder macro tasks or subtasks once execution has started.
+  - You may append new subtasks to a macro task if scope expands, but document
+    the reason in the macro task's <notes> element.
+  ════════════════════════════════════════════════════════════════════════════
+-->
+<roadmap
+    prd="PRD-000X_Feature-Name"
+    adr="ADR-000X_Decision-Title"
+    feature="Feature Name"
+    created="YYYY-MM-DD"
+    status="pending">
+
+    <!--
+    ══════════════════════════════════════════════════════════════════════════
+    MACRO TASK
+    ══════════════════════════════════════════════════════════════════════════
+    Each <macro-task> represents a coherent, independently deliverable unit
+    of work. It must map directly to a concern identified in the PRD or ADR.
+
+    Attributes:
+      id       → Unique identifier. Format: MT-01, MT-02, …
+      title    → Short, action-oriented title (e.g. "Set up data layer").
+      status   → One of: pending | in-progress | done | validated | failed.
+    -->
+    <macro-task id="MT-01" title="Macro Task Title" status="pending">
+
+        <!--
+        Description: explain what this macro task covers and why it is a
+        coherent unit. Reference the relevant PRD section or ADR decision
+        where applicable.
+        -->
+        <description>
+            Describe the scope and goal of this macro task. Explain what
+            will be built or configured, and how it contributes to the
+            overall feature.
+        </description>
+
+        <!--
+        Completion condition: a single, binary statement that defines when
+        this macro task can be considered fully done (before validation).
+        -->
+        <completion-condition>
+            The system is able to [observable outcome] without errors under
+            normal operating conditions.
+        </completion-condition>
+
+        <!--
+        Notes: optional field for scope changes, blockers, or decisions made
+        during execution that deviate from the original plan.
+        -->
+        <notes></notes>
+
+        <!--
+        ════════════════════════════════════════════════════════════════════
+        SUBTASKS
+        ════════════════════════════════════════════════════════════════════
+        Each <subtask> is atomic: small enough to be completed and verified
+        in a single focused session.
+
+        Attributes:
+          id     → Unique identifier scoped to the parent macro task. Format: MT-01-ST-01.
+          title  → Short, imperative title (e.g. "Create database schema").
+          status → One of: pending | in-progress | done | validated | failed.
+        -->
+        <subtasks>
+
+            <subtask id="MT-01-ST-01" title="Subtask Title" status="pending">
+                <!--
+                Description: what exactly must be done in this subtask.
+                Be specific enough that the implementer has no ambiguity.
+                -->
+                <description>
+                    Describe the specific action to be taken. Include
+                    references to files, modules, APIs, or components
+                    involved where known.
+                </description>
+            </subtask>
+
+            <subtask id="MT-01-ST-02" title="Subtask Title" status="pending">
+                <description>
+                    Describe the specific action to be taken.
+                </description>
+            </subtask>
+
+            <!-- Add further subtasks as needed. -->
+
+        </subtasks>
+
+        <!--
+        ════════════════════════════════════════════════════════════════════
+        VALIDATION
+        ════════════════════════════════════════════════════════════════════
+        Validation is performed by the Validator agent after all subtasks
+        of this macro task reach status="done".
+
+        The Validator must treat every scenario as a genuine attempt to
+        break the implementation. Each scenario must be independently
+        executable and have a binary pass/fail outcome.
+
+        <scenario> attributes:
+          id       → Format: MT-01-SC-01, MT-01-SC-02, …
+          type     → One of:
+                       happy-path    → Standard, expected usage.
+                       boundary      → Edge values (min, max, empty, overflow).
+                       error         → Invalid input, missing data, wrong state.
+                       concurrency   → Race conditions, duplicate requests.
+                       regression    → Ensures previously working behaviour is unaffected.
+                       hidden        → Non-obvious scenarios derived from implicit assumptions.
+          severity → One of: critical | high | medium | low.
+                     Use "critical" for scenarios whose failure would block the feature entirely.
+          status   → One of: pending | passed | failed.
+        -->
+        <validation>
+
+            <scenario id="MT-01-SC-01" type="happy-path" severity="critical" status="pending">
+                <description>
+                    Describe the scenario: what preconditions exist, what
+                    action is performed, and what the expected outcome is.
+                </description>
+                <steps>
+                    <step>Step 1: Set up precondition.</step>
+                    <step>Step 2: Perform the action.</step>
+                    <step>Step 3: Assert the expected outcome.</step>
+                </steps>
+                <expected-result>
+                    Clearly state what a passing result looks like.
+                </expected-result>
+            </scenario>
+
+            <scenario id="MT-01-SC-02" type="boundary" severity="high" status="pending">
+                <description>
+                    Describe a boundary or edge case that could reveal
+                    unexpected behaviour.
+                </description>
+                <steps>
+                    <step>Step 1: …</step>
+                    <step>Step 2: …</step>
+                </steps>
+                <expected-result>
+                    Clearly state what a passing result looks like.
+                </expected-result>
+            </scenario>
+
+            <scenario id="MT-01-SC-03" type="error" severity="high" status="pending">
+                <description>
+                    Describe a scenario involving invalid input or an
+                    unexpected system state.
+                </description>
+                <steps>
+                    <step>Step 1: …</step>
+                    <step>Step 2: …</step>
+                </steps>
+                <expected-result>
+                    Clearly state what a passing result looks like.
+                </expected-result>
+            </scenario>
+
+            <scenario id="MT-01-SC-04" type="hidden" severity="medium" status="pending">
+                <description>
+                    Describe a non-obvious scenario derived from an implicit
+                    assumption in the PRD or ADR that is easy to overlook.
+                </description>
+                <steps>
+                    <step>Step 1: …</step>
+                    <step>Step 2: …</step>
+                </steps>
+                <expected-result>
+                    Clearly state what a passing result looks like.
+                </expected-result>
+            </scenario>
+
+            <!-- Add further scenarios as needed. -->
+
+        </validation>
+
+    </macro-task>
+
+    <!--
+    Add further macro tasks following the same structure.
+    Example:
+    <macro-task id="MT-02" title="Second Macro Task" status="pending">
+        ...
+    </macro-task>
+    -->
+
+</roadmap>
