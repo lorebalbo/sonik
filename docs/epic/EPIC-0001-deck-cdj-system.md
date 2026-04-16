@@ -93,13 +93,13 @@ Each PRD produces code organized under its feature slice:
 
 - [x] PRD-0001: Deck State Management
 - [x] PRD-0002: Audio Engine Core
-- [ ] PRD-0003: Audio File Decoding & Loading
-- [ ] PRD-0004: Transport System (Play, Pause, Seek, Playhead)
-- [ ] PRD-0005: Deck UI Shell & Dynamic Layout
-- [ ] PRD-0006: Waveform Analysis & Display
-- [ ] PRD-0007: Track Info Display
-- [ ] PRD-0008: BPM & Beatgrid Analysis
-- [ ] PRD-0009: Key Detection
+- [x] PRD-0003: Audio File Decoding & Loading
+- [x] PRD-0004: Transport System (Play, Pause, Seek, Playhead)
+- [x] PRD-0005: Deck UI Shell & Dynamic Layout
+- [x] PRD-0006: Waveform Analysis & Display
+- [x] PRD-0007: Track Info Display
+- [x] PRD-0008: BPM & Beatgrid Analysis
+- [x] PRD-0009: Key Detection
 - [ ] PRD-0010: Pitch Fader & Gain Control
 - [ ] PRD-0011: Time Stretching
 - [ ] PRD-0012: Cue Points & Hot Cues

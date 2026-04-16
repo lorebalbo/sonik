@@ -44,6 +44,10 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     beatGridManager = std::make_unique<BeatGridManager> (
         *deckStateManager, *trackDatabase, *audioEngine);
 
+    // Create the key detection manager (PRD-0009)
+    keyDetectionManager = std::make_unique<KeyDetectionManager> (
+        *deckStateManager, *trackDatabase, *audioEngine);
+
     mainWindow = std::make_unique<MainWindow> (
         *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager, *beatGridManager);
 }

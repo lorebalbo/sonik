@@ -1,15 +1,5 @@
 #include "TrackInfoComponent.h"
-
-// Camelot notation lookup tables
-static const char* const camelotMajor[] = {
-    "8B", "3B", "10B", "5B", "12B", "7B",
-    "2B", "9B", "4B",  "11B", "6B", "1B"
-};
-
-static const char* const camelotMinor[] = {
-    "5A", "12A", "7A", "2A", "9A", "4A",
-    "11A", "6A", "1A", "8A", "3A", "10A"
-};
+#include "../../KeyDetection/KeyUtils.h"
 
 TrackInfoComponent::TrackInfoComponent (juce::ValueTree tree,
                                         DeckStateManager& deckState,
@@ -155,13 +145,7 @@ juce::String TrackInfoComponent::formatTime (double seconds, bool negative) cons
 
 juce::String TrackInfoComponent::getCamelotKey (int keyIdx) const
 {
-    if (keyIdx < 0 || keyIdx > 23)
-        return "--";
-
-    if (keyIdx < 12)
-        return camelotMajor[keyIdx];
-
-    return camelotMinor[keyIdx - 12];
+    return KeyUtils::toCamelot (keyIdx);
 }
 
 // --- Text scrolling ---
@@ -343,8 +327,21 @@ void TrackInfoComponent::paintBpmKeyTime (juce::Graphics& g, juce::Rectangle<int
 
     g.drawText (bpmStr, bpmArea, juce::Justification::centredRight, false);
 
-    // Key in Camelot
+    // Key in Camelot with color indicator
     auto keyStr = getCamelotKey (keyIndex);
+    auto keyColour = KeyUtils::getCamelotColour (keyIndex);
+
+    if (keyColour != juce::Colours::transparentBlack)
+    {
+        // Draw a small color swatch before the key text
+        auto swatchSize = 8;
+        auto swatchArea = keyArea.removeFromRight (swatchSize + 4);
+        auto swatchRect = swatchArea.withSizeKeepingCentre (swatchSize, swatchSize);
+        g.setColour (keyColour);
+        g.fillRect (swatchRect);
+    }
+
+    g.setColour (juce::Colours::black);
     g.drawText (keyStr, keyArea, juce::Justification::centredRight, false);
 }
 

@@ -1,4 +1,5 @@
 #include "DeckStateManager.h"
+#include "../KeyDetection/KeyUtils.h"
 
 DeckStateManager::DeckStateManager (TrackDatabase& database)
     : db (database),
@@ -157,8 +158,26 @@ void DeckStateManager::loadTrack (const juce::String& deckId, const TrackMetadat
         keyInfo.setProperty (IDs::keyIndex,          persisted->keyIndex,           nullptr);
         keyInfo.setProperty (IDs::confidence,        persisted->keyConfidence,      nullptr);
         keyInfo.setProperty (IDs::manuallyAdjusted,  persisted->keyManuallyAdjusted, nullptr);
+        if (persisted->keyIndex >= 0)
+            keyInfo.setProperty (IDs::analysisStatus, "done", nullptr);
 
         // Cue points and beatgrid JSON stored for future features to parse
+    }
+
+    // Fallback: use embedded key tag if no key was persisted or detected
+    {
+        auto keyInfo = deckTree.getChildWithName (IDs::KeyInfo);
+        int currentKey = static_cast<int> (keyInfo.getProperty (IDs::keyIndex, -1));
+        if (currentKey < 0 && metadata.initialKeyString.isNotEmpty())
+        {
+            int parsedKey = KeyUtils::parseKeyString (metadata.initialKeyString);
+            if (parsedKey >= 0)
+            {
+                keyInfo.setProperty (IDs::keyIndex,        parsedKey, nullptr);
+                keyInfo.setProperty (IDs::confidence,      0.5,       nullptr);
+                keyInfo.setProperty (IDs::analysisStatus,  "done",    nullptr);
+            }
+        }
     }
 
     deckTree.setProperty (IDs::playbackStatus, "stopped", nullptr);
@@ -345,6 +364,8 @@ juce::ValueTree DeckStateManager::createDeckTree (const juce::String& deckId) co
     keyInfo.setProperty (IDs::keyIndex,          -1,    nullptr);
     keyInfo.setProperty (IDs::confidence,        0.0f,  nullptr);
     keyInfo.setProperty (IDs::manuallyAdjusted,  false, nullptr);
+    keyInfo.setProperty (IDs::analysisStatus,    "idle", nullptr);
+    keyInfo.setProperty (IDs::analysisProgress,  0.0f,  nullptr);
     deck.addChild (keyInfo, -1, nullptr);
 
     // Loop
@@ -433,6 +454,8 @@ void DeckStateManager::resetTrackSpecificState (juce::ValueTree& deckTree)
     keyInfo.setProperty (IDs::keyIndex,          -1, nullptr);
     keyInfo.setProperty (IDs::confidence,        0.0f, nullptr);
     keyInfo.setProperty (IDs::manuallyAdjusted,  false, nullptr);
+    keyInfo.setProperty (IDs::analysisStatus,    "idle", nullptr);
+    keyInfo.setProperty (IDs::analysisProgress,  0.0f, nullptr);
 
     // Reset Loop
     auto loop = deckTree.getChildWithName (IDs::Loop);

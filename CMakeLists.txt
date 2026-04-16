@@ -93,6 +93,11 @@ target_sources(Sonik PRIVATE
     Source/Features/BeatGrid/BeatGridAnalyzer.cpp
     Source/Features/BeatGrid/BeatGridManager.h
     Source/Features/BeatGrid/BeatGridManager.cpp
+    Source/Features/KeyDetection/KeyUtils.h
+    Source/Features/KeyDetection/KeyDetectionAnalyzer.h
+    Source/Features/KeyDetection/KeyDetectionAnalyzer.cpp
+    Source/Features/KeyDetection/KeyDetectionManager.h
+    Source/Features/KeyDetection/KeyDetectionManager.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -129,6 +134,7 @@ add_executable(SonikTests
     Tests/WaveformTests.cpp
     Tests/TrackInfoTests.cpp
     Tests/BeatGridTests.cpp
+    Tests/KeyDetectionTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -142,6 +148,8 @@ add_executable(SonikTests
     Source/Features/Waveform/DetailWaveform.cpp
     Source/Features/BeatGrid/BeatGridAnalyzer.cpp
     Source/Features/BeatGrid/BeatGridManager.cpp
+    Source/Features/KeyDetection/KeyDetectionAnalyzer.cpp
+    Source/Features/KeyDetection/KeyDetectionManager.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests)
@@ -151,6 +159,7 @@ target_compile_definitions(SonikTests PRIVATE
     JUCE_USE_CURL=0
     JUCE_STANDALONE_APPLICATION=1
     JUCE_UNIT_TESTS=1
+    JUCE_MODAL_LOOPS_PERMITTED=1
 )
 
 target_link_libraries(SonikTests PRIVATE

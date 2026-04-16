@@ -7,6 +7,7 @@
 #include "Features/AudioEngine/AudioFileLoader.h"
 #include "Features/Waveform/WaveformManager.h"
 #include "Features/BeatGrid/BeatGridManager.h"
+#include "Features/KeyDetection/KeyDetectionManager.h"
 #include "Features/Deck/UI/MainContentComponent.h"
 #include <memory>
 
@@ -57,6 +58,7 @@ private:
     std::unique_ptr<AudioFileLoader>  audioFileLoader;
     std::unique_ptr<WaveformManager>  waveformManager;
     std::unique_ptr<BeatGridManager>  beatGridManager;
+    std::unique_ptr<KeyDetectionManager> keyDetectionManager;
     std::unique_ptr<MainWindow>       mainWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SonikApplication)

@@ -15,6 +15,7 @@ struct TrackMetadata
     juce::String title;
     juce::String artist;
     juce::String album;
+    juce::String initialKeyString;   // embedded key tag (TKEY/KEY/INITIALKEY)
     double       duration      = 0.0;
     double       sampleRate    = 0.0;
     int          bitDepth      = 0;

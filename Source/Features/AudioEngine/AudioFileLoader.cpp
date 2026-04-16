@@ -45,6 +45,18 @@ public:
         meta.title        = reader->metadataValues.getValue ("title",  sourceFile.getFileNameWithoutExtension());
         meta.artist       = reader->metadataValues.getValue ("artist", "");
         meta.album        = reader->metadataValues.getValue ("album",  "");
+
+        // Extract embedded key tag (ID3 TKEY, Vorbis INITIALKEY/KEY)
+        auto keyTag = reader->metadataValues.getValue ("TKEY", "");
+        if (keyTag.isEmpty())
+            keyTag = reader->metadataValues.getValue ("INITIALKEY", "");
+        if (keyTag.isEmpty())
+            keyTag = reader->metadataValues.getValue ("KEY", "");
+        if (keyTag.isEmpty())
+            keyTag = reader->metadataValues.getValue ("initialkey", "");
+        if (keyTag.isEmpty())
+            keyTag = reader->metadataValues.getValue ("key", "");
+        meta.initialKeyString = keyTag;
         meta.sampleRate   = reader->sampleRate;
         meta.bitDepth     = static_cast<int> (reader->bitsPerSample);
         meta.totalSamples = reader->lengthInSamples;
