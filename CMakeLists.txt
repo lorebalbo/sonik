@@ -101,6 +101,7 @@ add_executable(SonikTests
     Tests/DeckStateTests.cpp
     Tests/AudioEngineTests.cpp
     Tests/AudioFileLoaderTests.cpp
+    Tests/TransportTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp

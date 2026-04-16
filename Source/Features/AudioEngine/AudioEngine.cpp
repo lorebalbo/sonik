@@ -95,6 +95,17 @@ void AudioEngine::registerDeck (const juce::String& deckId, DeckAudioState* audi
     src.rmsL.store (0.0f, std::memory_order_relaxed);
     src.rmsR.store (0.0f, std::memory_order_relaxed);
 
+    // Reset transport state (PRD-0004)
+    src.pendingCommand.store (0, std::memory_order_relaxed);
+    src.seekTarget.store (0, std::memory_order_relaxed);
+    src.playheadAccumulator    = 0.0;
+    src.isCuePreviewing        = false;
+    src.fadeRampSamplesRemaining = 0;
+    src.isFadingIn             = false;
+    src.isFadingOut            = false;
+    src.deferredAction         = DeckAudioSource::DeferredAction::None;
+    src.deferredSeekTarget     = 0;
+
     // Publish pointer — use release so the audio thread sees all writes above.
     deckSlots[static_cast<size_t> (slot)].store (&src, std::memory_order_release);
 }
@@ -127,6 +138,22 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
 
     if (holder != nullptr && holder->getBuffer().getNumChannels() >= 2)
     {
+        // Reset transport state so the new track loads stopped at position 0
+        src.pendingCommand.store (0, std::memory_order_relaxed);
+        src.seekTarget.store (0, std::memory_order_relaxed);
+        src.playheadAccumulator = 0.0;
+        src.isCuePreviewing = false;
+        src.fadeRampSamplesRemaining = 0;
+        src.isFadingIn = false;
+        src.isFadingOut = false;
+
+        if (src.audioState != nullptr)
+        {
+            src.audioState->playbackStatus.store (1, std::memory_order_relaxed); // stopped
+            src.audioState->playheadPosition.store (0, std::memory_order_relaxed);
+            src.audioState->tempCuePosition.store (0, std::memory_order_relaxed);
+        }
+
         // Store the holder first (message thread ownership)
         src.bufferHolder = holder;
 
@@ -195,17 +222,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         if (audioState == nullptr)
             continue;
 
-        auto status = audioState->playbackStatus.load (std::memory_order_relaxed);
-        if (status != static_cast<int> (PlaybackStatusCode::playing))
-        {
-            source->peakL.store (0.0f, std::memory_order_relaxed);
-            source->peakR.store (0.0f, std::memory_order_relaxed);
-            source->rmsL.store  (0.0f, std::memory_order_relaxed);
-            source->rmsR.store  (0.0f, std::memory_order_relaxed);
-            continue;
-        }
-
-        // Read audio buffer channel pointers (set by AudioFileLoader on message thread).
+        // 1. Check buffer — if null, output silence for this deck
         auto* chL   = source->channelL.load (std::memory_order_acquire);
         auto* chR   = source->channelR.load (std::memory_order_acquire);
         auto  bufLen = source->bufferNumFrames.load (std::memory_order_relaxed);
@@ -219,18 +236,310 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             continue;
         }
 
-        // ---- Audio mixing path ----
-        float gain = audioState->gain.load (std::memory_order_relaxed);
-        int64_t pos = audioState->playheadPosition.load (std::memory_order_relaxed);
+        // 2. Read pending command
+        auto cmd = static_cast<TransportCommand> (
+            source->pendingCommand.exchange (0, std::memory_order_relaxed));
+
+        auto status = static_cast<PlaybackStatusCode> (
+            audioState->playbackStatus.load (std::memory_order_relaxed));
+
+        // 3. Process command
+        switch (cmd)
+        {
+            case TransportCommand::Play:
+                if (status == PlaybackStatusCode::stopped
+                    || status == PlaybackStatusCode::paused)
+                {
+                    audioState->playbackStatus.store (
+                        static_cast<int> (PlaybackStatusCode::playing),
+                        std::memory_order_relaxed);
+                    status = PlaybackStatusCode::playing;
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingIn  = true;
+                    source->isFadingOut = false;
+                }
+                break;
+
+            case TransportCommand::Pause:
+                if (status == PlaybackStatusCode::playing)
+                {
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction = DeckAudioSource::DeferredAction::Pause;
+                }
+                break;
+
+            case TransportCommand::Stop:
+                if (status == PlaybackStatusCode::playing)
+                {
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction = DeckAudioSource::DeferredAction::Stop;
+                }
+                else if (status == PlaybackStatusCode::paused)
+                {
+                    audioState->playbackStatus.store (
+                        static_cast<int> (PlaybackStatusCode::stopped),
+                        std::memory_order_relaxed);
+                    status = PlaybackStatusCode::stopped;
+                    source->playheadAccumulator = 0.0;
+                }
+                break;
+
+            case TransportCommand::Seek:
+            {
+                auto target = source->seekTarget.load (std::memory_order_relaxed);
+                target = juce::jlimit<int64_t> (0, bufLen - 1, target);
+
+                if (status == PlaybackStatusCode::playing)
+                {
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction     = DeckAudioSource::DeferredAction::Seek;
+                    source->deferredSeekTarget = target;
+                }
+                else
+                {
+                    source->playheadAccumulator = static_cast<double> (target);
+                }
+                break;
+            }
+
+            case TransportCommand::CueSet:
+                if (status == PlaybackStatusCode::paused)
+                {
+                    auto curPos = static_cast<int64_t> (source->playheadAccumulator);
+                    auto curCue = audioState->tempCuePosition.load (std::memory_order_relaxed);
+                    if (curPos != curCue)
+                        audioState->tempCuePosition.store (curPos, std::memory_order_relaxed);
+                }
+                break;
+
+            case TransportCommand::CueReturn:
+                if (status == PlaybackStatusCode::playing)
+                {
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction = DeckAudioSource::DeferredAction::CueReturn;
+                    source->isCuePreviewing = false;
+                }
+                break;
+
+            case TransportCommand::CuePreview:
+                if (status == PlaybackStatusCode::paused)
+                {
+                    auto cuePos = audioState->tempCuePosition.load (std::memory_order_relaxed);
+                    if (cuePos >= 0
+                        && static_cast<int64_t> (source->playheadAccumulator) == cuePos)
+                    {
+                        audioState->playbackStatus.store (
+                            static_cast<int> (PlaybackStatusCode::playing),
+                            std::memory_order_relaxed);
+                        status = PlaybackStatusCode::playing;
+                        source->isCuePreviewing = true;
+                        source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                        source->isFadingIn  = true;
+                        source->isFadingOut = false;
+                    }
+                }
+                break;
+
+            case TransportCommand::CueRelease:
+                if (source->isCuePreviewing)
+                {
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction  = DeckAudioSource::DeferredAction::CueReturn;
+                    source->isCuePreviewing = false;
+                }
+                break;
+
+            case TransportCommand::CuePlayThrough:
+                source->isCuePreviewing = false;
+                break;
+
+            case TransportCommand::None:
+            default:
+                break;
+        }
+
+        // Re-read status after command processing
+        status = static_cast<PlaybackStatusCode> (
+            audioState->playbackStatus.load (std::memory_order_relaxed));
+
+        // 4. Read speed
+        float speed = juce::jmax (0.0f,
+            audioState->speedMultiplier.load (std::memory_order_relaxed));
+
+        // Quick path: not playing and no active fade → silence
+        if (status != PlaybackStatusCode::playing
+            && source->fadeRampSamplesRemaining <= 0)
+        {
+            audioState->playheadPosition.store (
+                static_cast<int64_t> (source->playheadAccumulator),
+                std::memory_order_relaxed);
+            source->peakL.store (0.0f, std::memory_order_relaxed);
+            source->peakR.store (0.0f, std::memory_order_relaxed);
+            source->rmsL.store  (0.0f, std::memory_order_relaxed);
+            source->rmsR.store  (0.0f, std::memory_order_relaxed);
+            continue;
+        }
+
+        // 5. Generate samples
+        float gain   = audioState->gain.load (std::memory_order_relaxed);
         float sPeakL = 0.0f, sPeakR = 0.0f;
         float sumSqL = 0.0f, sumSqR = 0.0f;
 
         for (int i = 0; i < numSamples; ++i)
         {
-            int64_t idx = pos + static_cast<int64_t> (i);
-            // Clamp to buffer bounds; output silence if beyond end
-            float rawL = (idx >= 0 && idx < bufLen) ? chL[idx] : 0.0f;
-            float rawR = (idx >= 0 && idx < bufLen) ? chR[idx] : 0.0f;
+            // If not playing and no active fade remaining, skip
+            if (status != PlaybackStatusCode::playing
+                && source->fadeRampSamplesRemaining <= 0)
+                continue;
+
+            double pos  = source->playheadAccumulator;
+            int64_t idx = static_cast<int64_t> (pos);
+
+            // End-of-track check
+            if (pos >= static_cast<double> (bufLen))
+            {
+                if (! source->isFadingOut && source->fadeRampSamplesRemaining <= 0)
+                {
+                    // Start end-of-track fade-out, hold at last sample
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction = DeckAudioSource::DeferredAction::EndOfTrack;
+                    source->playheadAccumulator = static_cast<double> (bufLen - 1);
+                    pos = source->playheadAccumulator;
+                    idx = bufLen - 1;
+                }
+                else if (source->isFadingOut)
+                {
+                    // Hold at last sample during end-of-track fade
+                    idx = bufLen - 1;
+                }
+                else
+                {
+                    continue;
+                }
+            }
+
+            // Capture advance decision before potential fade completion
+            bool shouldAdvance = (status == PlaybackStatusCode::playing)
+                                 || source->isFadingOut;
+
+            // Read sample with sub-sample interpolation
+            float rawL, rawR;
+            if (idx >= 0 && idx < bufLen)
+            {
+                if (speed != 1.0f)
+                {
+                    float frac = static_cast<float> (pos - static_cast<double> (idx));
+                    float s0L  = chL[idx];
+                    float s1L  = (idx + 1 < bufLen) ? chL[idx + 1] : chL[idx];
+                    rawL = s0L + frac * (s1L - s0L);
+
+                    float s0R = chR[idx];
+                    float s1R = (idx + 1 < bufLen) ? chR[idx + 1] : chR[idx];
+                    rawR = s0R + frac * (s1R - s0R);
+                }
+                else
+                {
+                    rawL = chL[idx];
+                    rawR = chR[idx];
+                }
+            }
+            else
+            {
+                rawL = 0.0f;
+                rawR = 0.0f;
+            }
+
+            // Apply fade ramp
+            float fadeGain = 1.0f;
+            if (source->fadeRampSamplesRemaining > 0)
+            {
+                float remaining = static_cast<float> (source->fadeRampSamplesRemaining);
+                float length    = static_cast<float> (DeckAudioSource::FADE_RAMP_LENGTH);
+
+                if (source->isFadingIn)
+                    fadeGain = 1.0f - remaining / length;
+                else if (source->isFadingOut)
+                    fadeGain = remaining / length;
+
+                --source->fadeRampSamplesRemaining;
+
+                // Handle fade completion
+                if (source->fadeRampSamplesRemaining <= 0)
+                {
+                    if (source->isFadingIn)
+                    {
+                        source->isFadingIn = false;
+                    }
+                    else if (source->isFadingOut)
+                    {
+                        source->isFadingOut = false;
+
+                        switch (source->deferredAction)
+                        {
+                            case DeckAudioSource::DeferredAction::Pause:
+                                audioState->playbackStatus.store (
+                                    static_cast<int> (PlaybackStatusCode::paused),
+                                    std::memory_order_relaxed);
+                                status = PlaybackStatusCode::paused;
+                                break;
+
+                            case DeckAudioSource::DeferredAction::Stop:
+                                audioState->playbackStatus.store (
+                                    static_cast<int> (PlaybackStatusCode::stopped),
+                                    std::memory_order_relaxed);
+                                status = PlaybackStatusCode::stopped;
+                                source->playheadAccumulator = 0.0;
+                                break;
+
+                            case DeckAudioSource::DeferredAction::Seek:
+                                source->playheadAccumulator =
+                                    static_cast<double> (source->deferredSeekTarget);
+                                source->fadeRampSamplesRemaining =
+                                    DeckAudioSource::FADE_RAMP_LENGTH;
+                                source->isFadingIn = true;
+                                break;
+
+                            case DeckAudioSource::DeferredAction::CueReturn:
+                            {
+                                auto cuePos = audioState->tempCuePosition.load (
+                                    std::memory_order_relaxed);
+                                if (cuePos >= 0)
+                                    source->playheadAccumulator =
+                                        static_cast<double> (cuePos);
+                                audioState->playbackStatus.store (
+                                    static_cast<int> (PlaybackStatusCode::paused),
+                                    std::memory_order_relaxed);
+                                status = PlaybackStatusCode::paused;
+                                break;
+                            }
+
+                            case DeckAudioSource::DeferredAction::EndOfTrack:
+                                audioState->playbackStatus.store (
+                                    static_cast<int> (PlaybackStatusCode::stopped),
+                                    std::memory_order_relaxed);
+                                status = PlaybackStatusCode::stopped;
+                                break;
+
+                            case DeckAudioSource::DeferredAction::None:
+                            default:
+                                break;
+                        }
+                        source->deferredAction = DeckAudioSource::DeferredAction::None;
+                    }
+                }
+            }
 
             // Pre-fader metering
             float absL = std::abs (rawL);
@@ -240,10 +549,20 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             sumSqL += rawL * rawL;
             sumSqR += rawR * rawR;
 
-            // Post-gain accumulation
-            outL[i] += rawL * gain;
-            outR[i] += rawR * gain;
+            // Post-gain+fade accumulation
+            outL[i] += rawL * gain * fadeGain;
+            outR[i] += rawR * gain * fadeGain;
+
+            // Advance playhead (hold during end-of-track fade)
+            if (shouldAdvance
+                && source->deferredAction != DeckAudioSource::DeferredAction::EndOfTrack)
+                source->playheadAccumulator += static_cast<double> (speed);
         }
+
+        // 6. Update atomic playhead
+        audioState->playheadPosition.store (
+            static_cast<int64_t> (source->playheadAccumulator),
+            std::memory_order_relaxed);
 
         float invN = 1.0f / static_cast<float> (numSamples);
         source->peakL.store (sPeakL,                    std::memory_order_relaxed);
@@ -415,4 +734,34 @@ int AudioEngine::deckIdToSlot (const juce::String& deckId)
     if (deckId == "C") return 2;
     if (deckId == "D") return 3;
     return -1;
+}
+
+// ---------------------------------------------------------------------------
+// Transport API (PRD-0004) — thread-safe, lock-free
+// ---------------------------------------------------------------------------
+
+void AudioEngine::sendTransportCommand (const juce::String& deckId, TransportCommand cmd)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto* source = deckSlots[static_cast<size_t> (slot)].load (std::memory_order_acquire);
+    if (source != nullptr)
+        source->pendingCommand.store (static_cast<int> (cmd), std::memory_order_relaxed);
+}
+
+void AudioEngine::seekDeck (const juce::String& deckId, int64_t targetSample)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto* source = deckSlots[static_cast<size_t> (slot)].load (std::memory_order_acquire);
+    if (source != nullptr)
+    {
+        source->seekTarget.store (targetSample, std::memory_order_relaxed);
+        source->pendingCommand.store (
+            static_cast<int> (TransportCommand::Seek), std::memory_order_relaxed);
+    }
 }

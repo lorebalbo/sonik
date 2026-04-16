@@ -36,7 +36,7 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     audioFileLoader = std::make_unique<AudioFileLoader> (
         *deckStateManager, *audioEngine, audioEngine->getSampleRate());
 
-    mainWindow = std::make_unique<MainWindow> (*audioFileLoader, *deckStateManager);
+    mainWindow = std::make_unique<MainWindow> (*audioFileLoader, *deckStateManager, *audioEngine);
 }
 
 void SonikApplication::shutdown()

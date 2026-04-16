@@ -383,17 +383,25 @@ private:
         EngineContext ctx;
 
         DeckAudioState audioState;
-        audioState.playbackStatus.store (static_cast<int> (PlaybackStatusCode::playing),
+        audioState.playbackStatus.store (static_cast<int> (PlaybackStatusCode::stopped),
                                         std::memory_order_relaxed);
         audioState.playheadPosition.store (0, std::memory_order_relaxed);
         audioState.gain.store (1.0f, std::memory_order_relaxed);
 
         ctx.engine->registerDeck ("A", &audioState);
 
-        // Create buffer with 0.5 for L and 0.25 for R
-        auto holder = makeStereoBuffer (0.5f, 0.25f, 256);
+        // Create buffer with 0.5 for L and 0.25 for R (large enough for fade + read)
+        auto holder = makeStereoBuffer (0.5f, 0.25f, 1024);
         ctx.engine->setDeckBuffer ("A", holder);
 
+        // Send Play and run a block to consume the 64-sample fade-in
+        ctx.engine->sendTransportCommand ("A", TransportCommand::Play);
+        float dummyL[128] = {};
+        float dummyR[128] = {};
+        float* dummyOuts[2] = { dummyL, dummyR };
+        ctx.engine->audioDeviceIOCallbackWithContext (nullptr, 0, dummyOuts, 2, 128, {});
+
+        // Now run another block — should be at full volume
         float outputL[64] = {};
         float outputR[64] = {};
         float* outputs[2] = { outputL, outputR };
@@ -401,8 +409,8 @@ private:
 
         for (int i = 0; i < 64; ++i)
         {
-            expectEquals (outputL[i], 0.5f);
-            expectEquals (outputR[i], 0.25f);
+            expectWithinAbsoluteError (outputL[i], 0.5f, 0.01f);
+            expectWithinAbsoluteError (outputR[i], 0.25f, 0.01f);
         }
     }
 

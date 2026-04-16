@@ -10,13 +10,13 @@
 class MainWindow final : public juce::DocumentWindow
 {
 public:
-    MainWindow (AudioFileLoader& loader, DeckStateManager& deckState)
+    MainWindow (AudioFileLoader& loader, DeckStateManager& deckState, AudioEngine& engine)
         : DocumentWindow ("Sonik",
                           juce::Colour (0xfff9f9f9),
                           DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar (true);
-        setContentOwned (new DropZoneComponent (loader, deckState), true);
+        setContentOwned (new DropZoneComponent (loader, deckState, engine), true);
         centreWithSize (1280, 800);
         setVisible (true);
     }
@@ -27,15 +27,16 @@ public:
     }
 
 private:
-    /// Placeholder content component that accepts audio file drops.
+    /// Placeholder content component that accepts audio file drops and keyboard transport controls.
     class DropZoneComponent final : public juce::Component,
                                     public juce::FileDragAndDropTarget
     {
     public:
-        DropZoneComponent (AudioFileLoader& loader, DeckStateManager& deckState)
-            : fileLoader (loader), deckStateManager (deckState)
+        DropZoneComponent (AudioFileLoader& loader, DeckStateManager& deckState, AudioEngine& engine)
+            : fileLoader (loader), deckStateManager (deckState), audioEngine (engine)
         {
             setSize (1280, 800);
+            setWantsKeyboardFocus (true);
         }
 
         void paint (juce::Graphics& g) override
@@ -94,9 +95,45 @@ private:
             }
         }
 
+        void visibilityChanged() override
+        {
+            if (isVisible())
+                grabKeyboardFocus();
+        }
+
+        bool keyPressed (const juce::KeyPress& key) override
+        {
+            if (key == juce::KeyPress::spaceKey)
+            {
+                auto activeDeck = deckStateManager.getActiveDeckId();
+                auto* state = deckStateManager.getAudioState (activeDeck);
+                if (state != nullptr)
+                {
+                    auto st = static_cast<PlaybackStatusCode> (
+                        state->playbackStatus.load (std::memory_order_relaxed));
+                    if (st == PlaybackStatusCode::playing)
+                        audioEngine.sendTransportCommand (activeDeck, TransportCommand::Pause);
+                    else if (st == PlaybackStatusCode::stopped
+                             || st == PlaybackStatusCode::paused)
+                        audioEngine.sendTransportCommand (activeDeck, TransportCommand::Play);
+                }
+                return true;
+            }
+
+            if (key.getTextCharacter() == 's' || key.getTextCharacter() == 'S')
+            {
+                auto activeDeck = deckStateManager.getActiveDeckId();
+                audioEngine.sendTransportCommand (activeDeck, TransportCommand::Stop);
+                return true;
+            }
+
+            return false;
+        }
+
     private:
         AudioFileLoader&  fileLoader;
         DeckStateManager& deckStateManager;
+        AudioEngine&      audioEngine;
         bool isDragOver = false;
     };
 
