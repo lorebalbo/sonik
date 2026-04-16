@@ -6,6 +6,7 @@
 #include "Features/AudioEngine/AudioEngine.h"
 #include "Features/AudioEngine/AudioFileLoader.h"
 #include "Features/Waveform/WaveformManager.h"
+#include "Features/BeatGrid/BeatGridManager.h"
 #include "Features/Deck/UI/MainContentComponent.h"
 #include <memory>
 
@@ -13,13 +14,14 @@ class MainWindow final : public juce::DocumentWindow
 {
 public:
     MainWindow (AudioFileLoader& loader, DeckStateManager& deckState,
-                AudioEngine& engine, WaveformManager& waveformMgr)
+                AudioEngine& engine, WaveformManager& waveformMgr,
+                BeatGridManager& beatGridMgr)
         : DocumentWindow ("Sonik",
                           juce::Colour (0xfff9f9f9),
                           DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar (true);
-        setContentOwned (new MainContentComponent (deckState, engine, loader, waveformMgr), true);
+        setContentOwned (new MainContentComponent (deckState, engine, loader, waveformMgr, beatGridMgr), true);
         setResizable (true, true);
         setResizeLimits (960, 600, 3840, 2160);
         centreWithSize (1280, 800);
@@ -54,6 +56,7 @@ private:
     std::unique_ptr<AudioEngine>      audioEngine;
     std::unique_ptr<AudioFileLoader>  audioFileLoader;
     std::unique_ptr<WaveformManager>  waveformManager;
+    std::unique_ptr<BeatGridManager>  beatGridManager;
     std::unique_ptr<MainWindow>       mainWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SonikApplication)

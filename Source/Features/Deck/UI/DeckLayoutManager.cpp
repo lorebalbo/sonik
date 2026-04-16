@@ -3,11 +3,13 @@
 DeckLayoutManager::DeckLayoutManager (DeckStateManager& deckState,
                                       AudioEngine& engine,
                                       AudioFileLoader& loader,
-                                      WaveformManager& waveformMgr)
+                                      WaveformManager& waveformMgr,
+                                      BeatGridManager& beatGridMgr)
     : deckStateManager (deckState),
       audioEngine (engine),
       audioFileLoader (loader),
       waveformManager (waveformMgr),
+      beatGridManager (beatGridMgr),
       decksNode (deckState.getStateTree().getChildWithName (IDs::Decks))
 {
     decksNode.addListener (this);
@@ -33,7 +35,7 @@ void DeckLayoutManager::rebuildDeckShells()
     for (const auto& id : ids)
     {
         auto shell = std::make_unique<DeckShellComponent> (
-            deckStateManager, audioEngine, audioFileLoader, waveformManager, id);
+            deckStateManager, audioEngine, audioFileLoader, waveformManager, beatGridManager, id);
 
         shell->onRemoveRequested = [this] (const juce::String& deckId)
         {
@@ -42,6 +44,48 @@ void DeckLayoutManager::rebuildDeckShells()
 
         addAndMakeVisible (*shell);
         deckShells.push_back (std::move (shell));
+    }
+
+    if (getWidth() > 0 && getHeight() > 0)
+        applyLayout();
+}
+
+// --- Incremental deck shell management ---
+
+void DeckLayoutManager::addDeckShell (const juce::String& deckId)
+{
+    // Check if a shell for this deck already exists
+    for (const auto& shell : deckShells)
+    {
+        if (shell->getDeckId() == deckId)
+            return;
+    }
+
+    auto shell = std::make_unique<DeckShellComponent> (
+        deckStateManager, audioEngine, audioFileLoader, waveformManager, beatGridManager, deckId);
+
+    shell->onRemoveRequested = [this] (const juce::String& id)
+    {
+        handleRemoveRequest (id);
+    };
+
+    addAndMakeVisible (*shell);
+    deckShells.push_back (std::move (shell));
+
+    if (getWidth() > 0 && getHeight() > 0)
+        applyLayout();
+}
+
+void DeckLayoutManager::removeDeckShell (const juce::String& deckId)
+{
+    for (auto it = deckShells.begin(); it != deckShells.end(); ++it)
+    {
+        if ((*it)->getDeckId() == deckId)
+        {
+            removeChildComponent (it->get());
+            deckShells.erase (it);
+            break;
+        }
     }
 
     if (getWidth() > 0 && getHeight() > 0)
@@ -160,10 +204,11 @@ void DeckLayoutManager::valueTreeChildAdded (juce::ValueTree& parent,
 {
     if (parent == decksNode && child.hasType (IDs::Deck))
     {
-        juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
+        auto id = child.getProperty (IDs::id).toString();
+        juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this), id]()
         {
             if (safeThis != nullptr)
-                safeThis->rebuildDeckShells();
+                safeThis->addDeckShell (id);
         });
     }
 }
@@ -174,10 +219,11 @@ void DeckLayoutManager::valueTreeChildRemoved (juce::ValueTree& parent,
 {
     if (parent == decksNode && child.hasType (IDs::Deck))
     {
-        juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
+        auto id = child.getProperty (IDs::id).toString();
+        juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this), id]()
         {
             if (safeThis != nullptr)
-                safeThis->rebuildDeckShells();
+                safeThis->removeDeckShell (id);
         });
     }
 }

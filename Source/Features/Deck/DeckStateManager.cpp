@@ -336,6 +336,8 @@ juce::ValueTree DeckStateManager::createDeckTree (const juce::String& deckId) co
     beatGrid.setProperty (IDs::beatIntervalSamples,  0.0,         nullptr);
     beatGrid.setProperty (IDs::confidence,           0.0f,        nullptr);
     beatGrid.setProperty (IDs::manuallyAdjusted,     false,       nullptr);
+    beatGrid.setProperty (IDs::analysisStatus,       "idle",      nullptr);
+    beatGrid.setProperty (IDs::analysisProgress,     0.0f,        nullptr);
     deck.addChild (beatGrid, -1, nullptr);
 
     // KeyInfo
@@ -423,6 +425,8 @@ void DeckStateManager::resetTrackSpecificState (juce::ValueTree& deckTree)
     beatGrid.setProperty (IDs::beatIntervalSamples,  0.0, nullptr);
     beatGrid.setProperty (IDs::confidence,           0.0f, nullptr);
     beatGrid.setProperty (IDs::manuallyAdjusted,     false, nullptr);
+    beatGrid.setProperty (IDs::analysisStatus,       "idle", nullptr);
+    beatGrid.setProperty (IDs::analysisProgress,     0.0f, nullptr);
 
     // Reset KeyInfo
     auto keyInfo = deckTree.getChildWithName (IDs::KeyInfo);

@@ -7,6 +7,7 @@
 #include "../../AudioEngine/AudioFileLoader.h"
 #include "../../Waveform/WaveformComponent.h"
 #include "../../Waveform/WaveformManager.h"
+#include "../../BeatGrid/BeatGridManager.h"
 #include "TrackInfoComponent.h"
 
 class DeckShellComponent final : public juce::Component,
@@ -18,6 +19,7 @@ public:
                         AudioEngine& engine,
                         AudioFileLoader& loader,
                         WaveformManager& waveformMgr,
+                        BeatGridManager& beatGridMgr,
                         const juce::String& deckId);
     ~DeckShellComponent() override;
 
@@ -59,6 +61,7 @@ private:
     AudioEngine&      audioEngine;
     AudioFileLoader&  audioFileLoader;
     WaveformManager&  waveformManager;
+    BeatGridManager&  beatGridManager;
     juce::String      deckId;
     juce::ValueTree   deckTree;
     juce::ValueTree   rootState;

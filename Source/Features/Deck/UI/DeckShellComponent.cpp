@@ -4,11 +4,13 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
                                         AudioEngine& engine,
                                         AudioFileLoader& loader,
                                         WaveformManager& waveformMgr,
+                                        BeatGridManager& beatGridMgr,
                                         const juce::String& id)
     : deckStateManager (deckState),
       audioEngine (engine),
       audioFileLoader (loader),
       waveformManager (waveformMgr),
+      beatGridManager (beatGridMgr),
       deckId (id),
       deckTree (deckState.getDeckState (id)),
       rootState (deckState.getStateTree())
@@ -350,9 +352,41 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
                         safeThis->waveformComponent->setAudioState (
                             safeThis->deckStateManager.getAudioState (safeThis->deckId));
 
+                        // If BeatGrid analysis already completed, forward data now
+                        auto bgStatus = safeThis->deckTree.getChildWithName (IDs::BeatGrid)
+                                            .getProperty (IDs::analysisStatus).toString();
+                        if (bgStatus == "done")
+                        {
+                            auto bgData = safeThis->beatGridManager.getBeatGridData (safeThis->deckId);
+                            if (bgData != nullptr)
+                                safeThis->waveformComponent->setBeatGridData (bgData);
+                        }
+
                         safeThis->resized();
                         safeThis->repaint();
                     }
+                }
+            });
+        }
+    }
+
+    // BeatGrid analysis status changed
+    if (tree.hasType (IDs::BeatGrid) && property == IDs::analysisStatus)
+    {
+        if (tree.getParent() == deckTree)
+        {
+            juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
+            {
+                if (safeThis == nullptr)
+                    return;
+
+                auto status = safeThis->deckTree.getChildWithName (IDs::BeatGrid)
+                                  .getProperty (IDs::analysisStatus).toString();
+                if (status == "done" && safeThis->waveformComponent != nullptr)
+                {
+                    auto data = safeThis->beatGridManager.getBeatGridData (safeThis->deckId);
+                    if (data != nullptr)
+                        safeThis->waveformComponent->setBeatGridData (data);
                 }
             });
         }

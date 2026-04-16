@@ -5,6 +5,7 @@
 #include "../../AudioEngine/AudioEngine.h"
 #include "../../AudioEngine/AudioFileLoader.h"
 #include "../../Waveform/WaveformManager.h"
+#include "../../BeatGrid/BeatGridManager.h"
 #include "GlobalToolbar.h"
 #include "DeckLayoutManager.h"
 
@@ -15,12 +16,13 @@ public:
     MainContentComponent (DeckStateManager& deckState,
                           AudioEngine& engine,
                           AudioFileLoader& loader,
-                          WaveformManager& waveformMgr)
+                          WaveformManager& waveformMgr,
+                          BeatGridManager& beatGridMgr)
         : deckStateManager (deckState),
           audioEngine (engine),
           rootState (deckState.getStateTree()),
           toolbar (deckState),
-          layoutManager (deckState, engine, loader, waveformMgr)
+          layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr)
     {
         setOpaque (true);
         setWantsKeyboardFocus (true);

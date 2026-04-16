@@ -5,6 +5,7 @@
 #include "../../AudioEngine/AudioEngine.h"
 #include "../../AudioEngine/AudioFileLoader.h"
 #include "../../Waveform/WaveformManager.h"
+#include "../../BeatGrid/BeatGridManager.h"
 #include "DeckShellComponent.h"
 #include <vector>
 #include <memory>
@@ -16,7 +17,8 @@ public:
     DeckLayoutManager (DeckStateManager& deckState,
                        AudioEngine& engine,
                        AudioFileLoader& loader,
-                       WaveformManager& waveformMgr);
+                       WaveformManager& waveformMgr,
+                       BeatGridManager& beatGridMgr);
     ~DeckLayoutManager() override;
 
     void resized() override;
@@ -30,6 +32,8 @@ private:
                                 int index) override;
 
     void rebuildDeckShells();
+    void addDeckShell (const juce::String& deckId);
+    void removeDeckShell (const juce::String& deckId);
     void applyLayout();
     void handleRemoveRequest (const juce::String& deckId);
 
@@ -37,6 +41,7 @@ private:
     AudioEngine&      audioEngine;
     AudioFileLoader&  audioFileLoader;
     WaveformManager&  waveformManager;
+    BeatGridManager&  beatGridManager;
     juce::ValueTree   decksNode;
 
     std::vector<std::unique_ptr<DeckShellComponent>> deckShells;

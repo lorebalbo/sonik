@@ -42,6 +42,13 @@ void DetailWaveform::setTotalSamples (int64_t total)
     totalSamples = total;
 }
 
+void DetailWaveform::setBeatGridData (BeatGridData::Ptr data)
+{
+    beatGridData = std::move (data);
+    cachedZoomIndex = -1;
+    repaint();
+}
+
 void DetailWaveform::getVisibleRange (int64_t& startSample, int64_t& endSample) const
 {
     if (audioState == nullptr || totalSamples <= 0 || sampleRate <= 0.0)
@@ -194,6 +201,39 @@ void DetailWaveform::paint (juce::Graphics& g)
 
     if (cachedImage.isValid())
         g.drawImageAt (cachedImage, 0, 0);
+
+    // Beat grid overlay
+    if (beatGridData != nullptr && beatGridData->bpm > 0.0 && audioState != nullptr)
+    {
+        int64_t pos = audioState->playheadPosition.load (std::memory_order_relaxed);
+        int64_t halfVisible = static_cast<int64_t> (visibleSeconds * 0.5 * sampleRate);
+        int64_t viewStart = pos - halfVisible;
+        int64_t viewEnd   = pos + halfVisible;
+        int64_t viewSpan  = viewEnd - viewStart;
+
+        if (viewSpan > 0)
+        {
+            juce::Array<int64_t> beats;
+            juce::Array<bool> isDownbeat;
+            beatGridData->getBeatsInRange (viewStart, viewEnd, beats, isDownbeat);
+
+            float w = static_cast<float> (getWidth());
+            float h = static_cast<float> (getHeight());
+
+            for (int i = 0; i < beats.size(); ++i)
+            {
+                float pixelX = static_cast<float> (beats[i] - viewStart)
+                             / static_cast<float> (viewSpan) * w;
+
+                if (isDownbeat[i])
+                    g.setColour (juce::Colour (0xAAf9f9f9));
+                else
+                    g.setColour (juce::Colour (0x44f9f9f9));
+
+                g.drawVerticalLine (static_cast<int> (pixelX), 0.0f, h);
+            }
+        }
+    }
 
     // Fixed playhead marker at horizontal center
     int centerX = getWidth() / 2;

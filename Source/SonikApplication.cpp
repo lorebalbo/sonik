@@ -40,8 +40,12 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     waveformManager = std::make_unique<WaveformManager> (
         *deckStateManager, *trackDatabase, *audioEngine);
 
+    // Create the beat grid manager (PRD-0008)
+    beatGridManager = std::make_unique<BeatGridManager> (
+        *deckStateManager, *trackDatabase, *audioEngine);
+
     mainWindow = std::make_unique<MainWindow> (
-        *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager);
+        *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager, *beatGridManager);
 }
 
 void SonikApplication::shutdown()
@@ -56,6 +60,9 @@ void SonikApplication::shutdown()
 
     // Stop waveform manager before engine
     waveformManager.reset();
+
+    // Stop beat grid manager before engine
+    beatGridManager.reset();
 
     // Stop audio engine BEFORE destroying DeckStateManager
     audioEngine.reset();

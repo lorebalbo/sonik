@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "WaveformData.h"
 #include "../Deck/AudioThreadState.h"
+#include "../BeatGrid/BeatGridData.h"
 
 class DetailWaveform final : public juce::Component,
                               private juce::Timer
@@ -14,6 +15,7 @@ public:
     void setWaveformData (WaveformData::Ptr data);
     void setAudioState (DeckAudioState* state);
     void setTotalSamples (int64_t total);
+    void setBeatGridData (BeatGridData::Ptr data);
 
     // Returns the currently visible sample range (for overview viewport)
     void getVisibleRange (int64_t& startSample, int64_t& endSample) const;
@@ -29,6 +31,7 @@ private:
     void rebuildImage();
 
     WaveformData::Ptr waveformData;
+    BeatGridData::Ptr beatGridData;
     DeckAudioState*   audioState   = nullptr;
     int64_t           totalSamples = 0;
 

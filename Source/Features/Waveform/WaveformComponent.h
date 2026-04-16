@@ -5,6 +5,7 @@
 #include "OverviewWaveform.h"
 #include "DetailWaveform.h"
 #include "../Deck/AudioThreadState.h"
+#include "../BeatGrid/BeatGridData.h"
 
 class WaveformComponent final : public juce::Component,
                                  private juce::Timer
@@ -40,6 +41,11 @@ public:
     {
         overview.setAudioState (state);
         detail.setAudioState (state);
+    }
+
+    void setBeatGridData (BeatGridData::Ptr data)
+    {
+        detail.setBeatGridData (std::move (data));
     }
 
     std::function<void (int64_t samplePosition)> onSeek;

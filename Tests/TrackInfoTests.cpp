@@ -10,6 +10,7 @@
 #include "Features/Deck/UI/TrackInfoComponent.h"
 #include "Features/Deck/UI/DeckShellComponent.h"
 #include "Features/Waveform/WaveformManager.h"
+#include "Features/BeatGrid/BeatGridManager.h"
 
 class TrackInfoTests : public juce::UnitTest
 {
@@ -297,8 +298,9 @@ private:
         ctx.engine->registerDeck (deckId, ctx.mgr->getAudioState (deckId));
 
         WaveformManager waveformMgr (*ctx.mgr, *ctx.db, *ctx.engine);
+        BeatGridManager beatGridMgr (*ctx.mgr, *ctx.db, *ctx.engine);
 
-        DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, deckId);
+        DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, beatGridMgr, deckId);
         shell.setBounds (0, 0, 400, 300);
 
         // Before loading: only the remove button child

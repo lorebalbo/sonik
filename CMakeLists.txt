@@ -88,6 +88,11 @@ target_sources(Sonik PRIVATE
     Source/Features/Waveform/OverviewWaveform.cpp
     Source/Features/Waveform/DetailWaveform.h
     Source/Features/Waveform/DetailWaveform.cpp
+    Source/Features/BeatGrid/BeatGridData.h
+    Source/Features/BeatGrid/BeatGridAnalyzer.h
+    Source/Features/BeatGrid/BeatGridAnalyzer.cpp
+    Source/Features/BeatGrid/BeatGridManager.h
+    Source/Features/BeatGrid/BeatGridManager.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -123,6 +128,7 @@ add_executable(SonikTests
     Tests/TransportTests.cpp
     Tests/WaveformTests.cpp
     Tests/TrackInfoTests.cpp
+    Tests/BeatGridTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -134,6 +140,8 @@ add_executable(SonikTests
     Source/Features/Waveform/WaveformManager.cpp
     Source/Features/Waveform/OverviewWaveform.cpp
     Source/Features/Waveform/DetailWaveform.cpp
+    Source/Features/BeatGrid/BeatGridAnalyzer.cpp
+    Source/Features/BeatGrid/BeatGridManager.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests)
