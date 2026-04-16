@@ -70,6 +70,12 @@ target_sources(Sonik PRIVATE
     Source/Features/AudioEngine/AudioBufferHolder.h
     Source/Features/AudioEngine/AudioFileLoader.h
     Source/Features/AudioEngine/AudioFileLoader.cpp
+    Source/Features/Deck/UI/DeckShellComponent.h
+    Source/Features/Deck/UI/DeckShellComponent.cpp
+    Source/Features/Deck/UI/DeckLayoutManager.h
+    Source/Features/Deck/UI/DeckLayoutManager.cpp
+    Source/Features/Deck/UI/GlobalToolbar.h
+    Source/Features/Deck/UI/MainContentComponent.h
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -99,6 +105,7 @@ target_link_libraries(Sonik PRIVATE
 add_executable(SonikTests
     Tests/TestRunner.cpp
     Tests/DeckStateTests.cpp
+    Tests/DeckLayoutTests.cpp
     Tests/AudioEngineTests.cpp
     Tests/AudioFileLoaderTests.cpp
     Tests/TransportTests.cpp
@@ -106,6 +113,8 @@ add_executable(SonikTests
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
     Source/Features/AudioEngine/AudioFileLoader.cpp
+    Source/Features/Deck/UI/DeckShellComponent.cpp
+    Source/Features/Deck/UI/DeckLayoutManager.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests)

@@ -38,11 +38,12 @@ public:
     bool         canRemoveDeck (const juce::String& deckId) const;
 
     // Accessors
-    juce::ValueTree getDeckState (const juce::String& deckId) const;
-    juce::String    getActiveDeckId() const;
-    void            setActiveDeck (const juce::String& deckId);
-    int             getDeckCount() const;
-    juce::ValueTree getStateTree() const;
+    juce::ValueTree      getDeckState (const juce::String& deckId) const;
+    juce::String         getActiveDeckId() const;
+    void                 setActiveDeck (const juce::String& deckId);
+    int                  getDeckCount() const;
+    juce::ValueTree      getStateTree() const;
+    juce::StringArray    getDeckIds() const;
 
     // Track loading
     void loadTrack (const juce::String& deckId, const TrackMetadata& metadata);

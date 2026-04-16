@@ -1,0 +1,279 @@
+#include "DeckShellComponent.h"
+
+DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
+                                        AudioEngine& engine,
+                                        AudioFileLoader& loader,
+                                        const juce::String& id)
+    : deckStateManager (deckState),
+      audioEngine (engine),
+      audioFileLoader (loader),
+      deckId (id),
+      deckTree (deckState.getDeckState (id)),
+      rootState (deckState.getStateTree())
+{
+    setOpaque (false);
+
+    removeButton.setButtonText (juce::String::charToString (0x00D7)); // multiplication sign as X
+    removeButton.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    removeButton.setColour (juce::TextButton::textColourOffId, juce::Colours::black);
+    removeButton.onClick = [this]()
+    {
+        if (onRemoveRequested)
+            onRemoveRequested (deckId);
+    };
+    addAndMakeVisible (removeButton);
+
+    // Listen to deck tree and root state for property changes
+    deckTree.addListener (this);
+    rootState.addListener (this);
+}
+
+DeckShellComponent::~DeckShellComponent()
+{
+    rootState.removeListener (this);
+    if (deckTree.isValid())
+        deckTree.removeListener (this);
+}
+
+// --- Active state ---
+
+void DeckShellComponent::updateActiveState()
+{
+    repaint();
+}
+
+bool DeckShellComponent::isActive() const
+{
+    return deckStateManager.getActiveDeckId() == deckId;
+}
+
+bool DeckShellComponent::isTrackLoaded() const
+{
+    if (! deckTree.isValid())
+        return false;
+
+    auto status = deckTree.getProperty (IDs::playbackStatus).toString();
+    return status != "empty";
+}
+
+bool DeckShellComponent::isPlaying() const
+{
+    if (! deckTree.isValid())
+        return false;
+
+    return deckTree.getProperty (IDs::playbackStatus).toString() == "playing";
+}
+
+// --- Colours ---
+
+juce::Colour DeckShellComponent::getDeckAccentColour (const juce::String& id)
+{
+    if (id == "A") return juce::Colour (0xFF3B82F6);
+    if (id == "B") return juce::Colour (0xFFF97316);
+    if (id == "C") return juce::Colour (0xFF22C55E);
+    if (id == "D") return juce::Colour (0xFFA855F7);
+    return juce::Colours::white;
+}
+
+// --- Paint ---
+
+void DeckShellComponent::paint (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds();
+
+    // Background
+    g.setColour (juce::Colour (0xFFF3F3F4)); // surface-container-low
+    g.fillRect (bounds);
+
+    // Active indicator
+    if (isActive())
+        paintActiveIndicator (g);
+
+    // Content area offset for active indicator
+    auto contentBounds = bounds.withTrimmedLeft (activeIndicatorWidth);
+
+    // Header
+    auto headerArea = contentBounds.removeFromTop (headerHeight);
+    paintHeader (g, headerArea);
+
+    // Content
+    if (! isTrackLoaded())
+        paintEmptyState (g, contentBounds);
+
+    // Drag overlay
+    if (isDragOver)
+    {
+        g.setColour (juce::Colour (0x20000000));
+        g.fillRect (getLocalBounds());
+    }
+}
+
+void DeckShellComponent::paintActiveIndicator (juce::Graphics& g)
+{
+    auto colour = getDeckAccentColour (deckId);
+    g.setColour (colour);
+    g.fillRect (0, 0, activeIndicatorWidth, getHeight());
+}
+
+void DeckShellComponent::paintHeader (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    // Header background
+    g.setColour (juce::Colour (0xFFE2E2E2)); // surface-container-highest
+    g.fillRect (area);
+
+    // Deck label
+    g.setColour (juce::Colours::black);
+    g.setFont (juce::FontOptions (14.0f).withStyle ("Bold"));
+    g.drawText ("DECK " + deckId,
+                area.withTrimmedLeft (8).withTrimmedRight (headerHeight),
+                juce::Justification::centredLeft);
+}
+
+void DeckShellComponent::paintEmptyState (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    auto emptyBox = area.reduced (24);
+
+    // Dashed border (simulate with line segments)
+    g.setColour (juce::Colour (0x60000000));
+    const float dashLen = 6.0f;
+    const float gapLen  = 4.0f;
+
+    auto fb = emptyBox.toFloat();
+
+    // Top edge
+    for (float x = fb.getX(); x < fb.getRight(); x += dashLen + gapLen)
+        g.drawHorizontalLine ((int) fb.getY(), x, juce::jmin (x + dashLen, fb.getRight()));
+
+    // Bottom edge
+    for (float x = fb.getX(); x < fb.getRight(); x += dashLen + gapLen)
+        g.drawHorizontalLine ((int) fb.getBottom(), x, juce::jmin (x + dashLen, fb.getRight()));
+
+    // Left edge
+    for (float y = fb.getY(); y < fb.getBottom(); y += dashLen + gapLen)
+        g.drawVerticalLine ((int) fb.getX(), y, juce::jmin (y + dashLen, fb.getBottom()));
+
+    // Right edge
+    for (float y = fb.getY(); y < fb.getBottom(); y += dashLen + gapLen)
+        g.drawVerticalLine ((int) fb.getRight(), y, juce::jmin (y + dashLen, fb.getBottom()));
+
+    // Text
+    g.setColour (juce::Colour (0x80000000));
+    g.setFont (juce::FontOptions (13.0f));
+    g.drawText ("Drop a track here or browse your library",
+                emptyBox, juce::Justification::centred);
+}
+
+// --- Layout ---
+
+void DeckShellComponent::resized()
+{
+    auto bounds = getLocalBounds().withTrimmedLeft (activeIndicatorWidth);
+    auto headerArea = bounds.removeFromTop (headerHeight);
+
+    // Remove button in header, right-aligned
+    auto btnSize = headerHeight - 4;
+    removeButton.setBounds (headerArea.removeFromRight (btnSize + 4)
+                                .withSizeKeepingCentre (btnSize, btnSize));
+
+    // Update remove button enabled state
+    bool canRemove = deckStateManager.canRemoveDeck (deckId);
+    removeButton.setEnabled (canRemove);
+
+    if (! canRemove)
+    {
+        if (deckStateManager.getDeckCount() <= 1)
+            removeButton.setTooltip ("At least one deck is required");
+        else if (isPlaying())
+            removeButton.setTooltip ("Stop playback to remove this deck");
+    }
+    else
+    {
+        removeButton.setTooltip ({});
+    }
+}
+
+// --- Mouse ---
+
+void DeckShellComponent::mouseDown (const juce::MouseEvent&)
+{
+    deckStateManager.setActiveDeck (deckId);
+}
+
+// --- File drag and drop ---
+
+bool DeckShellComponent::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    for (const auto& f : files)
+    {
+        juce::File file (f);
+        if (AudioFileLoader::isSupportedExtension (file.getFileExtension()))
+            return true;
+    }
+    return false;
+}
+
+void DeckShellComponent::fileDragEnter (const juce::StringArray&, int, int)
+{
+    isDragOver = true;
+    repaint();
+}
+
+void DeckShellComponent::fileDragExit (const juce::StringArray&)
+{
+    isDragOver = false;
+    repaint();
+}
+
+void DeckShellComponent::filesDropped (const juce::StringArray& files, int, int)
+{
+    isDragOver = false;
+    repaint();
+
+    for (const auto& f : files)
+    {
+        juce::File file (f);
+        if (AudioFileLoader::isSupportedExtension (file.getFileExtension()))
+        {
+            // Set this deck as active and load
+            deckStateManager.setActiveDeck (deckId);
+            audioFileLoader.loadFile (deckId, file);
+            break;
+        }
+    }
+}
+
+// --- ValueTree::Listener ---
+
+void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
+                                                    const juce::Identifier& property)
+{
+    // Root state property changed (e.g., activeDeckId)
+    if (tree == rootState && property == IDs::activeDeckId)
+    {
+        juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
+        {
+            if (safeThis != nullptr)
+            {
+                safeThis->updateActiveState();
+                safeThis->resized(); // update remove button state
+            }
+        });
+        return;
+    }
+
+    // Deck tree property changed
+    if (tree == deckTree)
+    {
+        if (property == IDs::playbackStatus || property == IDs::loadingStatus)
+        {
+            juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
+            {
+                if (safeThis != nullptr)
+                {
+                    safeThis->resized(); // update remove button state
+                    safeThis->repaint();
+                }
+            });
+        }
+    }
+}

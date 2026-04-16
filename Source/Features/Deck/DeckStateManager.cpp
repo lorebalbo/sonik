@@ -113,6 +113,15 @@ juce::ValueTree DeckStateManager::getStateTree() const
     return rootState;
 }
 
+juce::StringArray DeckStateManager::getDeckIds() const
+{
+    juce::StringArray ids;
+    auto decks = rootState.getChildWithName (IDs::Decks);
+    for (int i = 0; i < decks.getNumChildren(); ++i)
+        ids.add (decks.getChild (i).getProperty (IDs::id).toString());
+    return ids;
+}
+
 // --- Track loading ---
 
 void DeckStateManager::loadTrack (const juce::String& deckId, const TrackMetadata& metadata)
