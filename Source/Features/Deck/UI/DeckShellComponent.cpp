@@ -193,7 +193,11 @@ void DeckShellComponent::resized()
         removeButton.setTooltip ({});
     }
 
-    // Waveform component in content area
+    // Track info component above waveform
+    if (trackInfoComponent != nullptr && isTrackLoaded())
+        trackInfoComponent->setBounds (bounds.removeFromTop (trackInfoHeight));
+
+    // Waveform component in remaining content area
     if (waveformComponent != nullptr && isTrackLoaded())
         waveformComponent->setBounds (bounds);
 }
@@ -276,11 +280,32 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
             {
                 if (safeThis != nullptr)
                 {
-                    // Remove waveform if track was ejected
-                    if (! safeThis->isTrackLoaded() && safeThis->waveformComponent != nullptr)
+                    if (safeThis->isTrackLoaded())
                     {
-                        safeThis->removeChildComponent (safeThis->waveformComponent.get());
-                        safeThis->waveformComponent.reset();
+                        // Create TrackInfoComponent if not present
+                        if (safeThis->trackInfoComponent == nullptr)
+                        {
+                            safeThis->trackInfoComponent = std::make_unique<TrackInfoComponent> (
+                                safeThis->deckTree,
+                                safeThis->deckStateManager,
+                                safeThis->audioFileLoader,
+                                safeThis->deckId);
+                            safeThis->addAndMakeVisible (*safeThis->trackInfoComponent);
+                        }
+                    }
+                    else
+                    {
+                        // Remove waveform and track info if track was ejected
+                        if (safeThis->waveformComponent != nullptr)
+                        {
+                            safeThis->removeChildComponent (safeThis->waveformComponent.get());
+                            safeThis->waveformComponent.reset();
+                        }
+                        if (safeThis->trackInfoComponent != nullptr)
+                        {
+                            safeThis->removeChildComponent (safeThis->trackInfoComponent.get());
+                            safeThis->trackInfoComponent.reset();
+                        }
                     }
 
                     safeThis->resized(); // update remove button state

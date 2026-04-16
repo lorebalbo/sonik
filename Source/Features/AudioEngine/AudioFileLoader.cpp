@@ -65,9 +65,10 @@ public:
         // 6. Publish metadata on message thread
         auto metaCopy = meta;
         auto deckId = targetDeckId;
-        juce::MessageManager::callAsync ([this, metaCopy, deckId]()
+        auto* ldr = &loader;
+        juce::MessageManager::callAsync ([ldr, metaCopy, deckId]()
         {
-            loader.deckStateManager.loadTrack (deckId, metaCopy);
+            ldr->deckStateManager.loadTrack (deckId, metaCopy);
         });
 
         if (shouldExit())
@@ -96,9 +97,10 @@ public:
             // Report progress
             float prog = static_cast<float> (framesRead) / static_cast<float> (totalFrames);
             auto deckIdCopy = targetDeckId;
-            juce::MessageManager::callAsync ([this, deckIdCopy, prog]()
+            auto* ldr = &loader;
+            juce::MessageManager::callAsync ([ldr, deckIdCopy, prog]()
             {
-                auto deckTree = loader.deckStateManager.getDeckState (deckIdCopy);
+                auto deckTree = ldr->deckStateManager.getDeckState (deckIdCopy);
                 if (deckTree.isValid())
                     deckTree.setProperty (IDs::loadingProgress, prog, nullptr);
             });
@@ -172,9 +174,10 @@ public:
 
         auto metaFinal = meta;
         auto deckIdFinal = targetDeckId;
-        juce::MessageManager::callAsync ([this, holderPtr, metaFinal, deckIdFinal]()
+        auto* ldr2 = &loader;
+        juce::MessageManager::callAsync ([ldr2, holderPtr, metaFinal, deckIdFinal]()
         {
-            loader.deliverBuffer (deckIdFinal, holderPtr, metaFinal);
+            ldr2->deliverBuffer (deckIdFinal, holderPtr, metaFinal);
         });
 
         return jobHasFinished;
@@ -211,9 +214,10 @@ private:
     void reportError (const juce::String& message)
     {
         auto deckIdCopy = targetDeckId;
-        juce::MessageManager::callAsync ([this, deckIdCopy, message]()
+        auto* ldr = &loader;
+        juce::MessageManager::callAsync ([ldr, deckIdCopy, message]()
         {
-            auto deckTree = loader.deckStateManager.getDeckState (deckIdCopy);
+            auto deckTree = ldr->deckStateManager.getDeckState (deckIdCopy);
             if (deckTree.isValid())
             {
                 deckTree.setProperty (IDs::loadingStatus,  "error",  nullptr);

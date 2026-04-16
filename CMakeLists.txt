@@ -72,6 +72,8 @@ target_sources(Sonik PRIVATE
     Source/Features/AudioEngine/AudioFileLoader.cpp
     Source/Features/Deck/UI/DeckShellComponent.h
     Source/Features/Deck/UI/DeckShellComponent.cpp
+    Source/Features/Deck/UI/TrackInfoComponent.h
+    Source/Features/Deck/UI/TrackInfoComponent.cpp
     Source/Features/Deck/UI/DeckLayoutManager.h
     Source/Features/Deck/UI/DeckLayoutManager.cpp
     Source/Features/Deck/UI/GlobalToolbar.h
@@ -120,11 +122,13 @@ add_executable(SonikTests
     Tests/AudioFileLoaderTests.cpp
     Tests/TransportTests.cpp
     Tests/WaveformTests.cpp
+    Tests/TrackInfoTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
     Source/Features/AudioEngine/AudioFileLoader.cpp
     Source/Features/Deck/UI/DeckShellComponent.cpp
+    Source/Features/Deck/UI/TrackInfoComponent.cpp
     Source/Features/Deck/UI/DeckLayoutManager.cpp
     Source/Features/Waveform/WaveformAnalyzer.cpp
     Source/Features/Waveform/WaveformManager.cpp
