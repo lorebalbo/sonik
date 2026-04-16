@@ -43,8 +43,31 @@ You must strictly adhere to these patterns to ensure a scalable, "vibe-coded" ar
 - **Explain "Why":** Keep explanations high-level and conceptual (e.g., "We use a Ring Buffer here to prevent audio dropouts").
 
 ## Dev Environment & Automation Scripts
-*(AI Task: To be populated once the project is initialized).*
-Create automation scripts (e.g., `build.sh`, `build.bat`) to compile and test the app. Update this section with the exact commands the human user needs to run.
+
+### Prerequisites
+- CMake 3.24+
+- C++20-capable compiler (AppleClang 17+ on macOS, MSVC 2022+ on Windows)
+- Internet connection (first build downloads JUCE 8.0.6 and SQLite via CPM)
+
+### Build (macOS)
+```bash
+./build.sh
+```
+Or manually:
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build --parallel
+```
+
+### Run
+```bash
+./build/Sonik_artefacts/Debug/Sonik.app/Contents/MacOS/Sonik
+```
+
+### Key Build Notes
+- JUCE 8 does NOT have a `juce_gui_app` module. Use `juce_gui_basics` and `juce_gui_extra` for application/window classes.
+- SQLite amalgamation is fetched directly from sqlite.org.
+- CPM.cmake is downloaded at configure time (no need to pre-install).
 
 ## Self-Maintenance (Living Document)
 This `AGENTS.md` is your living memory. You are responsible for updating it.

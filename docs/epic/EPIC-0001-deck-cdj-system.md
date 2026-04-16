@@ -91,8 +91,8 @@ Each PRD produces code organized under its feature slice:
 
 ## 1.4. PRD Roadmap
 
-- [ ] PRD-0001: Deck State Management
-- [ ] PRD-0002: Audio Engine Core
+- [x] PRD-0001: Deck State Management
+- [x] PRD-0002: Audio Engine Core
 - [ ] PRD-0003: Audio File Decoding & Loading
 - [ ] PRD-0004: Transport System (Play, Pause, Seek, Playhead)
 - [ ] PRD-0005: Deck UI Shell & Dynamic Layout
