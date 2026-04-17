@@ -66,6 +66,9 @@ foreach(_lib ${ESSENTIA_LIBRARIES})
 endforeach()
 target_link_libraries(essentia INTERFACE ${ESSENTIA_TRANSITIVE_LIBS})
 
+# Rubber Band (installed via Homebrew, found via pkg-config)
+pkg_check_modules(RUBBERBAND REQUIRED rubberband)
+
 # Sonik Application
 juce_add_gui_app(Sonik
     PRODUCT_NAME "Sonik"
@@ -92,6 +95,10 @@ target_sources(Sonik PRIVATE
     Source/Features/AudioEngine/AudioFileLoader.cpp
     Source/Features/Deck/UI/DeckShellComponent.h
     Source/Features/Deck/UI/DeckShellComponent.cpp
+    Source/Features/Deck/UI/PitchFaderComponent.h
+    Source/Features/Deck/UI/PitchFaderComponent.cpp
+    Source/Features/Deck/UI/GainKnobComponent.h
+    Source/Features/Deck/UI/GainKnobComponent.cpp
     Source/Features/Deck/UI/TrackInfoComponent.h
     Source/Features/Deck/UI/TrackInfoComponent.cpp
     Source/Features/Deck/UI/DeckLayoutManager.h
@@ -118,9 +125,12 @@ target_sources(Sonik PRIVATE
     Source/Features/KeyDetection/KeyDetectionAnalyzer.cpp
     Source/Features/KeyDetection/KeyDetectionManager.h
     Source/Features/KeyDetection/KeyDetectionManager.cpp
+    Source/Features/TimeStretch/TimeStretcher.h
+    Source/Features/TimeStretch/TimeStretcher.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
+target_include_directories(Sonik PRIVATE ${RUBBERBAND_INCLUDE_DIRS})
 
 target_compile_definitions(Sonik PRIVATE
     JUCE_WEB_BROWSER=0
@@ -140,6 +150,7 @@ target_link_libraries(Sonik PRIVATE
     juce::juce_events
     sqlite3
     essentia
+    ${RUBBERBAND_LINK_LIBRARIES}
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
@@ -156,11 +167,15 @@ add_executable(SonikTests
     Tests/TrackInfoTests.cpp
     Tests/BeatGridTests.cpp
     Tests/KeyDetectionTests.cpp
+    Tests/PitchGainTests.cpp
+    Tests/TimeStretchTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
     Source/Features/AudioEngine/AudioFileLoader.cpp
     Source/Features/Deck/UI/DeckShellComponent.cpp
+    Source/Features/Deck/UI/PitchFaderComponent.cpp
+    Source/Features/Deck/UI/GainKnobComponent.cpp
     Source/Features/Deck/UI/TrackInfoComponent.cpp
     Source/Features/Deck/UI/DeckLayoutManager.cpp
     Source/Features/Waveform/WaveformAnalyzer.cpp
@@ -171,9 +186,10 @@ add_executable(SonikTests
     Source/Features/BeatGrid/BeatGridManager.cpp
     Source/Features/KeyDetection/KeyDetectionAnalyzer.cpp
     Source/Features/KeyDetection/KeyDetectionManager.cpp
+    Source/Features/TimeStretch/TimeStretcher.cpp
 )
 
-target_include_directories(SonikTests PRIVATE Source Tests)
+target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})
 
 target_compile_definitions(SonikTests PRIVATE
     JUCE_WEB_BROWSER=0
@@ -194,5 +210,6 @@ target_link_libraries(SonikTests PRIVATE
     juce::juce_events
     sqlite3
     essentia
+    ${RUBBERBAND_LINK_LIBRARIES}
     juce::juce_recommended_config_flags
 )

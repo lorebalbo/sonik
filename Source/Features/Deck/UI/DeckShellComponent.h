@@ -9,6 +9,9 @@
 #include "../../Waveform/WaveformManager.h"
 #include "../../BeatGrid/BeatGridManager.h"
 #include "TrackInfoComponent.h"
+#include "PitchFaderComponent.h"
+#include "GainKnobComponent.h"
+#include "KeyLockButton.h"
 
 class DeckShellComponent final : public juce::Component,
                                   public juce::FileDragAndDropTarget,
@@ -69,12 +72,16 @@ private:
     juce::TextButton  removeButton;
     bool              isDragOver = false;
 
-    std::unique_ptr<WaveformComponent>  waveformComponent;
-    std::unique_ptr<TrackInfoComponent>  trackInfoComponent;
+    std::unique_ptr<WaveformComponent>   waveformComponent;
+    std::unique_ptr<TrackInfoComponent>   trackInfoComponent;
+    std::unique_ptr<PitchFaderComponent>  pitchFaderComponent;
+    std::unique_ptr<GainKnobComponent>    gainKnobComponent;
+    std::unique_ptr<KeyLockButton>        keyLockButton;
 
     static constexpr int headerHeight        = 32;
     static constexpr int trackInfoHeight     = 90;
     static constexpr int activeIndicatorWidth = 3;
+    static constexpr int controlStripWidth    = 80;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckShellComponent)
 };

@@ -27,6 +27,17 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     };
     addAndMakeVisible (removeButton);
 
+    // Create pitch fader and gain knob (always visible)
+    pitchFaderComponent = std::make_unique<PitchFaderComponent> (deckTree);
+    addAndMakeVisible (*pitchFaderComponent);
+
+    gainKnobComponent = std::make_unique<GainKnobComponent> (deckTree);
+    addAndMakeVisible (*gainKnobComponent);
+
+    // Create key lock button
+    keyLockButton = std::make_unique<KeyLockButton> (deckTree);
+    addAndMakeVisible (*keyLockButton);
+
     // Listen to deck tree and root state for property changes
     deckTree.addListener (this);
     rootState.addListener (this);
@@ -194,6 +205,21 @@ void DeckShellComponent::resized()
     {
         removeButton.setTooltip ({});
     }
+
+    // Control strip on the right side
+    auto controlStrip = bounds.removeFromRight (controlStripWidth);
+
+    // Gain knob at top of control strip
+    if (gainKnobComponent != nullptr)
+        gainKnobComponent->setBounds (controlStrip.removeFromTop (100));
+
+    // Key lock button between gain and pitch fader
+    if (keyLockButton != nullptr)
+        keyLockButton->setBounds (controlStrip.removeFromTop (24).reduced (12, 2));
+
+    // Pitch fader fills rest of control strip
+    if (pitchFaderComponent != nullptr)
+        pitchFaderComponent->setBounds (controlStrip);
 
     // Track info component above waveform
     if (trackInfoComponent != nullptr && isTrackLoaded())

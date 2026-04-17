@@ -5,6 +5,8 @@
 #include "AudioBufferHolder.h"
 #include "../Deck/AudioThreadState.h"
 
+class TimeStretcher;
+
 // Transport commands sent from UI thread to audio thread (PRD-0004)
 enum class TransportCommand : int
 {
@@ -64,4 +66,26 @@ struct DeckAudioSource
     enum class DeferredAction : int { None = 0, Pause, Stop, Seek, CueReturn, EndOfTrack };
     DeferredAction deferredAction    = DeferredAction::None;
     int64_t        deferredSeekTarget = 0;
+
+    // --- Time stretching (PRD-0011) ---
+
+    // Stretcher instance (owned by message thread, published via atomic for audio thread)
+    std::atomic<TimeStretcher*> timeStretcher { nullptr };
+    TimeStretcher* timeStretcherOwned = nullptr; // message thread ownership
+
+    // Cached stretcher latency for read-position compensation (audio thread)
+    int stretcherLatency = 0;
+
+    // Key lock crossfade state (audio thread only)
+    int  keyLockFadeSamplesRemaining = 0;
+    bool keyLockFadingIn  = false;  // transitioning TO stretched
+    bool keyLockFadingOut = false;  // transitioning FROM stretched
+    bool wasKeyLockEnabled = false; // previous frame's key lock state
+
+    // Pre-allocated scratch buffers for stretcher I/O (audio thread only)
+    static constexpr int MAX_STRETCH_BLOCK = 4096;
+    float stretchInL[MAX_STRETCH_BLOCK]  = {};
+    float stretchInR[MAX_STRETCH_BLOCK]  = {};
+    float stretchOutL[MAX_STRETCH_BLOCK] = {};
+    float stretchOutR[MAX_STRETCH_BLOCK] = {};
 };

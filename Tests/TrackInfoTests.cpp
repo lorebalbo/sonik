@@ -303,10 +303,10 @@ private:
         DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, beatGridMgr, deckId);
         shell.setBounds (0, 0, 400, 300);
 
-        // Before loading: only the remove button child
+        // Before loading: remove button + pitch fader + gain knob + key lock button
         int initialChildren = shell.getNumChildComponents();
-        expectEquals (initialChildren, 1,
-                      "Before track load, DeckShellComponent should have only remove button");
+        expectEquals (initialChildren, 4,
+                      "Before track load, DeckShellComponent should have remove button, pitch fader, gain knob, and key lock button");
 
         // Load a track
         auto meta = makeSampleMetadata ("Lifecycle Track");

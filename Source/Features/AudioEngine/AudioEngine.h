@@ -6,6 +6,7 @@
 #include "DeckAudioSource.h"
 #include "AudioBufferHolder.h"
 #include "../Deck/DeckIdentifiers.h"
+#include "../../Features/TimeStretch/TimeStretcher.h"
 #include <array>
 #include <atomic>
 

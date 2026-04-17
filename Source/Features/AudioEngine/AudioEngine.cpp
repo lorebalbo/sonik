@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
 #include <cmath>
+#include <algorithm>
 
 AudioEngine::AudioEngine (juce::ValueTree parentState)
     : rootState (parentState)
@@ -157,6 +158,37 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
         // Store the holder first (message thread ownership)
         src.bufferHolder = holder;
 
+        // Create time stretcher for this deck (message thread, allocates buffers)
+        {
+            double sr = currentSampleRate.load (std::memory_order_relaxed);
+            int maxBlock = currentBufferSize.load (std::memory_order_relaxed);
+            if (maxBlock <= 0) maxBlock = 512;
+
+            // Tear down old stretcher first (hide from audio thread)
+            src.timeStretcher.store (nullptr, std::memory_order_release);
+            delete src.timeStretcherOwned;
+
+            auto* newStretcher = new TimeStretcher (sr, 2, maxBlock * 4);
+
+            // Prime with actual track audio so the stretcher output is
+            // immediately valid and latency-aligned with the vinyl path.
+            const auto& buf = holder->getBuffer();
+            newStretcher->primeWithAudio (
+                buf.getReadPointer (0),
+                buf.getReadPointer (1),
+                holder->getNumFrames());
+
+            src.stretcherLatency = newStretcher->getLatency();
+            src.timeStretcherOwned = newStretcher;
+            src.timeStretcher.store (newStretcher, std::memory_order_release);
+
+            // Reset key lock crossfade state
+            src.wasKeyLockEnabled = false;
+            src.keyLockFadeSamplesRemaining = 0;
+            src.keyLockFadingIn = false;
+            src.keyLockFadingOut = false;
+        }
+
         // Publish raw pointers atomically for the audio thread
         src.bufferNumFrames.store (holder->getNumFrames(), std::memory_order_relaxed);
         src.channelR.store (holder->getBuffer().getReadPointer (1), std::memory_order_release);
@@ -189,6 +221,12 @@ void AudioEngine::clearDeckBuffer (const juce::String& deckId)
     src.channelL.store (nullptr, std::memory_order_release);
     src.channelR.store (nullptr, std::memory_order_release);
     src.bufferNumFrames.store (0, std::memory_order_relaxed);
+
+    // Destroy time stretcher (hide from audio thread first)
+    src.timeStretcher.store (nullptr, std::memory_order_release);
+    delete src.timeStretcherOwned;
+    src.timeStretcherOwned = nullptr;
+    src.stretcherLatency = 0;
 
     // Release ownership
     src.bufferHolder = nullptr;
@@ -404,6 +442,75 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         float sPeakL = 0.0f, sPeakR = 0.0f;
         float sumSqL = 0.0f, sumSqR = 0.0f;
 
+        // Check key lock state
+        bool keyLockOn = audioState->keyLockEnabled.load (std::memory_order_relaxed);
+        auto* stretcher = source->timeStretcher.load (std::memory_order_acquire);
+        // Use the stretcher whenever key lock is on — even at speed=1.0 the
+        // stretcher runs in passthrough so its internal buffers stay warm.
+        // This prevents a cold-start click when the pitch fader first moves.
+        bool useStretcher = keyLockOn && stretcher != nullptr && speed > 0.01f;
+
+        // Detect key lock toggle — no crossfade needed.
+        // The stretcher runs continuously (always fed) so its output is
+        // valid at all times.  A crossfade between vinyl and stretched
+        // signals is harmful because RubberBand's algorithmic latency
+        // (~2048-4096 samples) puts the two signals at different temporal
+        // positions in the track, causing phase cancellation and clicks.
+        // At speed=1.0 both paths produce identical audio.  At non-1.0
+        // speeds a hard switch is inaudible because the stretcher output
+        // is already continuous.
+        if (keyLockOn != source->wasKeyLockEnabled)
+            source->wasKeyLockEnabled = keyLockOn;
+
+        // --- Time-stretched path ---
+        // Always feed the stretcher when it exists so its internal buffers
+        // stay warm.  This prevents a cold-start click when key lock is
+        // toggled on — the stretched output is already valid for the
+        // crossfade.  At ratio 1.0 the R3 engine is near-passthrough and
+        // adds negligible CPU.
+        int stretchedAvail = 0;
+        if (stretcher != nullptr && speed > 0.01f)
+        {
+            // Read source samples at speed into scratch buffers.
+            // Offset by stretcherLatency so the stretcher output (which is
+            // delayed by L samples internally) is temporally aligned with
+            // the vinyl path at playheadAccumulator.
+            int sourceSamples = std::min (
+                static_cast<int> (std::ceil (static_cast<double> (numSamples) * static_cast<double> (speed))),
+                DeckAudioSource::MAX_STRETCH_BLOCK);
+
+            double readPos = source->playheadAccumulator
+                           + static_cast<double> (source->stretcherLatency);
+            for (int s = 0; s < sourceSamples; ++s)
+            {
+                double sPos = readPos + static_cast<double> (s) * 1.0;
+                int64_t sIdx = static_cast<int64_t> (sPos);
+                if (sIdx >= 0 && sIdx < bufLen)
+                {
+                    float frac = static_cast<float> (sPos - static_cast<double> (sIdx));
+                    float s0L = chL[sIdx];
+                    float s1L = (sIdx + 1 < bufLen) ? chL[sIdx + 1] : chL[sIdx];
+                    source->stretchInL[s] = s0L + frac * (s1L - s0L);
+
+                    float s0R = chR[sIdx];
+                    float s1R = (sIdx + 1 < bufLen) ? chR[sIdx + 1] : chR[sIdx];
+                    source->stretchInR[s] = s0R + frac * (s1R - s0R);
+                }
+                else
+                {
+                    source->stretchInL[s] = 0.0f;
+                    source->stretchInR[s] = 0.0f;
+                }
+            }
+
+            const float* inPtrs[2] = { source->stretchInL, source->stretchInR };
+            float* outPtrs[2] = { source->stretchOutL, source->stretchOutR };
+
+            double timeRatio = 1.0 / static_cast<double> (speed);
+            stretchedAvail = stretcher->process (
+                inPtrs, sourceSamples, outPtrs, numSamples, timeRatio);
+        }
+
         for (int i = 0; i < numSamples; ++i)
         {
             // If not playing and no active fade remaining, skip
@@ -443,8 +550,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             bool shouldAdvance = (status == PlaybackStatusCode::playing)
                                  || source->isFadingOut;
 
-            // Read sample with sub-sample interpolation
-            float rawL, rawR;
+            // Read vinyl-mode sample (always needed for crossfade or non-stretched path)
+            float vinylL, vinylR;
             if (idx >= 0 && idx < bufLen)
             {
                 if (speed != 1.0f)
@@ -452,22 +559,37 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                     float frac = static_cast<float> (pos - static_cast<double> (idx));
                     float s0L  = chL[idx];
                     float s1L  = (idx + 1 < bufLen) ? chL[idx + 1] : chL[idx];
-                    rawL = s0L + frac * (s1L - s0L);
+                    vinylL = s0L + frac * (s1L - s0L);
 
                     float s0R = chR[idx];
                     float s1R = (idx + 1 < bufLen) ? chR[idx + 1] : chR[idx];
-                    rawR = s0R + frac * (s1R - s0R);
+                    vinylR = s0R + frac * (s1R - s0R);
                 }
                 else
                 {
-                    rawL = chL[idx];
-                    rawR = chR[idx];
+                    vinylL = chL[idx];
+                    vinylR = chR[idx];
                 }
             }
             else
             {
-                rawL = 0.0f;
-                rawR = 0.0f;
+                vinylL = 0.0f;
+                vinylR = 0.0f;
+            }
+
+            // Select output sample: stretched or vinyl
+            float rawL, rawR;
+            if (useStretcher)
+            {
+                // Use stretched output when available; on underrun, use
+                // vinyl to avoid silence gaps.
+                rawL = (i < stretchedAvail) ? source->stretchOutL[i] : vinylL;
+                rawR = (i < stretchedAvail) ? source->stretchOutR[i] : vinylR;
+            }
+            else
+            {
+                rawL = vinylL;
+                rawR = vinylR;
             }
 
             // Apply fade ramp
@@ -562,7 +684,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             outL[i] += rawL * gain * fadeGain;
             outR[i] += rawR * gain * fadeGain;
 
-            // Advance playhead (hold during end-of-track fade)
+            // Advance playhead
+            // In stretched mode, we still advance per-sample by speed (same as vinyl).
+            // The stretcher handles the pitch correction internally.
             if (shouldAdvance
                 && source->deferredAction != DeckAudioSource::DeferredAction::EndOfTrack)
                 source->playheadAccumulator += static_cast<double> (speed);
