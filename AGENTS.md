@@ -8,7 +8,7 @@ The human developer driving this project has **ZERO prior experience with C++**.
 - **Framework:** JUCE (cross-platform Audio I/O, MIDI routing, core UI)
 - **Build System:** CMake
 - **Database:** SQLite (track metadata, beatgrids, cue points)
-- **DSP Libraries:** Standard DSP algorithms or external libraries (e.g., Rubberband) for time-stretching.
+- **DSP Libraries:** Essentia (BPM/beat detection), standard DSP algorithms or external libraries (e.g., Rubberband) for time-stretching.
 
 ## CRITICAL BOUNDARY: The Audio Thread (Immutable Rule)
 This is a real-time, low-latency audio application. The `processBlock` function (and anything it calls) runs on the real-time audio thread. Missing a deadline causes audio dropouts.
@@ -48,6 +48,8 @@ You must strictly adhere to these patterns to ensure a scalable, "vibe-coded" ar
 - CMake 3.24+
 - C++20-capable compiler (AppleClang 17+ on macOS, MSVC 2022+ on Windows)
 - Internet connection (first build downloads JUCE 8.0.6 and SQLite via CPM)
+- Essentia C++ library (static, installed to `/usr/local`)
+- Essentia dependencies via Homebrew: `brew install eigen fftw`
 
 ### Build (macOS)
 ```bash
@@ -68,6 +70,17 @@ cmake --build build --parallel
 - JUCE 8 does NOT have a `juce_gui_app` module. Use `juce_gui_basics` and `juce_gui_extra` for application/window classes.
 - SQLite amalgamation is fetched directly from sqlite.org.
 - CPM.cmake is downloaded at configure time (no need to pre-install).
+- Essentia is linked via `pkg-config`. Build from source with `CXXFLAGS="-std=c++17"` if Homebrew formula fails.
+
+### Installing Essentia from Source
+```bash
+brew install eigen fftw
+cd /tmp && git clone --depth 1 https://github.com/MTG/essentia.git
+cd essentia
+CXXFLAGS="-std=c++17" python3 waf configure --build-static --prefix=/usr/local
+CXXFLAGS="-std=c++17" python3 waf
+sudo python3 waf install
+```
 
 ## Self-Maintenance (Living Document)
 This `AGENTS.md` is your living memory. You are responsible for updating it.

@@ -46,6 +46,26 @@ if(sqlite3_ADDED)
     endif()
 endif()
 
+# Essentia (installed via pkg-config)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(ESSENTIA REQUIRED essentia)
+
+add_library(essentia STATIC IMPORTED)
+set_target_properties(essentia PROPERTIES
+    IMPORTED_LOCATION "/usr/local/lib/libessentia.a"
+)
+target_include_directories(essentia INTERFACE ${ESSENTIA_INCLUDE_DIRS})
+target_link_directories(essentia INTERFACE ${ESSENTIA_LIBRARY_DIRS})
+
+# Collect Essentia's transitive dependencies (fftw3f, avformat, etc.)
+set(ESSENTIA_TRANSITIVE_LIBS "")
+foreach(_lib ${ESSENTIA_LIBRARIES})
+    if(NOT _lib STREQUAL "essentia")
+        list(APPEND ESSENTIA_TRANSITIVE_LIBS ${_lib})
+    endif()
+endforeach()
+target_link_libraries(essentia INTERFACE ${ESSENTIA_TRANSITIVE_LIBS})
+
 # Sonik Application
 juce_add_gui_app(Sonik
     PRODUCT_NAME "Sonik"
@@ -119,6 +139,7 @@ target_link_libraries(Sonik PRIVATE
     juce::juce_core
     juce::juce_events
     sqlite3
+    essentia
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
@@ -172,5 +193,6 @@ target_link_libraries(SonikTests PRIVATE
     juce::juce_core
     juce::juce_events
     sqlite3
+    essentia
     juce::juce_recommended_config_flags
 )
