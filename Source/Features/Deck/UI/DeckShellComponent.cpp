@@ -38,6 +38,10 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     keyLockButton = std::make_unique<KeyLockButton> (deckTree);
     addAndMakeVisible (*keyLockButton);
 
+    // Create quantize button (PRD-0013)
+    quantizeButton = std::make_unique<QuantizeButtonComponent> (deckTree);
+    addAndMakeVisible (*quantizeButton);
+
     // Create hot cue manager and pad component (PRD-0012)
     hotCueManager = std::make_unique<HotCueManager> (
         deckTree, audioEngine, deckId, deckStateManager.getDatabase());
@@ -234,6 +238,10 @@ void DeckShellComponent::resized()
     // Key lock button between gain and pitch fader
     if (keyLockButton != nullptr)
         keyLockButton->setBounds (controlStrip.removeFromTop (24).reduced (12, 2));
+
+    // Quantize button below key lock (PRD-0013)
+    if (quantizeButton != nullptr)
+        quantizeButton->setBounds (controlStrip.removeFromTop (24).reduced (12, 2));
 
     // Pitch fader fills rest of control strip
     if (pitchFaderComponent != nullptr)

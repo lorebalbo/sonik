@@ -1,4 +1,5 @@
 #include "AudioEngine.h"
+#include "../Quantize/QuantizeService.h"
 #include <cmath>
 #include <algorithm>
 
@@ -359,6 +360,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 if (status == PlaybackStatusCode::paused)
                 {
                     auto curPos = static_cast<int64_t> (source->playheadAccumulator);
+
+                    // Quantize snap (PRD-0013): snap temp cue to nearest beat if enabled
+                    if (audioState->quantizeEnabled.load (std::memory_order_relaxed))
+                    {
+                        auto anchor   = audioState->beatgridAnchor.load (std::memory_order_relaxed);
+                        auto interval = audioState->beatgridInterval.load (std::memory_order_relaxed);
+                        curPos = QuantizeService::snapToNearestBeat (curPos, anchor, interval);
+                    }
+
                     auto curCue = audioState->tempCuePosition.load (std::memory_order_relaxed);
                     if (curPos != curCue)
                         audioState->tempCuePosition.store (curPos, std::memory_order_relaxed);

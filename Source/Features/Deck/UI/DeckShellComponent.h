@@ -14,6 +14,7 @@
 #include "KeyLockButton.h"
 #include "../../Cue/HotCueManager.h"
 #include "../../Cue/HotCuePadComponent.h"
+#include "../../Quantize/QuantizeButtonComponent.h"
 
 class DeckShellComponent final : public juce::Component,
                                   public juce::FileDragAndDropTarget,
@@ -80,6 +81,7 @@ private:
     std::unique_ptr<PitchFaderComponent>  pitchFaderComponent;
     std::unique_ptr<GainKnobComponent>    gainKnobComponent;
     std::unique_ptr<KeyLockButton>        keyLockButton;
+    std::unique_ptr<QuantizeButtonComponent> quantizeButton;
     std::unique_ptr<HotCueManager>        hotCueManager;
     std::unique_ptr<HotCuePadComponent>   hotCuePadComponent;
 

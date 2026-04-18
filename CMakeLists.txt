@@ -132,6 +132,9 @@ target_sources(Sonik PRIVATE
     Source/Features/Cue/HotCueManager.cpp
     Source/Features/Cue/HotCuePadComponent.h
     Source/Features/Cue/HotCuePadComponent.cpp
+    Source/Features/Quantize/QuantizeService.h
+    Source/Features/Quantize/QuantizeButtonComponent.h
+    Source/Features/Quantize/QuantizeButtonComponent.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -175,6 +178,7 @@ add_executable(SonikTests
     Tests/PitchGainTests.cpp
     Tests/TimeStretchTests.cpp
     Tests/HotCueTests.cpp
+    Tests/QuantizeTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -195,6 +199,7 @@ add_executable(SonikTests
     Source/Features/TimeStretch/TimeStretcher.cpp
     Source/Features/Cue/HotCueManager.cpp
     Source/Features/Cue/HotCuePadComponent.cpp
+    Source/Features/Quantize/QuantizeButtonComponent.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

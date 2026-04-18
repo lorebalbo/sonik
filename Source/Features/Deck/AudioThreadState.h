@@ -28,6 +28,10 @@ struct DeckAudioState
     std::atomic<bool>     slipEnabled     { false };
     std::atomic<bool>     keyLockEnabled  { false };
 
+    // BeatGrid parameters (PRD-0008/0013) – audio thread reads, message thread writes
+    std::atomic<int64_t>  beatgridAnchor   { 0 };
+    std::atomic<double>   beatgridInterval { 0.0 };
+
     // Hot cue positions (PRD-0012) – audio thread reads, message thread writes
     std::atomic<int64_t>  hotCuePositions[8] = { {-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1} };
 };
@@ -79,6 +83,18 @@ private:
 
         // Sync hot cue positions (PRD-0012)
         auto cuePoints = tree.getChildWithName (IDs::CuePoints);
+
+        // Sync beatgrid parameters (PRD-0013)
+        auto beatGrid = tree.getChildWithName (IDs::BeatGrid);
+        if (beatGrid.isValid())
+        {
+            state.beatgridAnchor.store (
+                static_cast<int64_t> (beatGrid.getProperty (IDs::anchorSample, 0)),
+                std::memory_order_relaxed);
+            state.beatgridInterval.store (
+                static_cast<double> (beatGrid.getProperty (IDs::beatIntervalSamples, 0.0)),
+                std::memory_order_relaxed);
+        }
         if (cuePoints.isValid())
         {
             for (int i = 0; i < cuePoints.getNumChildren() && i < 8; ++i)
@@ -132,6 +148,16 @@ private:
                 int64_t pos = valid ? static_cast<int64_t> (changedTree.getProperty (IDs::position, -1)) : -1;
                 state.hotCuePositions[idx].store (pos, std::memory_order_relaxed);
             }
+        }
+        // BeatGrid parameters changed (PRD-0013)
+        else if (changedTree.hasType (IDs::BeatGrid))
+        {
+            if (property == IDs::anchorSample)
+                state.beatgridAnchor.store (static_cast<int64_t> (changedTree[property]),
+                                            std::memory_order_relaxed);
+            else if (property == IDs::beatIntervalSamples)
+                state.beatgridInterval.store (static_cast<double> (changedTree[property]),
+                                              std::memory_order_relaxed);
         }
     }
 
