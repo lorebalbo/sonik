@@ -1,1 +1,64 @@
-build/*
+# Build output
+build/
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+DerivedData/
+
+# Visual Studio / VS Code
+.vs/
+*.suo
+*.user
+*.vcxproj.user
+out/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+_deps/
+
+# C++ compiled artifacts
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+*.app
+
+# Compiled JUCE projects
+JuceLibraryCode/
+
+# Clang
+*.dSYM/
+
+# Editors
+*.swp
+*.swo
+*~
+.idea/
+*.iml
+
+# Python (waf build for Essentia)
+__pycache__/
+*.pyc
+*.pyo
+.waf*/
+waf-*
+
+# Logs
+*.log
