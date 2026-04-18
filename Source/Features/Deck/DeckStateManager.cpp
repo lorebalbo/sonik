@@ -299,6 +299,7 @@ juce::ValueTree DeckStateManager::createDeckTree (const juce::String& deckId) co
     deck.setProperty (IDs::slipEnabled,      false,    nullptr);
     deck.setProperty (IDs::keyLockEnabled,   false,    nullptr);
     deck.setProperty (IDs::pitchRange,       8,        nullptr);
+    deck.setProperty (IDs::beatJumpSize,     4.0,      nullptr);
 
     // Loading state (PRD-0003)
     deck.setProperty (IDs::loadingStatus,    "idle",   nullptr);

@@ -337,6 +337,61 @@ void LoopEngine::loopDouble()
 }
 
 // ---------------------------------------------------------------------------
+// Loop shift (PRD-0015 Beat Jump)
+// ---------------------------------------------------------------------------
+
+bool LoopEngine::shiftLoop (int64_t offset, bool snap, int64_t anchor, double beatInterval)
+{
+    bool active = static_cast<bool> (loopNode.getProperty (IDs::active, false));
+    if (! active)
+        return false;
+
+    int64_t lIn  = static_cast<int64_t> (loopNode.getProperty (IDs::loopIn, -1));
+    int64_t lOut = static_cast<int64_t> (loopNode.getProperty (IDs::loopOut, -1));
+
+    if (lIn < 0 || lOut <= lIn)
+        return false;
+
+    int64_t loopLen = lOut - lIn;
+    int64_t newIn   = lIn + offset;
+    int64_t newOut  = lOut + offset;
+
+    // Snap shifted boundaries to beat grid when quantize is active
+    if (snap && beatInterval > 0.0)
+    {
+        newIn  = QuantizeService::snapToNearestBeat (newIn, anchor, beatInterval);
+        newOut = newIn + loopLen;
+    }
+
+    auto totalSamples = static_cast<int64_t> (trackMetaNode.getProperty (IDs::totalSamples, 0));
+
+    // Clamp boundaries, preserving loop length
+    if (newIn < 0)
+    {
+        newIn  = 0;
+        newOut = loopLen;
+    }
+
+    if (totalSamples > 0 && newOut > totalSamples - 1)
+    {
+        newOut = totalSamples - 1;
+        newIn  = newOut - loopLen;
+    }
+
+    // If after clamping loop length cannot be preserved, reject
+    if (newIn < 0 || (totalSamples > 0 && newOut > totalSamples - 1))
+        return false;
+
+    if (newOut - newIn != loopLen)
+        return false;
+
+    loopNode.setProperty (IDs::loopIn,  newIn,  nullptr);
+    loopNode.setProperty (IDs::loopOut, newOut,  nullptr);
+    notifyListeners();
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // State access
 // ---------------------------------------------------------------------------
 

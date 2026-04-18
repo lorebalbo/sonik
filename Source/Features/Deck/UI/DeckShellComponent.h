@@ -17,6 +17,8 @@
 #include "../../Quantize/QuantizeButtonComponent.h"
 #include "../../Loop/LoopEngine.h"
 #include "../../Loop/LoopControlComponent.h"
+#include "../../BeatJump/BeatJumpEngine.h"
+#include "../../BeatJump/BeatJumpComponent.h"
 
 class DeckShellComponent final : public juce::Component,
                                   public juce::FileDragAndDropTarget,
@@ -89,6 +91,8 @@ private:
     std::unique_ptr<HotCuePadComponent>   hotCuePadComponent;
     std::unique_ptr<LoopEngine>           loopEngine;
     std::unique_ptr<LoopControlComponent> loopControlComponent;
+    std::unique_ptr<BeatJumpEngine>       beatJumpEngine;
+    std::unique_ptr<BeatJumpComponent>    beatJumpComponent;
 
     void hotCuesChanged() override;
     void updateWaveformHotCues();
@@ -102,6 +106,7 @@ private:
     static constexpr int controlStripWidth    = 80;
     static constexpr int hotCuePadHeight      = 50;
     static constexpr int loopControlHeight    = 36;
+    static constexpr int beatJumpHeight       = 30;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckShellComponent)
 };

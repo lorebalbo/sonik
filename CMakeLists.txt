@@ -139,6 +139,10 @@ target_sources(Sonik PRIVATE
     Source/Features/Loop/LoopEngine.cpp
     Source/Features/Loop/LoopControlComponent.h
     Source/Features/Loop/LoopControlComponent.cpp
+    Source/Features/BeatJump/BeatJumpEngine.h
+    Source/Features/BeatJump/BeatJumpEngine.cpp
+    Source/Features/BeatJump/BeatJumpComponent.h
+    Source/Features/BeatJump/BeatJumpComponent.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -184,6 +188,7 @@ add_executable(SonikTests
     Tests/HotCueTests.cpp
     Tests/QuantizeTests.cpp
     Tests/LoopTests.cpp
+    Tests/BeatJumpTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -207,6 +212,8 @@ add_executable(SonikTests
     Source/Features/Quantize/QuantizeButtonComponent.cpp
     Source/Features/Loop/LoopEngine.cpp
     Source/Features/Loop/LoopControlComponent.cpp
+    Source/Features/BeatJump/BeatJumpEngine.cpp
+    Source/Features/BeatJump/BeatJumpComponent.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

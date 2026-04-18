@@ -31,6 +31,12 @@ public:
     void loopHalve();
     void loopDouble();
 
+    /// Shift active loop boundaries by `offset` samples (positive = forward, negative = backward).
+    /// Called by BeatJumpEngine when a loop is active.
+    /// When quantize is enabled, pass snap=true with anchor/beatInterval to re-snap boundaries.
+    /// Returns true if the shift succeeded, false if rejected (e.g., insufficient room).
+    bool shiftLoop (int64_t offset, bool snap = false, int64_t anchor = 0, double beatInterval = 0.0);
+
     // --- State access ---
     struct LoopInfo
     {

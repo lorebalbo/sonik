@@ -303,10 +303,10 @@ private:
         DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, beatGridMgr, deckId);
         shell.setBounds (0, 0, 400, 300);
 
-        // Before loading: remove button + pitch fader + gain knob + key lock button + quantize button + hot cue pads + loop controls
+        // Before loading: remove button + pitch fader + gain knob + key lock button + quantize button + hot cue pads + loop controls + beat jump
         int initialChildren = shell.getNumChildComponents();
-        expectEquals (initialChildren, 7,
-                      "Before track load, DeckShellComponent should have remove button, pitch fader, gain knob, key lock button, quantize button, hot cue pads, and loop controls");
+        expectEquals (initialChildren, 8,
+                      "Before track load, DeckShellComponent should have remove button, pitch fader, gain knob, key lock button, quantize button, hot cue pads, loop controls, and beat jump");
 
         // Load a track
         auto meta = makeSampleMetadata ("Lifecycle Track");

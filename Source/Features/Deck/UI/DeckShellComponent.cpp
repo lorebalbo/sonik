@@ -73,6 +73,18 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     loopControlComponent->onLoopDouble = [this] ()            { loopEngine->loopDouble(); };
     addAndMakeVisible (*loopControlComponent);
 
+    // Create beat jump engine and component (PRD-0015)
+    beatJumpEngine = std::make_unique<BeatJumpEngine> (
+        deckTree, audioEngine, deckId);
+    beatJumpEngine->setAudioState (deckStateManager.getAudioState (deckId));
+    beatJumpEngine->setLoopEngine (loopEngine.get());
+
+    beatJumpComponent = std::make_unique<BeatJumpComponent> (deckTree);
+    beatJumpComponent->onJumpForward  = [this] () { beatJumpEngine->jumpForward(); };
+    beatJumpComponent->onJumpBackward = [this] () { beatJumpEngine->jumpBackward(); };
+    beatJumpComponent->onCycleSize    = [this] (bool fwd) { beatJumpEngine->cycleJumpSize (fwd); };
+    addAndMakeVisible (*beatJumpComponent);
+
     // Listen to deck tree and root state for property changes
     deckTree.addListener (this);
     rootState.addListener (this);
@@ -292,6 +304,18 @@ void DeckShellComponent::resized()
     else if (loopControlComponent != nullptr)
     {
         loopControlComponent->setVisible (false);
+    }
+
+    // Beat jump strip below loop controls (PRD-0015)
+    if (beatJumpComponent != nullptr && isTrackLoaded())
+    {
+        auto beatJumpArea = bounds.removeFromBottom (beatJumpHeight);
+        beatJumpComponent->setBounds (beatJumpArea);
+        beatJumpComponent->setVisible (true);
+    }
+    else if (beatJumpComponent != nullptr)
+    {
+        beatJumpComponent->setVisible (false);
     }
 
     // Waveform component in remaining content area
