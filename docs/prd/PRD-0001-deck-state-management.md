@@ -12,7 +12,7 @@ Every interaction a DJ has with Sonik — loading a track, pressing play, settin
 ## 1.2. Objective
 
 The system provides a centralized, observable state container for 1 to 4 independently controllable decks, ensuring that:
-- Every deck property (playback status, playhead position, loaded track metadata, pitch, gain, cue points, loops, beatgrid, key, stem state, quantize, slip) is readable by any component without polling or locking.
+- Every deck property (playback status, playhead position, loaded track metadata, pitch, gain, cue points, loops, beatgrid, key, quantize, slip) is readable by any component without polling or locking.
 - State mutations originate from a single codepath and propagate to all observers (UI, audio engine, future MIDI layer) via the JUCE Listener pattern within one message-loop cycle.
 - Track-specific data (cue points, beatgrid, key) persists across sessions in a SQLite database so that a DJ's preparation work is never lost.
 - Deck lifecycle operations (add, remove, load track, eject track) enforce safety invariants at the state level, preventing illegal transitions (e.g., removing a playing deck) before they reach the audio engine.
@@ -30,7 +30,7 @@ The system provides a centralized, observable state container for 1 to 4 indepen
 8. The user loads a track onto Deck C and begins playback. Decks A and C now play independently.
 9. The user clicks the "Remove Deck" button on Deck A while it is playing. The remove control is disabled (grayed out) with a tooltip: "Stop playback to remove this deck." No state change occurs.
 10. The user stops Deck A and clicks "Remove Deck" again. A confirmation dialog appears: "Remove Deck A? The loaded track will be unloaded." The user confirms. Deck A is removed, the layout adapts to a side-by-side view of Deck B and Deck C, and the active deck switches to Deck B.
-11. The user loads a new track onto Deck C (replacing the current one). Track-specific state (metadata, cue points, beatgrid, key, waveform, stem separation, loop state) resets and repopulates from the new track's data. Deck-level state (gain/trim, quantize mode, slip mode) persists unchanged.
+11. The user loads a new track onto Deck C (replacing the current one). Track-specific state (metadata, cue points, beatgrid, key, waveform, loop state) resets and repopulates from the new track's data. Deck-level state (gain/trim, quantize mode, slip mode) persists unchanged.
 12. The user clicks "Eject" on Deck B (which is stopped with a track loaded). The deck returns to the Empty state — all track-specific state clears to defaults.
 13. The user quits Sonik. The application persists the current session layout (deck count, which tracks are loaded on which decks, deck-level preferences) and all track-specific data (cue points, beatgrid, key) to the database.
 14. The user relaunches Sonik. The previous session's deck layout and loaded tracks are restored. All decks initialize in the Stopped state (playback never auto-resumes on launch).
@@ -42,7 +42,7 @@ The system provides a centralized, observable state container for 1 to 4 indepen
 - [ ] Each deck's state is fully independent; mutating one deck's state never affects another deck.
 - [ ] A deck that is in the Playing state cannot be removed; the remove control is visually disabled with a tooltip explanation.
 - [ ] A deck in Paused or Stopped state with a loaded track shows a confirmation dialog before removal.
-- [ ] Loading a track into a deck resets all track-specific state (metadata, cue points, beatgrid, key, loop, stem separation) and loads persisted data for the new track from the database.
+- [ ] Loading a track into a deck resets all track-specific state (metadata, cue points, beatgrid, key, loop) and loads persisted data for the new track from the database.
 - [ ] Loading a track into a deck preserves deck-level state (gain/trim, quantize mode, slip mode).
 - [ ] Pitch resets to 0% (original speed) on track load.
 - [ ] Ejecting a track returns the deck to the Empty state; eject is blocked while the deck is Playing.
@@ -58,5 +58,4 @@ The system provides a centralized, observable state container for 1 to 4 indepen
 - [ ] An `isMasterTempo` boolean exists per deck, with at most one deck set to true at any time. Removing the master deck clears the flag globally.
 - [ ] Eject is a first-class operation separate from deck removal, returning the deck to Empty without removing it from the layout.
 - [ ] On track load, cue points from the database that fall beyond the new track's duration are flagged as invalid and hidden but not deleted.
-- [ ] Stem separation state resets to "not separated" on track load; cached stems (keyed by content hash) are offered for fast restore but not auto-activated.
-- [ ] State fields are classified as track-specific (reset on load: metadata, playhead, cue points, beatgrid, key, loop, stems, waveform) or deck-level (persist across loads: gain/trim, quantize, slip).
+- [ ] State fields are classified as track-specific (reset on load: metadata, playhead, cue points, beatgrid, key, loop, waveform) or deck-level (persist across loads: gain/trim, quantize, slip).

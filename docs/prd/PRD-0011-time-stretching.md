@@ -65,7 +65,6 @@ The system provides per-deck real-time time stretching via the Rubber Band Libra
 - [ ] A per-deck key lock UI indicator is visible at a glance so the DJ always knows which decks have key lock active.
 - [ ] The `keyLockEnabled` state is written to `std::atomic<bool>` and read by `processBlock` with zero locks or allocations.
 - [ ] Pitch shift without speed change (master key / key adjust feature) is NOT implemented in this PRD. The stretcher only compensates for speed-induced pitch changes.
-- [ ] Interaction with stem separation (future PRD) is NOT handled in this PRD. Each stem would require its own stretcher instance — this architectural consideration is deferred.
 - [ ] Rubber Band Library is integrated via CMake as an external dependency (static linking preferred for distribution simplicity).
 - [ ] All time-stretching code resides under `Source/Features/TimeStretch/`.
 

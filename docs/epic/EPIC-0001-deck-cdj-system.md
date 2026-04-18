@@ -7,7 +7,7 @@ status: Open
 
 ## 1.1. Goal and Vision
 
-Build a professional-grade, multi-deck playback system comparable to Pioneer CDJ-3000 and Traktor Pro's deck architecture. The system provides 1 to 4 independently controllable decks with full audio playback, real-time DSP processing, beat-aware features, and AI-powered stem separation. This is the foundational Epic of the Sonik application: every future feature area (Mixer, Effects, Library) depends on a fully functional deck.
+Build a professional-grade, multi-deck playback system comparable to Pioneer CDJ-3000 and Traktor Pro's deck architecture. The system provides 1 to 4 independently controllable decks with full audio playback, real-time DSP processing, and beat-aware features. This is the foundational Epic of the Sonik application: every future feature area (Mixer, Effects, Library) depends on a fully functional deck.
 
 The end-user experience targets professional DJs who expect sub-5ms latency, sample-accurate cueing, and a fluid UI that adapts seamlessly as decks are added or removed during a live session.
 
@@ -32,7 +32,6 @@ User-facing features:
 - Needle drop / waveform click-to-seek
 - Slip mode (silent timeline continuation during loops/scratch/reverse)
 - Virtual jog wheel (scratch, pitch-bend nudge, track scrubbing)
-- Stem separation: vocal/instrumental isolation using BS-RoFormer (`model_bs_roformer_ep_317_sdr_12.9755.ckpt`) with per-stem mute/solo buttons
 
 Foundational systems (non-user-facing):
 - Deck state management via `juce::ValueTree`
@@ -42,7 +41,6 @@ Foundational systems (non-user-facing):
 - BPM detection and beatgrid analysis engine
 - Musical key detection (Camelot/Open Key notation)
 - Waveform peak/RMS analysis pipeline (background thread)
-- ML inference runtime (ONNX Runtime) for stem separation model
 
 ### 1.2.2. Out of Scope
 
@@ -80,14 +78,11 @@ Each PRD produces code organized under its feature slice:
 - `Source/Features/Cue/` - Cue points, hot cues
 - `Source/Features/Loop/` - Looping system
 - `Source/Features/TimeStretch/` - Rubberband integration, pitch control
-- `Source/Features/Stems/` - ML runtime, BS-RoFormer inference, stem separation
 
 ### 1.3.4. DSP & ML Dependencies
 
 - **Rubberband** for time stretching (pitch-lock mode)
-- **ONNX Runtime** for BS-RoFormer model inference
 - **JUCE AudioFormatManager** for codec support (MP3, FLAC, WAV, AIFF)
-- Pre-computed stem cache (separated audio written to disk after background processing)
 
 ## 1.4. PRD Roadmap
 
@@ -107,7 +102,5 @@ Each PRD produces code organized under its feature slice:
 - [x] PRD-0014: Looping System
 - [x] PRD-0015: Beat Jump
 - [x] PRD-0016: Needle Drop & Waveform Seeking
-- [ ] PRD-0017: Slip Mode
+- [x] PRD-0017: Slip Mode
 - [ ] PRD-0018: Jog Wheel
-- [ ] PRD-0019: ML Inference Runtime
-- [ ] PRD-0020: Stem Separation
