@@ -32,6 +32,11 @@ struct DeckAudioState
     std::atomic<int64_t>  beatgridAnchor   { 0 };
     std::atomic<double>   beatgridInterval { 0.0 };
 
+    // Loop state (PRD-0014) – audio thread reads, message thread writes
+    std::atomic<int64_t>  loopInSamples  { -1 };
+    std::atomic<int64_t>  loopOutSamples { -1 };
+    std::atomic<bool>     loopActive     { false };
+
     // Hot cue positions (PRD-0012) – audio thread reads, message thread writes
     std::atomic<int64_t>  hotCuePositions[8] = { {-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1} };
 };
@@ -83,6 +88,21 @@ private:
 
         // Sync hot cue positions (PRD-0012)
         auto cuePoints = tree.getChildWithName (IDs::CuePoints);
+
+        // Sync loop state (PRD-0014)
+        auto loop = tree.getChildWithName (IDs::Loop);
+        if (loop.isValid())
+        {
+            state.loopInSamples.store (
+                static_cast<int64_t> (loop.getProperty (IDs::loopIn, -1)),
+                std::memory_order_relaxed);
+            state.loopOutSamples.store (
+                static_cast<int64_t> (loop.getProperty (IDs::loopOut, -1)),
+                std::memory_order_relaxed);
+            state.loopActive.store (
+                static_cast<bool> (loop.getProperty (IDs::active, false)),
+                std::memory_order_relaxed);
+        }
 
         // Sync beatgrid parameters (PRD-0013)
         auto beatGrid = tree.getChildWithName (IDs::BeatGrid);
@@ -158,6 +178,19 @@ private:
             else if (property == IDs::beatIntervalSamples)
                 state.beatgridInterval.store (static_cast<double> (changedTree[property]),
                                               std::memory_order_relaxed);
+        }
+        // Loop state changed (PRD-0014)
+        else if (changedTree.hasType (IDs::Loop))
+        {
+            if (property == IDs::loopIn)
+                state.loopInSamples.store (static_cast<int64_t> (changedTree[property]),
+                                           std::memory_order_relaxed);
+            else if (property == IDs::loopOut)
+                state.loopOutSamples.store (static_cast<int64_t> (changedTree[property]),
+                                            std::memory_order_relaxed);
+            else if (property == IDs::active)
+                state.loopActive.store (static_cast<bool> (changedTree[property]),
+                                        std::memory_order_relaxed);
         }
     }
 

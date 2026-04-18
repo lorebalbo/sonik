@@ -1,6 +1,6 @@
 ---
 name: "PRD-0014: Looping System"
-status: Not Implemented
+status: Implemented
 epic: EPIC-0001
 depends-on:
   - PRD-0001

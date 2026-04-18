@@ -186,6 +186,29 @@ void OverviewWaveform::paint (juce::Graphics& g)
     {
         float w = static_cast<float> (getWidth());
 
+        // Loop overlay (PRD-0014)
+        if (audioState != nullptr)
+        {
+            int64_t lpIn  = audioState->loopInSamples.load (std::memory_order_relaxed);
+            int64_t lpOut = audioState->loopOutSamples.load (std::memory_order_relaxed);
+            bool lpActive = audioState->loopActive.load (std::memory_order_relaxed);
+
+            if (lpIn >= 0 && lpOut > lpIn)
+            {
+                float h = static_cast<float> (getHeight());
+                float xIn  = static_cast<float> (lpIn)  / static_cast<float> (totalSamples) * w;
+                float xOut = static_cast<float> (lpOut) / static_cast<float> (totalSamples) * w;
+
+                float alpha = lpActive ? 0.20f : 0.10f;
+                g.setColour (deckAccentColour.withAlpha (alpha));
+                g.fillRect (xIn, 0.0f, xOut - xIn, h);
+
+                g.setColour (deckAccentColour.withAlpha (lpActive ? 0.8f : 0.4f));
+                g.drawVerticalLine (static_cast<int> (xIn),  0.0f, h);
+                g.drawVerticalLine (static_cast<int> (xOut), 0.0f, h);
+            }
+        }
+
         for (const auto& cue : hotCues)
         {
             if (! cue.active || cue.positionSamples < 0)

@@ -19,6 +19,7 @@ public:
     void setTotalSamples (int64_t total);
     void setBeatGridData (BeatGridData::Ptr data);
     void setHotCues (const std::array<HotCueInfo, 8>& cues);
+    void setDeckAccentColour (juce::Colour colour) { deckAccentColour = colour; }
 
     // Returns the currently visible sample range (for overview viewport)
     void getVisibleRange (int64_t& startSample, int64_t& endSample) const;
@@ -40,6 +41,9 @@ private:
 
     // Hot cue markers (PRD-0012)
     std::array<HotCueInfo, 8> hotCues;
+
+    // Loop overlay colour (PRD-0014)
+    juce::Colour deckAccentColour { juce::Colours::white };
 
     // Zoom: visible duration in seconds
     int     zoomLevelIndex    = 2; // default: 16s

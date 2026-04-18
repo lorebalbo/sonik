@@ -107,6 +107,9 @@ void AudioEngine::registerDeck (const juce::String& deckId, DeckAudioState* audi
     src.isFadingOut            = false;
     src.deferredAction         = DeckAudioSource::DeferredAction::None;
     src.deferredSeekTarget     = 0;
+    src.loopFadeRemaining      = 0;
+    src.loopCrossfadeLength    = 64;
+    src.loopFadeReadPos        = 0.0;
 
     // Publish pointer — use release so the audio thread sees all writes above.
     deckSlots[static_cast<size_t> (slot)].store (&src, std::memory_order_release);
@@ -148,6 +151,9 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
         src.fadeRampSamplesRemaining = 0;
         src.isFadingIn = false;
         src.isFadingOut = false;
+        src.loopFadeRemaining   = 0;
+        src.loopCrossfadeLength = 64;
+        src.loopFadeReadPos     = 0.0;
 
         if (src.audioState != nullptr)
         {
@@ -481,6 +487,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         float sPeakL = 0.0f, sPeakR = 0.0f;
         float sumSqL = 0.0f, sumSqR = 0.0f;
 
+        // Loop state (PRD-0014) – read atomics once for cache friendliness
+        bool  loopAct = audioState->loopActive.load (std::memory_order_relaxed);
+        int64_t lpIn  = audioState->loopInSamples.load (std::memory_order_relaxed);
+        int64_t lpOut = audioState->loopOutSamples.load (std::memory_order_relaxed);
+        bool validLoop = loopAct && lpIn >= 0 && lpOut > lpIn;
+        int  loopRampLen = DeckAudioSource::FADE_RAMP_LENGTH;
+        if (validLoop)
+        {
+            int64_t loopLen = lpOut - lpIn;
+            if (loopLen < 256)
+                loopRampLen = std::max (static_cast<int> (loopLen / 2), 1);
+        }
+
         // Check key lock state
         bool keyLockOn = audioState->keyLockEnabled.load (std::memory_order_relaxed);
         auto* stretcher = source->timeStretcher.load (std::memory_order_acquire);
@@ -631,6 +650,31 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 rawR = vinylR;
             }
 
+            // Loop crossfade blend (PRD-0014)
+            // After a loop wrap-back, we blend the "old continuation" audio
+            // (from past loopOut) with the new audio (from loopIn) to
+            // eliminate the click at the loop boundary.
+            if (source->loopFadeRemaining > 0)
+            {
+                float progress = static_cast<float> (
+                    source->loopCrossfadeLength - source->loopFadeRemaining)
+                    / static_cast<float> (source->loopCrossfadeLength);
+
+                int64_t oldIdx = static_cast<int64_t> (source->loopFadeReadPos);
+                float oldL = 0.0f, oldR = 0.0f;
+                if (oldIdx >= 0 && oldIdx < bufLen)
+                {
+                    oldL = chL[oldIdx];
+                    oldR = chR[oldIdx];
+                }
+
+                rawL = rawL * progress + oldL * (1.0f - progress);
+                rawR = rawR * progress + oldR * (1.0f - progress);
+
+                source->loopFadeReadPos += static_cast<double> (speed);
+                --source->loopFadeRemaining;
+            }
+
             // Apply fade ramp
             float fadeGain = 1.0f;
             if (source->fadeRampSamplesRemaining > 0)
@@ -729,6 +773,27 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             if (shouldAdvance
                 && source->deferredAction != DeckAudioSource::DeferredAction::EndOfTrack)
                 source->playheadAccumulator += static_cast<double> (speed);
+
+            // Loop wrap-back (PRD-0014)
+            // When the playhead crosses loopOut, wrap back to loopIn and
+            // start a crossfade to eliminate the boundary click.
+            // Skip during fade-out to avoid conflicting with transport seeks.
+            if (validLoop && shouldAdvance && ! source->isFadingOut
+                && source->playheadAccumulator >= static_cast<double> (lpOut))
+            {
+                source->loopFadeReadPos    = source->playheadAccumulator;
+                source->loopCrossfadeLength = loopRampLen;
+
+                int64_t loopLen = lpOut - lpIn;
+                double offset = std::fmod (
+                    source->playheadAccumulator - static_cast<double> (lpIn),
+                    static_cast<double> (loopLen));
+                if (offset < 0.0)
+                    offset += static_cast<double> (loopLen);
+                source->playheadAccumulator = static_cast<double> (lpIn) + offset;
+
+                source->loopFadeRemaining = loopRampLen;
+            }
         }
 
         // 6. Update atomic playhead

@@ -57,6 +57,22 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     hotCuePadComponent->onLabelChange = [this] (int pad, const juce::String& label) { hotCueManager->setLabel (pad, label); };
     addAndMakeVisible (*hotCuePadComponent);
 
+    // Create loop engine and control component (PRD-0014)
+    loopEngine = std::make_unique<LoopEngine> (
+        deckTree, audioEngine, deckId, deckStateManager.getDatabase());
+    loopEngine->setAudioState (deckStateManager.getAudioState (deckId));
+    loopEngine->addListener (this);
+
+    loopControlComponent = std::make_unique<LoopControlComponent> (deckTree);
+    loopControlComponent->onAutoLoop  = [this] (float beats) { loopEngine->autoLoop (beats); };
+    loopControlComponent->onLoopIn    = [this] ()             { loopEngine->setLoopIn(); };
+    loopControlComponent->onLoopOut   = [this] ()             { loopEngine->setLoopOut(); };
+    loopControlComponent->onToggleLoop = [this] ()            { loopEngine->toggleLoop(); };
+    loopControlComponent->onReLoop    = [this] ()             { loopEngine->reLoop(); };
+    loopControlComponent->onLoopHalve = [this] ()             { loopEngine->loopHalve(); };
+    loopControlComponent->onLoopDouble = [this] ()            { loopEngine->loopDouble(); };
+    addAndMakeVisible (*loopControlComponent);
+
     // Listen to deck tree and root state for property changes
     deckTree.addListener (this);
     rootState.addListener (this);
@@ -64,6 +80,9 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
 
 DeckShellComponent::~DeckShellComponent()
 {
+    if (loopEngine != nullptr)
+        loopEngine->removeListener (this);
+
     if (hotCueManager != nullptr)
         hotCueManager->removeListener (this);
 
@@ -263,6 +282,18 @@ void DeckShellComponent::resized()
         hotCuePadComponent->setVisible (false);
     }
 
+    // Loop control strip below hot cue pads
+    if (loopControlComponent != nullptr && isTrackLoaded())
+    {
+        auto loopArea = bounds.removeFromBottom (loopControlHeight);
+        loopControlComponent->setBounds (loopArea);
+        loopControlComponent->setVisible (true);
+    }
+    else if (loopControlComponent != nullptr)
+    {
+        loopControlComponent->setVisible (false);
+    }
+
     // Waveform component in remaining content area
     if (waveformComponent != nullptr && isTrackLoaded())
         waveformComponent->setBounds (bounds);
@@ -415,6 +446,8 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
                         safeThis->waveformComponent->setWaveformData (data);
                         safeThis->waveformComponent->setAudioState (
                             safeThis->deckStateManager.getAudioState (safeThis->deckId));
+                        safeThis->waveformComponent->setDeckAccentColour (
+                            getDeckAccentColour (safeThis->deckId));
 
                         // If BeatGrid analysis already completed, forward data now
                         auto bgStatus = safeThis->deckTree.getChildWithName (IDs::BeatGrid)
@@ -428,6 +461,9 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
 
                                 if (safeThis->hotCueManager != nullptr)
                                     safeThis->hotCueManager->setBeatGridData (bgData);
+
+                                if (safeThis->loopEngine != nullptr)
+                                    safeThis->loopEngine->setBeatGridData (bgData);
                             }
                         }
 
@@ -464,6 +500,10 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
                         // Forward beatgrid to hot cue manager for quantize snap
                         if (safeThis->hotCueManager != nullptr)
                             safeThis->hotCueManager->setBeatGridData (data);
+
+                        // Forward beatgrid to loop engine for beat-accurate loops
+                        if (safeThis->loopEngine != nullptr)
+                            safeThis->loopEngine->setBeatGridData (data);
                     }
                 }
             });
@@ -482,4 +522,21 @@ void DeckShellComponent::updateWaveformHotCues()
 {
     if (waveformComponent != nullptr && hotCueManager != nullptr)
         waveformComponent->setHotCues (hotCueManager->getHotCues());
+}
+
+// --- LoopEngine::Listener ---
+
+void DeckShellComponent::loopStateChanged()
+{
+    updateLoopControlState();
+}
+
+void DeckShellComponent::updateLoopControlState()
+{
+    if (loopControlComponent != nullptr && loopEngine != nullptr)
+    {
+        auto info = loopEngine->getLoopInfo();
+        loopControlComponent->setActiveAutoLoopBeats (info.activeAutoBeats);
+        loopControlComponent->setPendingLoopIn (info.pendingIn);
+    }
 }

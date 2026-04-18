@@ -15,11 +15,14 @@
 #include "../../Cue/HotCueManager.h"
 #include "../../Cue/HotCuePadComponent.h"
 #include "../../Quantize/QuantizeButtonComponent.h"
+#include "../../Loop/LoopEngine.h"
+#include "../../Loop/LoopControlComponent.h"
 
 class DeckShellComponent final : public juce::Component,
                                   public juce::FileDragAndDropTarget,
                                   private juce::ValueTree::Listener,
-                                  private HotCueManager::Listener
+                                  private HotCueManager::Listener,
+                                  private LoopEngine::Listener
 {
 public:
     DeckShellComponent (DeckStateManager& deckState,
@@ -84,15 +87,21 @@ private:
     std::unique_ptr<QuantizeButtonComponent> quantizeButton;
     std::unique_ptr<HotCueManager>        hotCueManager;
     std::unique_ptr<HotCuePadComponent>   hotCuePadComponent;
+    std::unique_ptr<LoopEngine>           loopEngine;
+    std::unique_ptr<LoopControlComponent> loopControlComponent;
 
     void hotCuesChanged() override;
     void updateWaveformHotCues();
+
+    void loopStateChanged() override;
+    void updateLoopControlState();
 
     static constexpr int headerHeight        = 32;
     static constexpr int trackInfoHeight     = 90;
     static constexpr int activeIndicatorWidth = 3;
     static constexpr int controlStripWidth    = 80;
     static constexpr int hotCuePadHeight      = 50;
+    static constexpr int loopControlHeight    = 36;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckShellComponent)
 };

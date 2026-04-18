@@ -260,6 +260,52 @@ void DetailWaveform::paint (juce::Graphics& g)
             float w = static_cast<float> (getWidth());
             float h = static_cast<float> (getHeight());
 
+            // Loop overlay (PRD-0014)
+            {
+                int64_t lpIn  = audioState->loopInSamples.load (std::memory_order_relaxed);
+                int64_t lpOut = audioState->loopOutSamples.load (std::memory_order_relaxed);
+                bool lpActive = audioState->loopActive.load (std::memory_order_relaxed);
+
+                if (lpIn >= 0 && lpOut > lpIn)
+                {
+                    float xIn  = static_cast<float> (lpIn - viewStart)
+                               / static_cast<float> (viewSpan) * w;
+                    float xOut = static_cast<float> (lpOut - viewStart)
+                               / static_cast<float> (viewSpan) * w;
+
+                    float visXIn  = juce::jlimit (-2.0f, w + 2.0f, xIn);
+                    float visXOut = juce::jlimit (-2.0f, w + 2.0f, xOut);
+
+                    if (visXOut > visXIn)
+                    {
+                        float alpha = lpActive ? 0.25f : 0.10f;
+                        g.setColour (deckAccentColour.withAlpha (alpha));
+                        g.fillRect (visXIn, 0.0f, visXOut - visXIn, h);
+
+                        float markerAlpha = lpActive ? 1.0f : 0.5f;
+                        g.setColour (deckAccentColour.withAlpha (markerAlpha));
+
+                        // Loop-in marker: 2px line + right-pointing triangle
+                        if (xIn >= -2.0f && xIn <= w + 2.0f)
+                        {
+                            g.fillRect (xIn - 1.0f, 0.0f, 2.0f, h);
+                            juce::Path tri;
+                            tri.addTriangle (xIn, 0.0f, xIn, 8.0f, xIn + 8.0f, 4.0f);
+                            g.fillPath (tri);
+                        }
+
+                        // Loop-out marker: 2px line + left-pointing triangle
+                        if (xOut >= -2.0f && xOut <= w + 2.0f)
+                        {
+                            g.fillRect (xOut - 1.0f, 0.0f, 2.0f, h);
+                            juce::Path tri;
+                            tri.addTriangle (xOut, 0.0f, xOut, 8.0f, xOut - 8.0f, 4.0f);
+                            g.fillPath (tri);
+                        }
+                    }
+                }
+            }
+
             for (const auto& cue : hotCues)
             {
                 if (! cue.active || cue.positionSamples < 0)

@@ -83,6 +83,11 @@ struct DeckAudioSource
     bool keyLockFadingOut = false;  // transitioning FROM stretched
     bool wasKeyLockEnabled = false; // previous frame's key lock state
 
+    // Loop crossfade state (audio thread only, PRD-0014)
+    int    loopFadeRemaining    = 0;
+    int    loopCrossfadeLength  = 64;
+    double loopFadeReadPos      = 0.0;
+
     // Pre-allocated scratch buffers for stretcher I/O (audio thread only)
     static constexpr int MAX_STRETCH_BLOCK = 4096;
     float stretchInL[MAX_STRETCH_BLOCK]  = {};

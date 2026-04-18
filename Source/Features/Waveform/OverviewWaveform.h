@@ -17,6 +17,7 @@ public:
     void setAudioState (DeckAudioState* state);
     void setTotalSamples (int64_t total);
     void setHotCues (const std::array<HotCueInfo, 8>& cues);
+    void setDeckAccentColour (juce::Colour colour) { deckAccentColour = colour; }
 
     // Viewport rectangle showing detail waveform's visible region
     void setVisibleRange (int64_t startSample, int64_t endSample);
@@ -38,6 +39,9 @@ private:
 
     // Hot cue markers (PRD-0012)
     std::array<HotCueInfo, 8> hotCues;
+
+    // Loop overlay colour (PRD-0014)
+    juce::Colour deckAccentColour { juce::Colours::white };
 
     juce::Image cachedImage;
     int         cachedWidth  = 0;

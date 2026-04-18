@@ -370,9 +370,10 @@ juce::ValueTree DeckStateManager::createDeckTree (const juce::String& deckId) co
 
     // Loop
     juce::ValueTree loop (IDs::Loop);
-    loop.setProperty (IDs::loopIn,  (int64_t) -1, nullptr);
-    loop.setProperty (IDs::loopOut, (int64_t) -1, nullptr);
-    loop.setProperty (IDs::active,  false,         nullptr);
+    loop.setProperty (IDs::loopIn,   (int64_t) -1, nullptr);
+    loop.setProperty (IDs::loopOut,  (int64_t) -1, nullptr);
+    loop.setProperty (IDs::active,   false,         nullptr);
+    loop.setProperty (IDs::loopMode, 0,             nullptr);
     deck.addChild (loop, -1, nullptr);
 
     // Stems
@@ -459,9 +460,10 @@ void DeckStateManager::resetTrackSpecificState (juce::ValueTree& deckTree)
 
     // Reset Loop
     auto loop = deckTree.getChildWithName (IDs::Loop);
-    loop.setProperty (IDs::loopIn,  (int64_t) -1, nullptr);
-    loop.setProperty (IDs::loopOut, (int64_t) -1, nullptr);
-    loop.setProperty (IDs::active,  false, nullptr);
+    loop.setProperty (IDs::loopIn,   (int64_t) -1, nullptr);
+    loop.setProperty (IDs::loopOut,  (int64_t) -1, nullptr);
+    loop.setProperty (IDs::active,   false, nullptr);
+    loop.setProperty (IDs::loopMode, 0,     nullptr);
 
     // Reset Stems
     auto stems = deckTree.getChildWithName (IDs::Stems);

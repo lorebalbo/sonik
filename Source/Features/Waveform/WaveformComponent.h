@@ -56,6 +56,12 @@ public:
         detail.setHotCues (cues);
     }
 
+    void setDeckAccentColour (juce::Colour colour)
+    {
+        overview.setDeckAccentColour (colour);
+        detail.setDeckAccentColour (colour);
+    }
+
     std::function<void (int64_t samplePosition)> onSeek;
 
     void resized() override

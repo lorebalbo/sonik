@@ -52,6 +52,10 @@ public:
                             const juce::String& json);
     juce::String loadCuePointsJson (const juce::String& contentHash);
 
+    // Loop persistence (PRD-0014)
+    void saveLoopsJson (const juce::String& contentHash, const juce::String& json);
+    juce::String loadLoopsJson (const juce::String& contentHash);
+
 private:
     void createTables();
     void exec (const juce::String& sql);

@@ -47,6 +47,12 @@ void TrackDatabase::createTables()
           "  data         BLOB,"
           "  created_at   INTEGER"
           ");");
+
+    exec ("CREATE TABLE IF NOT EXISTS loops_data ("
+          "  content_hash TEXT PRIMARY KEY,"
+          "  loops_json   TEXT NOT NULL,"
+          "  updated_at   INTEGER"
+          ");");
 }
 
 void TrackDatabase::exec (const juce::String& sql)
@@ -271,6 +277,57 @@ juce::String TrackDatabase::loadCuePointsJson (const juce::String& contentHash)
 
     const char* sql =
         "SELECT cue_points_json FROM track_data WHERE content_hash = ? LIMIT 1;";
+
+    sqlite3_stmt* stmt = nullptr;
+    juce::String result;
+
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text (stmt, 1, contentHash.toRawUTF8(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step (stmt) == SQLITE_ROW)
+        {
+            auto col = sqlite3_column_text (stmt, 0);
+            if (col != nullptr)
+                result = juce::String::fromUTF8 (reinterpret_cast<const char*> (col));
+        }
+        sqlite3_finalize (stmt);
+    }
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
+// Loop persistence (PRD-0014)
+// ---------------------------------------------------------------------------
+
+void TrackDatabase::saveLoopsJson (const juce::String& contentHash,
+                                    const juce::String& json)
+{
+    if (dbHandle == nullptr)
+        return;
+
+    const char* sql =
+        "INSERT OR REPLACE INTO loops_data (content_hash, loops_json, updated_at) "
+        "VALUES (?, ?, ?);";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text  (stmt, 1, contentHash.toRawUTF8(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text  (stmt, 2, json.toRawUTF8(),        -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64 (stmt, 3, static_cast<sqlite3_int64> (
+            juce::Time::currentTimeMillis() / 1000));
+        sqlite3_step (stmt);
+        sqlite3_finalize (stmt);
+    }
+}
+
+juce::String TrackDatabase::loadLoopsJson (const juce::String& contentHash)
+{
+    if (dbHandle == nullptr)
+        return {};
+
+    const char* sql = "SELECT loops_json FROM loops_data WHERE content_hash = ?;";
 
     sqlite3_stmt* stmt = nullptr;
     juce::String result;
