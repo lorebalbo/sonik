@@ -105,7 +105,7 @@ Each PRD produces code organized under its feature slice:
 - [x] PRD-0012: Cue Points & Hot Cues
 - [x] PRD-0013: Quantize Mode
 - [x] PRD-0014: Looping System
-- [ ] PRD-0015: Beat Jump
+- [x] PRD-0015: Beat Jump
 - [ ] PRD-0016: Needle Drop & Waveform Seeking
 - [ ] PRD-0017: Slip Mode
 - [ ] PRD-0018: Jog Wheel

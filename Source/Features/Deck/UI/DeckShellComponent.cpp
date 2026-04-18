@@ -462,8 +462,22 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
 
                             safeThis->waveformComponent->onSeek = [safeThis] (int64_t pos)
                             {
-                                if (safeThis != nullptr)
-                                    safeThis->audioEngine.seekDeck (safeThis->deckId, pos);
+                                if (safeThis == nullptr)
+                                    return;
+
+                                // PRD-0016: deactivate loop if seeking outside the active loop region
+                                if (safeThis->loopEngine != nullptr)
+                                {
+                                    auto loopInfo = safeThis->loopEngine->getLoopInfo();
+                                    if (loopInfo.active && loopInfo.inSamples >= 0 && loopInfo.outSamples > loopInfo.inSamples)
+                                    {
+                                        bool insideLoop = (pos >= loopInfo.inSamples && pos < loopInfo.outSamples);
+                                        if (! insideLoop)
+                                            safeThis->loopEngine->toggleLoop(); // deactivate
+                                    }
+                                }
+
+                                safeThis->audioEngine.seekDeck (safeThis->deckId, pos);
                             };
                         }
 

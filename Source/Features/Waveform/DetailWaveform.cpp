@@ -4,6 +4,7 @@
 DetailWaveform::DetailWaveform()
 {
     setOpaque (true);
+    setRepaintsOnMouseActivity (true);
 }
 
 DetailWaveform::~DetailWaveform()
@@ -352,6 +353,83 @@ void DetailWaveform::paint (juce::Graphics& g)
             }
         }
     }
+
+    // Tooltip (PRD-0016)
+    paintTooltip (g);
+}
+
+void DetailWaveform::mouseDown (const juce::MouseEvent& e)
+{
+    if (e.mods.isRightButtonDown())
+        return;
+
+    if (waveformData == nullptr || totalSamples <= 0)
+        return;
+
+    // Detail waveform requires Shift to seek
+    if (! e.mods.isShiftDown())
+        return;
+
+    isDragging = true;
+    handleSeekAt (e);
+}
+
+void DetailWaveform::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! isDragging || waveformData == nullptr || totalSamples <= 0)
+        return;
+
+    // Stop scrubbing if Shift is released during drag
+    if (! e.mods.isShiftDown())
+    {
+        isDragging = false;
+        return;
+    }
+
+    handleSeekAt (e);
+}
+
+void DetailWaveform::mouseUp (const juce::MouseEvent&)
+{
+    isDragging = false;
+}
+
+void DetailWaveform::mouseMove (const juce::MouseEvent& e)
+{
+    updateCursor (e);
+
+    if (waveformData == nullptr || totalSamples <= 0 || ! e.mods.isShiftDown())
+    {
+        showTooltip = false;
+        return;
+    }
+
+    showTooltip   = true;
+    tooltipPixelX = static_cast<float> (e.x);
+    tooltipSample = pixelXToSamplePosition (tooltipPixelX);
+
+    // Apply quantize snap for tooltip when Shift+Alt/Option held
+    if (e.mods.isAltDown() && audioState != nullptr)
+    {
+        int64_t anchor   = audioState->beatgridAnchor.load (std::memory_order_relaxed);
+        double  interval = audioState->beatgridInterval.load (std::memory_order_relaxed);
+        bool    quantize = audioState->quantizeEnabled.load (std::memory_order_relaxed);
+
+        if (quantize && interval > 0.0)
+            tooltipSample = QuantizeService::snapToNearestBeat (tooltipSample, anchor, interval);
+    }
+}
+
+void DetailWaveform::mouseEnter (const juce::MouseEvent& e)
+{
+    updateCursor (e);
+}
+
+void DetailWaveform::mouseExit (const juce::MouseEvent&)
+{
+    showTooltip = false;
+    isDragging  = false;
+    setMouseCursor (juce::MouseCursor::NormalCursor);
 }
 
 void DetailWaveform::mouseWheelMove (const juce::MouseEvent&,
@@ -370,4 +448,100 @@ void DetailWaveform::mouseWheelMove (const juce::MouseEvent&,
     // Force image rebuild
     cachedZoomIndex = -1;
     repaint();
+}
+
+// ---------------------------------------------------------------------------
+// Coordinate mapping (PRD-0016)
+// ---------------------------------------------------------------------------
+
+int64_t DetailWaveform::pixelXToSamplePosition (float pixelX) const
+{
+    if (totalSamples <= 0 || getWidth() <= 0 || audioState == nullptr || sampleRate <= 0.0)
+        return 0;
+
+    int64_t centerSample     = audioState->playheadPosition.load (std::memory_order_relaxed);
+    int64_t halfVisibleSamps = static_cast<int64_t> (visibleSeconds * 0.5 * sampleRate);
+    int64_t viewStart        = centerSample - halfVisibleSamps;
+    int64_t viewSpan         = halfVisibleSamps * 2;
+
+    float fraction = pixelX / static_cast<float> (getWidth());
+    int64_t samplePos = viewStart + static_cast<int64_t> (fraction * static_cast<double> (viewSpan));
+
+    return juce::jlimit (int64_t (0), totalSamples - 1, samplePos);
+}
+
+// ---------------------------------------------------------------------------
+// Seek handling (PRD-0016)
+// ---------------------------------------------------------------------------
+
+void DetailWaveform::handleSeekAt (const juce::MouseEvent& e)
+{
+    float clampedX = juce::jlimit (0.0f, static_cast<float> (getWidth()), static_cast<float> (e.x));
+    int64_t samplePos = pixelXToSamplePosition (clampedX);
+
+    // Shift+Alt/Option: quantize snap to nearest beat
+    if (e.mods.isAltDown() && audioState != nullptr)
+    {
+        int64_t anchor   = audioState->beatgridAnchor.load (std::memory_order_relaxed);
+        double  interval = audioState->beatgridInterval.load (std::memory_order_relaxed);
+        bool    quantize = audioState->quantizeEnabled.load (std::memory_order_relaxed);
+
+        if (quantize && interval > 0.0)
+            samplePos = QuantizeService::snapToNearestBeat (samplePos, anchor, interval);
+    }
+
+    samplePos = juce::jlimit (int64_t (0), totalSamples - 1, samplePos);
+
+    if (onSeek)
+        onSeek (samplePos);
+}
+
+void DetailWaveform::updateCursor (const juce::MouseEvent& e)
+{
+    if (waveformData != nullptr && totalSamples > 0 && e.mods.isShiftDown())
+        setMouseCursor (juce::MouseCursor::CrosshairCursor);
+    else
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+}
+
+void DetailWaveform::paintTooltip (juce::Graphics& g)
+{
+    if (! showTooltip || totalSamples <= 0)
+        return;
+
+    auto timeStr = formatTime (tooltipSample);
+    auto font = juce::Font (juce::FontOptions (11.0f));
+    g.setFont (font);
+
+    int textWidth = font.getStringWidth (timeStr) + 8;
+    int textHeight = 16;
+
+    float tipX = tooltipPixelX - static_cast<float> (textWidth) * 0.5f;
+    float tipY = 0.0f; // top of component
+
+    // Clamp horizontally
+    tipX = juce::jlimit (0.0f,
+                         static_cast<float> (getWidth() - textWidth),
+                         tipX);
+
+    g.setColour (juce::Colour (0xEE000000));
+    g.fillRect (tipX, tipY, static_cast<float> (textWidth), static_cast<float> (textHeight));
+
+    g.setColour (juce::Colour (0xFFf9f9f9));
+    g.drawText (timeStr,
+                static_cast<int> (tipX), static_cast<int> (tipY),
+                textWidth, textHeight,
+                juce::Justification::centred);
+}
+
+juce::String DetailWaveform::formatTime (int64_t samplePos) const
+{
+    double sr = sampleRate > 0.0 ? sampleRate : 44100.0;
+    double totalSeconds = static_cast<double> (samplePos) / sr;
+    int minutes = static_cast<int> (totalSeconds) / 60;
+    double secs = totalSeconds - static_cast<double> (minutes * 60);
+    int wholeSecs = static_cast<int> (secs);
+    int centis = static_cast<int> ((secs - wholeSecs) * 100.0);
+
+    return juce::String::formatted ("%d:%02d.%02d", minutes, wholeSecs, centis);
 }

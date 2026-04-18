@@ -25,6 +25,13 @@ public:
                 onSeek (pos);
         };
 
+        // Forward seek from detail to parent (PRD-0016)
+        detail.onSeek = [this] (int64_t pos)
+        {
+            if (onSeek)
+                onSeek (pos);
+        };
+
         startTimerHz (30);
     }
 

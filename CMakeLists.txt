@@ -189,6 +189,7 @@ add_executable(SonikTests
     Tests/QuantizeTests.cpp
     Tests/LoopTests.cpp
     Tests/BeatJumpTests.cpp
+    Tests/NeedleDropTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp

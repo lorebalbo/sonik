@@ -4,6 +4,7 @@
 OverviewWaveform::OverviewWaveform()
 {
     setOpaque (true);
+    setRepaintsOnMouseActivity (true);
 }
 
 OverviewWaveform::~OverviewWaveform()
@@ -231,17 +232,153 @@ void OverviewWaveform::paint (juce::Graphics& g)
             g.fillPath (triangle);
         }
     }
+
+    // Tooltip (PRD-0016)
+    paintTooltip (g);
 }
 
 void OverviewWaveform::mouseDown (const juce::MouseEvent& e)
 {
+    if (e.mods.isRightButtonDown())
+        return;
+
     if (waveformData == nullptr || totalSamples <= 0)
         return;
 
-    float fraction = static_cast<float> (e.x) / static_cast<float> (getWidth());
-    fraction = juce::jlimit (0.0f, 1.0f, fraction);
-    int64_t samplePos = static_cast<int64_t> (fraction * static_cast<float> (totalSamples));
+    isDragging = true;
+    handleSeekAt (e);
+}
+
+void OverviewWaveform::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! isDragging || waveformData == nullptr || totalSamples <= 0)
+        return;
+
+    handleSeekAt (e);
+}
+
+void OverviewWaveform::mouseMove (const juce::MouseEvent& e)
+{
+    if (waveformData == nullptr || totalSamples <= 0)
+    {
+        showTooltip = false;
+        return;
+    }
+
+    showTooltip   = true;
+    tooltipPixelX = static_cast<float> (e.x);
+    tooltipSample = pixelXToSamplePosition (tooltipPixelX);
+
+    // Apply quantize snap for tooltip when Alt/Option held
+    if (e.mods.isAltDown() && audioState != nullptr)
+    {
+        int64_t anchor   = audioState->beatgridAnchor.load (std::memory_order_relaxed);
+        double  interval = audioState->beatgridInterval.load (std::memory_order_relaxed);
+        bool    quantize = audioState->quantizeEnabled.load (std::memory_order_relaxed);
+
+        if (quantize && interval > 0.0)
+            tooltipSample = QuantizeService::snapToNearestBeat (tooltipSample, anchor, interval);
+    }
+}
+
+void OverviewWaveform::mouseEnter (const juce::MouseEvent&)
+{
+    if (waveformData != nullptr && totalSamples > 0)
+        setMouseCursor (juce::MouseCursor::CrosshairCursor);
+}
+
+void OverviewWaveform::mouseExit (const juce::MouseEvent&)
+{
+    showTooltip = false;
+    isDragging  = false;
+    setMouseCursor (juce::MouseCursor::NormalCursor);
+}
+
+void OverviewWaveform::mouseWheelMove (const juce::MouseEvent&,
+                                        const juce::MouseWheelDetails&)
+{
+    // Ignore scroll wheel on overview — overview always shows full track
+}
+
+void OverviewWaveform::resized()
+{
+    cachedWidth = 0; // force rebuild
+}
+
+int64_t OverviewWaveform::pixelXToSamplePosition (float pixelX) const
+{
+    if (totalSamples <= 0 || getWidth() <= 0)
+        return 0;
+
+    float fraction = juce::jlimit (0.0f, 1.0f,
+                                   pixelX / static_cast<float> (getWidth()));
+    return juce::jlimit (int64_t (0), totalSamples - 1,
+                         static_cast<int64_t> (fraction * static_cast<float> (totalSamples)));
+}
+
+void OverviewWaveform::handleSeekAt (const juce::MouseEvent& e)
+{
+    int64_t samplePos = pixelXToSamplePosition (static_cast<float> (e.x));
+
+    // Alt/Option: quantize snap to nearest beat
+    if (e.mods.isAltDown() && audioState != nullptr)
+    {
+        int64_t anchor   = audioState->beatgridAnchor.load (std::memory_order_relaxed);
+        double  interval = audioState->beatgridInterval.load (std::memory_order_relaxed);
+        bool    quantize = audioState->quantizeEnabled.load (std::memory_order_relaxed);
+
+        if (quantize && interval > 0.0)
+            samplePos = QuantizeService::snapToNearestBeat (samplePos, anchor, interval);
+    }
+
+    samplePos = juce::jlimit (int64_t (0), totalSamples - 1, samplePos);
 
     if (onSeek)
         onSeek (samplePos);
+}
+
+void OverviewWaveform::paintTooltip (juce::Graphics& g)
+{
+    if (! showTooltip || totalSamples <= 0)
+        return;
+
+    auto timeStr = formatTime (tooltipSample);
+    auto font = juce::Font (juce::FontOptions (11.0f));
+    g.setFont (font);
+
+    int textWidth = font.getStringWidth (timeStr) + 8;
+    int textHeight = 16;
+
+    float tipX = tooltipPixelX - static_cast<float> (textWidth) * 0.5f;
+    float tipY = -16.0f; // 16px above the cursor (above component top is fine)
+    tipY = juce::jmax (0.0f, tipY); // clamp to component bounds
+
+    // Clamp horizontally
+    tipX = juce::jlimit (0.0f,
+                         static_cast<float> (getWidth() - textWidth),
+                         tipX);
+
+    g.setColour (juce::Colour (0xEE000000));
+    g.fillRect (tipX, tipY, static_cast<float> (textWidth), static_cast<float> (textHeight));
+
+    g.setColour (juce::Colour (0xFFf9f9f9));
+    g.drawText (timeStr,
+                static_cast<int> (tipX), static_cast<int> (tipY),
+                textWidth, textHeight,
+                juce::Justification::centred);
+}
+
+juce::String OverviewWaveform::formatTime (int64_t samplePos) const
+{
+    double sr = 44100.0;
+    if (waveformData != nullptr && waveformData->sampleRate > 0.0)
+        sr = waveformData->sampleRate;
+
+    double totalSeconds = static_cast<double> (samplePos) / sr;
+    int minutes = static_cast<int> (totalSeconds) / 60;
+    double secs = totalSeconds - static_cast<double> (minutes * 60);
+    int wholeSecs = static_cast<int> (secs);
+    int centis = static_cast<int> ((secs - wholeSecs) * 100.0);
+
+    return juce::String::formatted ("%d:%02d.%02d", minutes, wholeSecs, centis);
 }
