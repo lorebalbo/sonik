@@ -239,3 +239,53 @@ bool TrackDatabase::loadWaveformData (const juce::String& contentHash,
     sqlite3_finalize (stmt);
     return found;
 }
+
+void TrackDatabase::saveCuePointsJson (const juce::String& filePath,
+                                       const juce::String& contentHash,
+                                       const juce::String& json)
+{
+    if (dbHandle == nullptr)
+        return;
+
+    const char* sql =
+        "INSERT INTO track_data (file_path, content_hash, cue_points_json) "
+        "VALUES (?, ?, ?) "
+        "ON CONFLICT(file_path, content_hash) "
+        "DO UPDATE SET cue_points_json = excluded.cue_points_json;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text (stmt, 1, filePath.toRawUTF8(),    -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text (stmt, 2, contentHash.toRawUTF8(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text (stmt, 3, json.toRawUTF8(),        -1, SQLITE_TRANSIENT);
+        sqlite3_step (stmt);
+        sqlite3_finalize (stmt);
+    }
+}
+
+juce::String TrackDatabase::loadCuePointsJson (const juce::String& contentHash)
+{
+    if (dbHandle == nullptr)
+        return {};
+
+    const char* sql =
+        "SELECT cue_points_json FROM track_data WHERE content_hash = ? LIMIT 1;";
+
+    sqlite3_stmt* stmt = nullptr;
+    juce::String result;
+
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text (stmt, 1, contentHash.toRawUTF8(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step (stmt) == SQLITE_ROW)
+        {
+            auto col = sqlite3_column_text (stmt, 0);
+            if (col != nullptr)
+                result = juce::String::fromUTF8 (reinterpret_cast<const char*> (col));
+        }
+        sqlite3_finalize (stmt);
+    }
+
+    return result;
+}

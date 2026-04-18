@@ -101,8 +101,8 @@ Each PRD produces code organized under its feature slice:
 - [x] PRD-0008: BPM & Beatgrid Analysis
 - [x] PRD-0009: Key Detection
 - [x] PRD-0010: Pitch Fader & Gain Control
-- [ ] PRD-0011: Time Stretching
-- [ ] PRD-0012: Cue Points & Hot Cues
+- [x] PRD-0011: Time Stretching
+- [x] PRD-0012: Cue Points & Hot Cues
 - [ ] PRD-0013: Quantize Mode
 - [ ] PRD-0014: Looping System
 - [ ] PRD-0015: Beat Jump

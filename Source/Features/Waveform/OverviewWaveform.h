@@ -3,6 +3,8 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "WaveformData.h"
 #include "../Deck/AudioThreadState.h"
+#include "../Cue/HotCueData.h"
+#include <array>
 
 class OverviewWaveform final : public juce::Component,
                                 private juce::Timer
@@ -14,6 +16,7 @@ public:
     void setWaveformData (WaveformData::Ptr data);
     void setAudioState (DeckAudioState* state);
     void setTotalSamples (int64_t total);
+    void setHotCues (const std::array<HotCueInfo, 8>& cues);
 
     // Viewport rectangle showing detail waveform's visible region
     void setVisibleRange (int64_t startSample, int64_t endSample);
@@ -32,6 +35,9 @@ private:
     int64_t           totalSamples  = 0;
     int64_t           visibleStart  = 0;
     int64_t           visibleEnd    = 0;
+
+    // Hot cue markers (PRD-0012)
+    std::array<HotCueInfo, 8> hotCues;
 
     juce::Image cachedImage;
     int         cachedWidth  = 0;

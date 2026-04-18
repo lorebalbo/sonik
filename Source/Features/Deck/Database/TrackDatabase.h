@@ -47,6 +47,11 @@ public:
     void storeWaveformData (const juce::String& contentHash, const juce::MemoryBlock& data);
     bool loadWaveformData (const juce::String& contentHash, juce::MemoryBlock& data);
 
+    // Hot cue persistence (PRD-0012)
+    void saveCuePointsJson (const juce::String& filePath, const juce::String& contentHash,
+                            const juce::String& json);
+    juce::String loadCuePointsJson (const juce::String& contentHash);
+
 private:
     void createTables();
     void exec (const juce::String& sql);

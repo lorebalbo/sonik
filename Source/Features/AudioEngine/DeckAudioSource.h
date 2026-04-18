@@ -19,7 +19,8 @@ enum class TransportCommand : int
     CueReturn,
     CuePreview,
     CueRelease,
-    CuePlayThrough
+    CuePlayThrough,
+    SeekAndPlay
 };
 
 /// Lightweight struct representing a deck's audio contribution.

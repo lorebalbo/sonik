@@ -38,6 +38,21 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     keyLockButton = std::make_unique<KeyLockButton> (deckTree);
     addAndMakeVisible (*keyLockButton);
 
+    // Create hot cue manager and pad component (PRD-0012)
+    hotCueManager = std::make_unique<HotCueManager> (
+        deckTree, audioEngine, deckId, deckStateManager.getDatabase());
+    hotCueManager->setAudioState (deckStateManager.getAudioState (deckId));
+    hotCueManager->addListener (this);
+
+    hotCuePadComponent = std::make_unique<HotCuePadComponent> (deckTree);
+    hotCuePadComponent->onSetCue     = [this] (int pad) { hotCueManager->setCue (pad); };
+    hotCuePadComponent->onTriggerCue = [this] (int pad) { hotCueManager->triggerCue (pad); };
+    hotCuePadComponent->onDeleteCue  = [this] (int pad) { hotCueManager->deleteCue (pad); };
+    hotCuePadComponent->onUndoDelete = [this] ()        { hotCueManager->undoDelete(); };
+    hotCuePadComponent->onColorChange = [this] (int pad, int color) { hotCueManager->setColor (pad, color); };
+    hotCuePadComponent->onLabelChange = [this] (int pad, const juce::String& label) { hotCueManager->setLabel (pad, label); };
+    addAndMakeVisible (*hotCuePadComponent);
+
     // Listen to deck tree and root state for property changes
     deckTree.addListener (this);
     rootState.addListener (this);
@@ -45,6 +60,9 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
 
 DeckShellComponent::~DeckShellComponent()
 {
+    if (hotCueManager != nullptr)
+        hotCueManager->removeListener (this);
+
     rootState.removeListener (this);
     if (deckTree.isValid())
         deckTree.removeListener (this);
@@ -225,6 +243,18 @@ void DeckShellComponent::resized()
     if (trackInfoComponent != nullptr && isTrackLoaded())
         trackInfoComponent->setBounds (bounds.removeFromTop (trackInfoHeight));
 
+    // Hot cue pad strip below waveform
+    if (hotCuePadComponent != nullptr && isTrackLoaded())
+    {
+        auto padArea = bounds.removeFromBottom (hotCuePadHeight);
+        hotCuePadComponent->setBounds (padArea);
+        hotCuePadComponent->setVisible (true);
+    }
+    else if (hotCuePadComponent != nullptr)
+    {
+        hotCuePadComponent->setVisible (false);
+    }
+
     // Waveform component in remaining content area
     if (waveformComponent != nullptr && isTrackLoaded())
         waveformComponent->setBounds (bounds);
@@ -385,8 +415,16 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
                         {
                             auto bgData = safeThis->beatGridManager.getBeatGridData (safeThis->deckId);
                             if (bgData != nullptr)
+                            {
                                 safeThis->waveformComponent->setBeatGridData (bgData);
+
+                                if (safeThis->hotCueManager != nullptr)
+                                    safeThis->hotCueManager->setBeatGridData (bgData);
+                            }
                         }
+
+                        // Forward existing hot cues to waveform
+                        safeThis->updateWaveformHotCues();
 
                         safeThis->resized();
                         safeThis->repaint();
@@ -412,9 +450,28 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
                 {
                     auto data = safeThis->beatGridManager.getBeatGridData (safeThis->deckId);
                     if (data != nullptr)
+                    {
                         safeThis->waveformComponent->setBeatGridData (data);
+
+                        // Forward beatgrid to hot cue manager for quantize snap
+                        if (safeThis->hotCueManager != nullptr)
+                            safeThis->hotCueManager->setBeatGridData (data);
+                    }
                 }
             });
         }
     }
+}
+
+// --- HotCueManager::Listener ---
+
+void DeckShellComponent::hotCuesChanged()
+{
+    updateWaveformHotCues();
+}
+
+void DeckShellComponent::updateWaveformHotCues()
+{
+    if (waveformComponent != nullptr && hotCueManager != nullptr)
+        waveformComponent->setHotCues (hotCueManager->getHotCues());
 }

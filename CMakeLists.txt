@@ -127,6 +127,11 @@ target_sources(Sonik PRIVATE
     Source/Features/KeyDetection/KeyDetectionManager.cpp
     Source/Features/TimeStretch/TimeStretcher.h
     Source/Features/TimeStretch/TimeStretcher.cpp
+    Source/Features/Cue/HotCueData.h
+    Source/Features/Cue/HotCueManager.h
+    Source/Features/Cue/HotCueManager.cpp
+    Source/Features/Cue/HotCuePadComponent.h
+    Source/Features/Cue/HotCuePadComponent.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -169,6 +174,7 @@ add_executable(SonikTests
     Tests/KeyDetectionTests.cpp
     Tests/PitchGainTests.cpp
     Tests/TimeStretchTests.cpp
+    Tests/HotCueTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -187,6 +193,8 @@ add_executable(SonikTests
     Source/Features/KeyDetection/KeyDetectionAnalyzer.cpp
     Source/Features/KeyDetection/KeyDetectionManager.cpp
     Source/Features/TimeStretch/TimeStretcher.cpp
+    Source/Features/Cue/HotCueManager.cpp
+    Source/Features/Cue/HotCuePadComponent.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

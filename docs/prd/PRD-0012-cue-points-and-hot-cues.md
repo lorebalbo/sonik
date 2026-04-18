@@ -1,6 +1,6 @@
 ---
 name: "PRD-0012: Cue Points and Hot Cues"
-status: Not Implemented
+status: Implemented
 epic: EPIC-0001
 depends-on:
   - PRD-0001

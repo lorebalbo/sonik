@@ -46,6 +46,12 @@ void OverviewWaveform::setVisibleRange (int64_t startSample, int64_t endSample)
     visibleEnd   = endSample;
 }
 
+void OverviewWaveform::setHotCues (const std::array<HotCueInfo, 8>& cues)
+{
+    hotCues = cues;
+    repaint();
+}
+
 void OverviewWaveform::timerCallback()
 {
     repaint();
@@ -173,6 +179,34 @@ void OverviewWaveform::paint (juce::Graphics& g)
 
         g.setColour (juce::Colours::white);
         g.drawVerticalLine (static_cast<int> (xPos), 0.0f, static_cast<float> (getHeight()));
+    }
+
+    // Hot cue markers (PRD-0012)
+    if (totalSamples > 0)
+    {
+        float w = static_cast<float> (getWidth());
+
+        for (const auto& cue : hotCues)
+        {
+            if (! cue.active || cue.positionSamples < 0)
+                continue;
+
+            float pixelX = static_cast<float> (cue.positionSamples)
+                         / static_cast<float> (totalSamples) * w;
+
+            if (pixelX < -4.0f || pixelX > w + 4.0f)
+                continue;
+
+            auto cueColour = HotCueColors::getColour (cue.colorIndex);
+
+            // Triangle only (no vertical line) on overview
+            juce::Path triangle;
+            triangle.addTriangle (pixelX - 4.0f, 0.0f,
+                                  pixelX + 4.0f, 0.0f,
+                                  pixelX,        8.0f);
+            g.setColour (cueColour);
+            g.fillPath (triangle);
+        }
     }
 }
 

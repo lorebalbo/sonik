@@ -6,6 +6,8 @@
 #include "DetailWaveform.h"
 #include "../Deck/AudioThreadState.h"
 #include "../BeatGrid/BeatGridData.h"
+#include "../Cue/HotCueData.h"
+#include <array>
 
 class WaveformComponent final : public juce::Component,
                                  private juce::Timer
@@ -46,6 +48,12 @@ public:
     void setBeatGridData (BeatGridData::Ptr data)
     {
         detail.setBeatGridData (std::move (data));
+    }
+
+    void setHotCues (const std::array<HotCueInfo, 8>& cues)
+    {
+        overview.setHotCues (cues);
+        detail.setHotCues (cues);
     }
 
     std::function<void (int64_t samplePosition)> onSeek;

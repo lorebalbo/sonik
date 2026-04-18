@@ -49,6 +49,12 @@ void DetailWaveform::setBeatGridData (BeatGridData::Ptr data)
     repaint();
 }
 
+void DetailWaveform::setHotCues (const std::array<HotCueInfo, 8>& cues)
+{
+    hotCues = cues;
+    repaint();
+}
+
 void DetailWaveform::getVisibleRange (int64_t& startSample, int64_t& endSample) const
 {
     if (audioState == nullptr || totalSamples <= 0 || sampleRate <= 0.0)
@@ -239,6 +245,67 @@ void DetailWaveform::paint (juce::Graphics& g)
     int centerX = getWidth() / 2;
     g.setColour (juce::Colours::white);
     g.drawVerticalLine (centerX, 0.0f, static_cast<float> (getHeight()));
+
+    // Hot cue markers (PRD-0012)
+    if (audioState != nullptr && totalSamples > 0)
+    {
+        int64_t pos = audioState->playheadPosition.load (std::memory_order_relaxed);
+        int64_t halfVisible = static_cast<int64_t> (visibleSeconds * 0.5 * sampleRate);
+        int64_t viewStart = pos - halfVisible;
+        int64_t viewEnd   = pos + halfVisible;
+        int64_t viewSpan  = viewEnd - viewStart;
+
+        if (viewSpan > 0)
+        {
+            float w = static_cast<float> (getWidth());
+            float h = static_cast<float> (getHeight());
+
+            for (const auto& cue : hotCues)
+            {
+                if (! cue.active || cue.positionSamples < 0)
+                    continue;
+
+                float pixelX = static_cast<float> (cue.positionSamples - viewStart)
+                             / static_cast<float> (viewSpan) * w;
+
+                // Skip if off-screen
+                if (pixelX < -8.0f || pixelX > w + 8.0f)
+                    continue;
+
+                auto cueColour = HotCueColors::getColour (cue.colorIndex);
+
+                // Vertical line at 50% opacity
+                g.setColour (cueColour.withAlpha (0.5f));
+                g.drawVerticalLine (static_cast<int> (pixelX), 8.0f, h);
+
+                // Filled triangle (8px wide, 8px tall) at top edge
+                juce::Path triangle;
+                triangle.addTriangle (pixelX - 4.0f, 0.0f,
+                                      pixelX + 4.0f, 0.0f,
+                                      pixelX,        8.0f);
+                g.setColour (cueColour);
+                g.fillPath (triangle);
+
+                // Show label when playhead is within 2 seconds of marker
+                if (cue.label.isNotEmpty())
+                {
+                    double distSeconds = std::abs (static_cast<double> (pos - cue.positionSamples)) / sampleRate;
+                    if (distSeconds < 2.0)
+                    {
+                        g.setColour (cueColour);
+                        g.setFont (juce::FontOptions (10.0f).withStyle ("Bold"));
+                        auto textWidth = g.getCurrentFont().getStringWidth (cue.label);
+                        float textX = pixelX - static_cast<float> (textWidth) * 0.5f;
+                        textX = juce::jlimit (0.0f, w - static_cast<float> (textWidth), textX);
+                        g.drawText (cue.label,
+                                    static_cast<int> (textX), 9,
+                                    textWidth + 4, 12,
+                                    juce::Justification::centred);
+                    }
+                }
+            }
+        }
+    }
 }
 
 void DetailWaveform::mouseWheelMove (const juce::MouseEvent&,

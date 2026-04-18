@@ -58,6 +58,9 @@ public:
     // Audio thread state access (safe to read from audio thread)
     DeckAudioState* getAudioState (const juce::String& deckId);
 
+    // Database access (for hot cue persistence, PRD-0012)
+    TrackDatabase& getDatabase() { return db; }
+
     // Session persistence
     void saveSession();
     void restoreSession();

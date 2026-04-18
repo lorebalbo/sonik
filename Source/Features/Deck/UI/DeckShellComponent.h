@@ -12,10 +12,13 @@
 #include "PitchFaderComponent.h"
 #include "GainKnobComponent.h"
 #include "KeyLockButton.h"
+#include "../../Cue/HotCueManager.h"
+#include "../../Cue/HotCuePadComponent.h"
 
 class DeckShellComponent final : public juce::Component,
                                   public juce::FileDragAndDropTarget,
-                                  private juce::ValueTree::Listener
+                                  private juce::ValueTree::Listener,
+                                  private HotCueManager::Listener
 {
 public:
     DeckShellComponent (DeckStateManager& deckState,
@@ -77,11 +80,17 @@ private:
     std::unique_ptr<PitchFaderComponent>  pitchFaderComponent;
     std::unique_ptr<GainKnobComponent>    gainKnobComponent;
     std::unique_ptr<KeyLockButton>        keyLockButton;
+    std::unique_ptr<HotCueManager>        hotCueManager;
+    std::unique_ptr<HotCuePadComponent>   hotCuePadComponent;
+
+    void hotCuesChanged() override;
+    void updateWaveformHotCues();
 
     static constexpr int headerHeight        = 32;
     static constexpr int trackInfoHeight     = 90;
     static constexpr int activeIndicatorWidth = 3;
     static constexpr int controlStripWidth    = 80;
+    static constexpr int hotCuePadHeight      = 50;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckShellComponent)
 };

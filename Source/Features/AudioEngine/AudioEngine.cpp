@@ -410,6 +410,35 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 source->isCuePreviewing = false;
                 break;
 
+            case TransportCommand::SeekAndPlay:
+            {
+                auto seekPos = source->seekTarget.load (std::memory_order_relaxed);
+                seekPos = juce::jlimit<int64_t> (0, bufLen - 1, seekPos);
+
+                if (status == PlaybackStatusCode::playing)
+                {
+                    // Already playing → fade-out then seek (same as regular Seek)
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction     = DeckAudioSource::DeferredAction::Seek;
+                    source->deferredSeekTarget = seekPos;
+                }
+                else
+                {
+                    // Stopped/paused → seek instantly then start playing with fade-in
+                    source->playheadAccumulator = static_cast<double> (seekPos);
+                    audioState->playbackStatus.store (
+                        static_cast<int> (PlaybackStatusCode::playing),
+                        std::memory_order_relaxed);
+                    status = PlaybackStatusCode::playing;
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingIn  = true;
+                    source->isFadingOut = false;
+                }
+                break;
+            }
+
             case TransportCommand::None:
             default:
                 break;
@@ -896,5 +925,20 @@ void AudioEngine::seekDeck (const juce::String& deckId, int64_t targetSample)
         source->seekTarget.store (targetSample, std::memory_order_relaxed);
         source->pendingCommand.store (
             static_cast<int> (TransportCommand::Seek), std::memory_order_relaxed);
+    }
+}
+
+void AudioEngine::seekAndPlayDeck (const juce::String& deckId, int64_t targetSample)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto* source = deckSlots[static_cast<size_t> (slot)].load (std::memory_order_acquire);
+    if (source != nullptr)
+    {
+        source->seekTarget.store (targetSample, std::memory_order_relaxed);
+        source->pendingCommand.store (
+            static_cast<int> (TransportCommand::SeekAndPlay), std::memory_order_relaxed);
     }
 }

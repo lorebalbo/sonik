@@ -27,6 +27,9 @@ struct DeckAudioState
     std::atomic<bool>     quantizeEnabled { false };
     std::atomic<bool>     slipEnabled     { false };
     std::atomic<bool>     keyLockEnabled  { false };
+
+    // Hot cue positions (PRD-0012) – audio thread reads, message thread writes
+    std::atomic<int64_t>  hotCuePositions[8] = { {-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1} };
 };
 
 // Syncs ValueTree property changes to DeckAudioState atomics on the message thread.
@@ -73,6 +76,23 @@ private:
         if (tempCue.isValid())
             state.tempCuePosition.store (static_cast<int64_t> (tempCue.getProperty (IDs::position, -1)),
                                         std::memory_order_relaxed);
+
+        // Sync hot cue positions (PRD-0012)
+        auto cuePoints = tree.getChildWithName (IDs::CuePoints);
+        if (cuePoints.isValid())
+        {
+            for (int i = 0; i < cuePoints.getNumChildren() && i < 8; ++i)
+            {
+                auto cp = cuePoints.getChild (i);
+                int idx = static_cast<int> (cp.getProperty (IDs::index, i));
+                if (idx >= 0 && idx < 8)
+                {
+                    bool valid = static_cast<bool> (cp.getProperty (IDs::isValid, false));
+                    int64_t pos = valid ? static_cast<int64_t> (cp.getProperty (IDs::position, -1)) : -1;
+                    state.hotCuePositions[idx].store (pos, std::memory_order_relaxed);
+                }
+            }
+        }
     }
 
     void valueTreePropertyChanged (juce::ValueTree& changedTree,
@@ -100,6 +120,18 @@ private:
         else if (changedTree.hasType (IDs::TempCue) && property == IDs::position)
         {
             state.tempCuePosition.store (static_cast<int64_t> (changedTree[property]), std::memory_order_relaxed);
+        }
+        // Hot cue position/validity changed (PRD-0012)
+        else if (changedTree.hasType (IDs::CuePoint)
+                 && (property == IDs::position || property == IDs::isValid))
+        {
+            int idx = static_cast<int> (changedTree.getProperty (IDs::index, -1));
+            if (idx >= 0 && idx < 8)
+            {
+                bool valid = static_cast<bool> (changedTree.getProperty (IDs::isValid, false));
+                int64_t pos = valid ? static_cast<int64_t> (changedTree.getProperty (IDs::position, -1)) : -1;
+                state.hotCuePositions[idx].store (pos, std::memory_order_relaxed);
+            }
         }
     }
 

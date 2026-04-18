@@ -4,6 +4,8 @@
 #include "WaveformData.h"
 #include "../Deck/AudioThreadState.h"
 #include "../BeatGrid/BeatGridData.h"
+#include "../Cue/HotCueData.h"
+#include <array>
 
 class DetailWaveform final : public juce::Component,
                               private juce::Timer
@@ -16,6 +18,7 @@ public:
     void setAudioState (DeckAudioState* state);
     void setTotalSamples (int64_t total);
     void setBeatGridData (BeatGridData::Ptr data);
+    void setHotCues (const std::array<HotCueInfo, 8>& cues);
 
     // Returns the currently visible sample range (for overview viewport)
     void getVisibleRange (int64_t& startSample, int64_t& endSample) const;
@@ -34,6 +37,9 @@ private:
     BeatGridData::Ptr beatGridData;
     DeckAudioState*   audioState   = nullptr;
     int64_t           totalSamples = 0;
+
+    // Hot cue markers (PRD-0012)
+    std::array<HotCueInfo, 8> hotCues;
 
     // Zoom: visible duration in seconds
     int     zoomLevelIndex    = 2; // default: 16s
