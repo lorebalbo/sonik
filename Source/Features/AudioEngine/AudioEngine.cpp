@@ -107,9 +107,15 @@ void AudioEngine::registerDeck (const juce::String& deckId, DeckAudioState* audi
     src.isFadingOut            = false;
     src.deferredAction         = DeckAudioSource::DeferredAction::None;
     src.deferredSeekTarget     = 0;
+    src.deferredIsSlipDisplacement = false;
     src.loopFadeRemaining      = 0;
     src.loopCrossfadeLength    = 64;
     src.loopFadeReadPos        = 0.0;
+
+    // Slip mode (PRD-0017)
+    src.shadowPlayheadAccumulator = 0.0;
+    src.slipDisplacedLocal        = false;
+    src.wasLoopActiveLastBlock    = false;
 
     // Publish pointer — use release so the audio thread sees all writes above.
     deckSlots[static_cast<size_t> (slot)].store (&src, std::memory_order_release);
@@ -151,15 +157,24 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
         src.fadeRampSamplesRemaining = 0;
         src.isFadingIn = false;
         src.isFadingOut = false;
+        src.deferredIsSlipDisplacement = false;
         src.loopFadeRemaining   = 0;
         src.loopCrossfadeLength = 64;
         src.loopFadeReadPos     = 0.0;
+
+        // Slip mode (PRD-0017): reset shadow on track load
+        src.shadowPlayheadAccumulator = 0.0;
+        src.slipDisplacedLocal        = false;
+        src.wasLoopActiveLastBlock    = false;
 
         if (src.audioState != nullptr)
         {
             src.audioState->playbackStatus.store (1, std::memory_order_relaxed); // stopped
             src.audioState->playheadPosition.store (0, std::memory_order_relaxed);
             src.audioState->tempCuePosition.store (0, std::memory_order_relaxed);
+            // PRD-0017: reset slip atomics
+            src.audioState->slipShadowPosition.store (0.0, std::memory_order_relaxed);
+            src.audioState->slipDisplaced.store (false, std::memory_order_relaxed);
         }
 
         // Store the holder first (message thread ownership)
@@ -339,6 +354,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                         std::memory_order_relaxed);
                     status = PlaybackStatusCode::stopped;
                     source->playheadAccumulator = 0.0;
+                    // PRD-0017: Stop resets both playheads
+                    source->shadowPlayheadAccumulator = 0.0;
+                    source->slipDisplacedLocal = false;
+                }
+                else if (status == PlaybackStatusCode::stopped)
+                {
+                    // Already stopped — just ensure slip state is clean
+                    source->playheadAccumulator = 0.0;
+                    source->shadowPlayheadAccumulator = 0.0;
+                    source->slipDisplacedLocal = false;
                 }
                 break;
 
@@ -354,10 +379,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                     source->isFadingIn  = false;
                     source->deferredAction     = DeckAudioSource::DeferredAction::Seek;
                     source->deferredSeekTarget = target;
+                    source->deferredIsSlipDisplacement = false; // navigation seek
                 }
                 else
                 {
                     source->playheadAccumulator = static_cast<double> (target);
+                    // PRD-0017: navigation seek resets shadow
+                    source->shadowPlayheadAccumulator = static_cast<double> (target);
+                    source->slipDisplacedLocal = false;
                 }
                 break;
             }
@@ -439,10 +468,71 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                     source->isFadingIn  = false;
                     source->deferredAction     = DeckAudioSource::DeferredAction::Seek;
                     source->deferredSeekTarget = seekPos;
+                    source->deferredIsSlipDisplacement = false; // navigation
                 }
                 else
                 {
                     // Stopped/paused → seek instantly then start playing with fade-in
+                    source->playheadAccumulator = static_cast<double> (seekPos);
+                    // PRD-0017: navigation seek resets shadow
+                    source->shadowPlayheadAccumulator = static_cast<double> (seekPos);
+                    source->slipDisplacedLocal = false;
+                    audioState->playbackStatus.store (
+                        static_cast<int> (PlaybackStatusCode::playing),
+                        std::memory_order_relaxed);
+                    status = PlaybackStatusCode::playing;
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingIn  = true;
+                    source->isFadingOut = false;
+                }
+                break;
+            }
+
+            // --- Slip mode commands (PRD-0017) ---
+
+            case TransportCommand::SlipSeek:
+            {
+                auto target = source->seekTarget.load (std::memory_order_relaxed);
+                target = juce::jlimit<int64_t> (0, bufLen - 1, target);
+
+                if (status == PlaybackStatusCode::playing)
+                {
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction     = DeckAudioSource::DeferredAction::Seek;
+                    source->deferredSeekTarget = target;
+                    source->deferredIsSlipDisplacement = true; // displacement seek
+                }
+                else
+                {
+                    // Not playing: displacement from current shadow position
+                    if (! source->slipDisplacedLocal)
+                        source->slipDisplacedLocal = true;
+                    source->playheadAccumulator = static_cast<double> (target);
+                }
+                break;
+            }
+
+            case TransportCommand::SlipSeekAndPlay:
+            {
+                auto seekPos = source->seekTarget.load (std::memory_order_relaxed);
+                seekPos = juce::jlimit<int64_t> (0, bufLen - 1, seekPos);
+
+                if (status == PlaybackStatusCode::playing)
+                {
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction     = DeckAudioSource::DeferredAction::Seek;
+                    source->deferredSeekTarget = seekPos;
+                    source->deferredIsSlipDisplacement = true; // displacement seek
+                }
+                else
+                {
+                    // Stopped/paused → seek, mark displacement, start playing
+                    if (! source->slipDisplacedLocal)
+                        source->slipDisplacedLocal = true;
                     source->playheadAccumulator = static_cast<double> (seekPos);
                     audioState->playbackStatus.store (
                         static_cast<int> (PlaybackStatusCode::playing),
@@ -451,6 +541,37 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                     source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
                     source->isFadingIn  = true;
                     source->isFadingOut = false;
+                }
+                break;
+            }
+
+            case TransportCommand::SlipReturn:
+            {
+                if (source->slipDisplacedLocal)
+                {
+                    auto shadowPos = static_cast<int64_t> (source->shadowPlayheadAccumulator);
+                    auto primaryPos = static_cast<int64_t> (source->playheadAccumulator);
+
+                    if (std::abs (shadowPos - primaryPos) < DeckAudioSource::FADE_RAMP_LENGTH)
+                    {
+                        // Close enough: no audible transition, just resync
+                        source->playheadAccumulator = source->shadowPlayheadAccumulator;
+                        source->slipDisplacedLocal = false;
+                    }
+                    else if (status == PlaybackStatusCode::playing)
+                    {
+                        // Full snap-back with crossfade
+                        source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                        source->isFadingOut = true;
+                        source->isFadingIn  = false;
+                        source->deferredAction = DeckAudioSource::DeferredAction::SlipReturn;
+                    }
+                    else
+                    {
+                        // Not playing: instant resync
+                        source->playheadAccumulator = source->shadowPlayheadAccumulator;
+                        source->slipDisplacedLocal = false;
+                    }
                 }
                 break;
             }
@@ -464,6 +585,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         status = static_cast<PlaybackStatusCode> (
             audioState->playbackStatus.load (std::memory_order_relaxed));
 
+        // 3b. Slip mode state (PRD-0017)
+        bool slipEnabled = audioState->slipEnabled.load (std::memory_order_relaxed);
+
+        // When slip is disabled, clear displacement state
+        if (! slipEnabled)
+            source->slipDisplacedLocal = false;
+
         // 4. Read speed
         float speed = juce::jmax (0.0f,
             audioState->speedMultiplier.load (std::memory_order_relaxed));
@@ -475,6 +603,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             audioState->playheadPosition.store (
                 static_cast<int64_t> (source->playheadAccumulator),
                 std::memory_order_relaxed);
+            // Publish slip state even when silent
+            audioState->slipShadowPosition.store (source->shadowPlayheadAccumulator,
+                                                  std::memory_order_relaxed);
+            audioState->slipDisplaced.store (source->slipDisplacedLocal,
+                                            std::memory_order_relaxed);
             source->peakL.store (0.0f, std::memory_order_relaxed);
             source->peakR.store (0.0f, std::memory_order_relaxed);
             source->rmsL.store  (0.0f, std::memory_order_relaxed);
@@ -498,6 +631,32 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             int64_t loopLen = lpOut - lpIn;
             if (loopLen < 256)
                 loopRampLen = std::max (static_cast<int> (loopLen / 2), 1);
+        }
+
+        // PRD-0017: Detect loop exit → trigger slip snap-back
+        bool loopJustExited = source->wasLoopActiveLastBlock && ! loopAct;
+        source->wasLoopActiveLastBlock = loopAct;
+
+        if (loopJustExited && slipEnabled && source->slipDisplacedLocal
+            && ! source->isFadingOut && source->fadeRampSamplesRemaining <= 0
+            && source->deferredAction == DeckAudioSource::DeferredAction::None)
+        {
+            auto shadowPos = static_cast<int64_t> (source->shadowPlayheadAccumulator);
+            auto primaryPos = static_cast<int64_t> (source->playheadAccumulator);
+
+            if (std::abs (shadowPos - primaryPos) < DeckAudioSource::FADE_RAMP_LENGTH)
+            {
+                // Close enough: no audible transition
+                source->playheadAccumulator = source->shadowPlayheadAccumulator;
+                source->slipDisplacedLocal = false;
+            }
+            else if (status == PlaybackStatusCode::playing)
+            {
+                source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                source->isFadingOut = true;
+                source->isFadingIn  = false;
+                source->deferredAction = DeckAudioSource::DeferredAction::SlipReturn;
+            }
         }
 
         // Check key lock state
@@ -715,11 +874,27 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                                     std::memory_order_relaxed);
                                 status = PlaybackStatusCode::stopped;
                                 source->playheadAccumulator = 0.0;
+                                // PRD-0017: Stop resets both playheads
+                                source->shadowPlayheadAccumulator = 0.0;
+                                source->slipDisplacedLocal = false;
                                 break;
 
                             case DeckAudioSource::DeferredAction::Seek:
                                 source->playheadAccumulator =
                                     static_cast<double> (source->deferredSeekTarget);
+                                // PRD-0017: handle slip displacement on seek
+                                if (source->deferredIsSlipDisplacement)
+                                {
+                                    source->slipDisplacedLocal = true;
+                                    source->deferredIsSlipDisplacement = false;
+                                }
+                                else
+                                {
+                                    // Navigation seek: reset shadow to target
+                                    source->shadowPlayheadAccumulator =
+                                        source->playheadAccumulator;
+                                    source->slipDisplacedLocal = false;
+                                }
                                 source->fadeRampSamplesRemaining =
                                     DeckAudioSource::FADE_RAMP_LENGTH;
                                 source->isFadingIn = true;
@@ -732,6 +907,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                                 if (cuePos >= 0)
                                     source->playheadAccumulator =
                                         static_cast<double> (cuePos);
+                                // PRD-0017: CUE return resets both playheads
+                                source->shadowPlayheadAccumulator =
+                                    source->playheadAccumulator;
+                                source->slipDisplacedLocal = false;
                                 audioState->playbackStatus.store (
                                     static_cast<int> (PlaybackStatusCode::paused),
                                     std::memory_order_relaxed);
@@ -744,6 +923,18 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                                     static_cast<int> (PlaybackStatusCode::stopped),
                                     std::memory_order_relaxed);
                                 status = PlaybackStatusCode::stopped;
+                                // PRD-0017: end of track resets displacement
+                                source->slipDisplacedLocal = false;
+                                break;
+
+                            case DeckAudioSource::DeferredAction::SlipReturn:
+                                // PRD-0017: snap back to shadow position
+                                source->playheadAccumulator =
+                                    source->shadowPlayheadAccumulator;
+                                source->slipDisplacedLocal = false;
+                                source->fadeRampSamplesRemaining =
+                                    DeckAudioSource::FADE_RAMP_LENGTH;
+                                source->isFadingIn = true;
                                 break;
 
                             case DeckAudioSource::DeferredAction::None:
@@ -793,6 +984,34 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 source->playheadAccumulator = static_cast<double> (lpIn) + offset;
 
                 source->loopFadeRemaining = loopRampLen;
+
+                // PRD-0017: Loop wrap-around sets slip displacement
+                if (slipEnabled && ! source->slipDisplacedLocal)
+                    source->slipDisplacedLocal = true;
+            }
+
+            // PRD-0017: Shadow playhead management
+            if (slipEnabled)
+            {
+                if (source->slipDisplacedLocal)
+                {
+                    // Shadow advances independently (no loop wrap)
+                    if (shouldAdvance
+                        && source->deferredAction != DeckAudioSource::DeferredAction::EndOfTrack)
+                    {
+                        source->shadowPlayheadAccumulator += static_cast<double> (speed);
+                        // Clamp to track bounds
+                        if (source->shadowPlayheadAccumulator >= static_cast<double> (bufLen))
+                            source->shadowPlayheadAccumulator = static_cast<double> (bufLen - 1);
+                        if (source->shadowPlayheadAccumulator < 0.0)
+                            source->shadowPlayheadAccumulator = 0.0;
+                    }
+                }
+                else
+                {
+                    // Not displaced: shadow tracks primary
+                    source->shadowPlayheadAccumulator = source->playheadAccumulator;
+                }
             }
         }
 
@@ -800,6 +1019,12 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         audioState->playheadPosition.store (
             static_cast<int64_t> (source->playheadAccumulator),
             std::memory_order_relaxed);
+
+        // PRD-0017: Publish slip state to UI
+        audioState->slipShadowPosition.store (source->shadowPlayheadAccumulator,
+                                              std::memory_order_relaxed);
+        audioState->slipDisplaced.store (source->slipDisplacedLocal,
+                                        std::memory_order_relaxed);
 
         float invN = 1.0f / static_cast<float> (numSamples);
         source->peakL.store (sPeakL,                    std::memory_order_relaxed);
@@ -1016,4 +1241,46 @@ void AudioEngine::seekAndPlayDeck (const juce::String& deckId, int64_t targetSam
         source->pendingCommand.store (
             static_cast<int> (TransportCommand::SeekAndPlay), std::memory_order_relaxed);
     }
+}
+
+void AudioEngine::slipSeekDeck (const juce::String& deckId, int64_t targetSample)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto* source = deckSlots[static_cast<size_t> (slot)].load (std::memory_order_acquire);
+    if (source != nullptr)
+    {
+        source->seekTarget.store (targetSample, std::memory_order_relaxed);
+        source->pendingCommand.store (
+            static_cast<int> (TransportCommand::SlipSeek), std::memory_order_relaxed);
+    }
+}
+
+void AudioEngine::slipSeekAndPlayDeck (const juce::String& deckId, int64_t targetSample)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto* source = deckSlots[static_cast<size_t> (slot)].load (std::memory_order_acquire);
+    if (source != nullptr)
+    {
+        source->seekTarget.store (targetSample, std::memory_order_relaxed);
+        source->pendingCommand.store (
+            static_cast<int> (TransportCommand::SlipSeekAndPlay), std::memory_order_relaxed);
+    }
+}
+
+void AudioEngine::sendSlipReturn (const juce::String& deckId)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto* source = deckSlots[static_cast<size_t> (slot)].load (std::memory_order_acquire);
+    if (source != nullptr)
+        source->pendingCommand.store (
+            static_cast<int> (TransportCommand::SlipReturn), std::memory_order_relaxed);
 }

@@ -143,6 +143,8 @@ target_sources(Sonik PRIVATE
     Source/Features/BeatJump/BeatJumpEngine.cpp
     Source/Features/BeatJump/BeatJumpComponent.h
     Source/Features/BeatJump/BeatJumpComponent.cpp
+    Source/Features/SlipMode/SlipButtonComponent.h
+    Source/Features/SlipMode/SlipButtonComponent.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -190,6 +192,7 @@ add_executable(SonikTests
     Tests/LoopTests.cpp
     Tests/BeatJumpTests.cpp
     Tests/NeedleDropTests.cpp
+    Tests/SlipModeTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -215,6 +218,7 @@ add_executable(SonikTests
     Source/Features/Loop/LoopControlComponent.cpp
     Source/Features/BeatJump/BeatJumpEngine.cpp
     Source/Features/BeatJump/BeatJumpComponent.cpp
+    Source/Features/SlipMode/SlipButtonComponent.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

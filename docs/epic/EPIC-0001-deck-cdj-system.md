@@ -106,7 +106,7 @@ Each PRD produces code organized under its feature slice:
 - [x] PRD-0013: Quantize Mode
 - [x] PRD-0014: Looping System
 - [x] PRD-0015: Beat Jump
-- [ ] PRD-0016: Needle Drop & Waveform Seeking
+- [x] PRD-0016: Needle Drop & Waveform Seeking
 - [ ] PRD-0017: Slip Mode
 - [ ] PRD-0018: Jog Wheel
 - [ ] PRD-0019: ML Inference Runtime

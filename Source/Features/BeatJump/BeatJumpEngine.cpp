@@ -90,9 +90,12 @@ void BeatJumpEngine::executeJump (bool forward)
     if (! forward)
         jumpOffset = -jumpOffset;
 
-    // Check if loop is active — use loop shift instead
+    // PRD-0017: Check if slip is enabled
+    bool slipOn = static_cast<bool> (tree.getProperty (IDs::slipEnabled, false));
+
+    // Check if loop is active — use loop shift instead (unless slip suppresses it)
     bool loopActive = static_cast<bool> (loopNode.getProperty (IDs::active, false));
-    if (loopActive && loopEngine != nullptr)
+    if (loopActive && loopEngine != nullptr && ! slipOn)
     {
         // Pass quantize info so shifted boundaries snap to beat grid
         bool quantizeOn = static_cast<bool> (tree.getProperty (IDs::quantizeEnabled, false));
@@ -112,7 +115,7 @@ void BeatJumpEngine::executeJump (bool forward)
         return;
     }
 
-    // Normal jump (no loop active)
+    // Normal jump (or slip-mode jump — no loop shift)
     int64_t playhead = readPlayhead();
     int64_t rawDest  = playhead + jumpOffset;
 
@@ -133,7 +136,11 @@ void BeatJumpEngine::executeJump (bool forward)
     if (dest == playhead)
         return;
 
-    audioEngine.seekDeck (deckId, dest);
+    // PRD-0017: Use slip-aware seek when slip is enabled
+    if (slipOn)
+        audioEngine.slipSeekDeck (deckId, dest);
+    else
+        audioEngine.seekDeck (deckId, dest);
 }
 
 double BeatJumpEngine::getBeatInterval() const

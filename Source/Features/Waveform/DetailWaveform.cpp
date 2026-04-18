@@ -247,6 +247,41 @@ void DetailWaveform::paint (juce::Graphics& g)
     g.setColour (juce::Colours::white);
     g.drawVerticalLine (centerX, 0.0f, static_cast<float> (getHeight()));
 
+    // PRD-0017: Slip ghost marker (shadow playhead)
+    if (audioState != nullptr && totalSamples > 0
+        && audioState->slipEnabled.load (std::memory_order_relaxed)
+        && audioState->slipDisplaced.load (std::memory_order_relaxed))
+    {
+        int64_t pos = audioState->playheadPosition.load (std::memory_order_relaxed);
+        int64_t halfVisible = static_cast<int64_t> (visibleSeconds * 0.5 * sampleRate);
+        int64_t vStart = pos - halfVisible;
+        int64_t vEnd   = pos + halfVisible;
+        int64_t vSpan  = vEnd - vStart;
+
+        if (vSpan > 0)
+        {
+            double shadowPos = audioState->slipShadowPosition.load (std::memory_order_relaxed);
+            float ghostX = static_cast<float> (shadowPos - static_cast<double> (vStart))
+                           / static_cast<float> (vSpan)
+                           * static_cast<float> (getWidth());
+
+            if (ghostX >= -2.0f && ghostX <= static_cast<float> (getWidth()) + 2.0f)
+            {
+                float h = static_cast<float> (getHeight());
+
+                g.setColour (juce::Colours::white.withAlpha (0.4f));
+                g.drawVerticalLine (static_cast<int> (ghostX), 0.0f, h);
+
+                // Small triangle at top
+                juce::Path tri;
+                tri.addTriangle (ghostX - 4.0f, 0.0f,
+                                 ghostX + 4.0f, 0.0f,
+                                 ghostX,        6.0f);
+                g.fillPath (tri);
+            }
+        }
+    }
+
     // Hot cue markers (PRD-0012)
     if (audioState != nullptr && totalSamples > 0)
     {

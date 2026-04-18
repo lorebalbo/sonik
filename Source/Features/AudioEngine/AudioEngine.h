@@ -52,6 +52,15 @@ public:
     /// Seek a deck and start playback atomically. Thread-safe, lock-free.
     void seekAndPlayDeck (const juce::String& deckId, int64_t targetSample);
 
+    /// Slip-aware seek: creates displacement instead of resetting shadow (PRD-0017).
+    void slipSeekDeck (const juce::String& deckId, int64_t targetSample);
+
+    /// Slip-aware seek+play: creates displacement instead of resetting shadow (PRD-0017).
+    void slipSeekAndPlayDeck (const juce::String& deckId, int64_t targetSample);
+
+    /// Trigger slip return: snap back to shadow playhead position (PRD-0017).
+    void sendSlipReturn (const juce::String& deckId);
+
     /// Returns the current device sample rate.
     double getSampleRate() const { return currentSampleRate.load (std::memory_order_relaxed); }
 

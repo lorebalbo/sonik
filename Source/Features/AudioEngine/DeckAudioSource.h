@@ -20,7 +20,10 @@ enum class TransportCommand : int
     CuePreview,
     CueRelease,
     CuePlayThrough,
-    SeekAndPlay
+    SeekAndPlay,
+    SlipSeek,          // Seek that creates slip displacement (PRD-0017)
+    SlipSeekAndPlay,   // SeekAndPlay that creates slip displacement (PRD-0017)
+    SlipReturn         // Snap back to shadow playhead position (PRD-0017)
 };
 
 /// Lightweight struct representing a deck's audio contribution.
@@ -64,9 +67,10 @@ struct DeckAudioSource
     static constexpr int FADE_RAMP_LENGTH = 64;
 
     // Deferred action after fade-out completes (audio thread only)
-    enum class DeferredAction : int { None = 0, Pause, Stop, Seek, CueReturn, EndOfTrack };
+    enum class DeferredAction : int { None = 0, Pause, Stop, Seek, CueReturn, EndOfTrack, SlipReturn };
     DeferredAction deferredAction    = DeferredAction::None;
     int64_t        deferredSeekTarget = 0;
+    bool           deferredIsSlipDisplacement = false; // marks Seek as slip displacement
 
     // --- Time stretching (PRD-0011) ---
 
@@ -87,6 +91,11 @@ struct DeckAudioSource
     int    loopFadeRemaining    = 0;
     int    loopCrossfadeLength  = 64;
     double loopFadeReadPos      = 0.0;
+
+    // Slip mode state (audio thread only, PRD-0017)
+    double shadowPlayheadAccumulator = 0.0;  // shadow playhead for slip mode
+    bool   slipDisplacedLocal        = false; // cached displacement state
+    bool   wasLoopActiveLastBlock    = false; // for detecting loop exit
 
     // Pre-allocated scratch buffers for stretcher I/O (audio thread only)
     static constexpr int MAX_STRETCH_BLOCK = 4096;

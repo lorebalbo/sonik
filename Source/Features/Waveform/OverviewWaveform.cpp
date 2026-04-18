@@ -180,6 +180,19 @@ void OverviewWaveform::paint (juce::Graphics& g)
 
         g.setColour (juce::Colours::white);
         g.drawVerticalLine (static_cast<int> (xPos), 0.0f, static_cast<float> (getHeight()));
+
+        // PRD-0017: Slip ghost marker (shadow playhead)
+        if (audioState->slipEnabled.load (std::memory_order_relaxed)
+            && audioState->slipDisplaced.load (std::memory_order_relaxed))
+        {
+            double shadowPos = audioState->slipShadowPosition.load (std::memory_order_relaxed);
+            float ghostX = static_cast<float> (shadowPos) / static_cast<float> (totalSamples)
+                           * static_cast<float> (getWidth());
+
+            g.setColour (juce::Colours::white.withAlpha (0.4f));
+            g.drawVerticalLine (static_cast<int> (ghostX), 0.0f,
+                                static_cast<float> (getHeight()));
+        }
     }
 
     // Hot cue markers (PRD-0012)

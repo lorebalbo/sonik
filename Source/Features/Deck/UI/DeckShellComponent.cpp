@@ -42,6 +42,12 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     quantizeButton = std::make_unique<QuantizeButtonComponent> (deckTree);
     addAndMakeVisible (*quantizeButton);
 
+    // Create slip button (PRD-0017)
+    slipButton = std::make_unique<SlipButtonComponent> (
+        deckTree, deckStateManager.getAudioState (deckId),
+        audioEngine, deckId);
+    addAndMakeVisible (*slipButton);
+
     // Create hot cue manager and pad component (PRD-0012)
     hotCueManager = std::make_unique<HotCueManager> (
         deckTree, audioEngine, deckId, deckStateManager.getDatabase());
@@ -273,6 +279,10 @@ void DeckShellComponent::resized()
     // Quantize button below key lock (PRD-0013)
     if (quantizeButton != nullptr)
         quantizeButton->setBounds (controlStrip.removeFromTop (24).reduced (12, 2));
+
+    // Slip button below quantize (PRD-0017)
+    if (slipButton != nullptr)
+        slipButton->setBounds (controlStrip.removeFromTop (24).reduced (12, 2));
 
     // Pitch fader fills rest of control strip
     if (pitchFaderComponent != nullptr)

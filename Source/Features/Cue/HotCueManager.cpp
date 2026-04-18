@@ -100,15 +100,22 @@ void HotCueManager::triggerCue (int padIndex)
     if (std::abs (currentPos - position) < 64)
         return;
 
+    // PRD-0017: Use slip-aware seek when slip is enabled
+    bool slipOn = static_cast<bool> (tree.getProperty (IDs::slipEnabled, false));
+
     if (isPlaying)
     {
-        // Already playing → just seek (audio thread handles fade-out/in)
-        audioEngine.seekDeck (deckId, position);
+        if (slipOn)
+            audioEngine.slipSeekDeck (deckId, position);
+        else
+            audioEngine.seekDeck (deckId, position);
     }
     else
     {
-        // Stopped/paused → seek + play atomically (single command, no race)
-        audioEngine.seekAndPlayDeck (deckId, position);
+        if (slipOn)
+            audioEngine.slipSeekAndPlayDeck (deckId, position);
+        else
+            audioEngine.seekAndPlayDeck (deckId, position);
     }
 }
 

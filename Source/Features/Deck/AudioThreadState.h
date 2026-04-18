@@ -39,6 +39,10 @@ struct DeckAudioState
 
     // Hot cue positions (PRD-0012) – audio thread reads, message thread writes
     std::atomic<int64_t>  hotCuePositions[8] = { {-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1}, {-1} };
+
+    // Slip mode (PRD-0017) – audio thread writes, UI thread reads
+    std::atomic<double>   slipShadowPosition { 0.0 };
+    std::atomic<bool>     slipDisplaced      { false };
 };
 
 // Syncs ValueTree property changes to DeckAudioState atomics on the message thread.

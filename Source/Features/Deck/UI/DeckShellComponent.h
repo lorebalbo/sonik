@@ -19,6 +19,7 @@
 #include "../../Loop/LoopControlComponent.h"
 #include "../../BeatJump/BeatJumpEngine.h"
 #include "../../BeatJump/BeatJumpComponent.h"
+#include "../../SlipMode/SlipButtonComponent.h"
 
 class DeckShellComponent final : public juce::Component,
                                   public juce::FileDragAndDropTarget,
@@ -93,6 +94,7 @@ private:
     std::unique_ptr<LoopControlComponent> loopControlComponent;
     std::unique_ptr<BeatJumpEngine>       beatJumpEngine;
     std::unique_ptr<BeatJumpComponent>    beatJumpComponent;
+    std::unique_ptr<SlipButtonComponent>  slipButton;
 
     void hotCuesChanged() override;
     void updateWaveformHotCues();
