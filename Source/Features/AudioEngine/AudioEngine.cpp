@@ -133,6 +133,15 @@ void AudioEngine::registerDeck (const juce::String& deckId, DeckAudioState* audi
     src.stemsActivationFadeDirection = false;
     src.wasStemsActiveLocal          = false;
 
+    // Stem stretchers (PRD-0022)
+    for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+    {
+        src.stemTimeStretchers[s].store(nullptr, std::memory_order_relaxed);
+        src.stemTimeStretchersOwned[s] = nullptr;
+    }
+    src.stemStretcherLatency = 0;
+    src.stemStretchDegraded.store(false, std::memory_order_relaxed);
+
     // Publish pointer — use release so the audio thread sees all writes above.
     deckSlots[static_cast<size_t> (slot)].store (&src, std::memory_order_release);
 }
@@ -235,6 +244,9 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
             src.keyLockFadeSamplesRemaining = 0;
             src.keyLockFadingIn = false;
             src.keyLockFadingOut = false;
+
+            // PRD-0022: Stem stretchers will be created when stems become active + key lock
+            destroyStemStretchers(deckId);
         }
 
         // Publish raw pointers atomically for the audio thread
@@ -285,6 +297,9 @@ void AudioEngine::clearDeckBuffer (const juce::String& deckId)
     delete src.timeStretcherOwned;
     src.timeStretcherOwned = nullptr;
     src.stretcherLatency = 0;
+
+    // PRD-0022: Tear down stem stretchers on eject
+    destroyStemStretchers(deckId);
 
     // Release ownership
     src.bufferHolder = nullptr;
@@ -345,6 +360,10 @@ void AudioEngine::setDeckStemBuffers (const juce::String& deckId,
 
     // Set stemsActive AFTER all pointers stored (AC#5, AC#21)
     src.stemsActive.store (true, std::memory_order_release);
+
+    // PRD-0022: Create stem stretchers if key lock is already active
+    if (src.audioState != nullptr && src.audioState->keyLockEnabled.load(std::memory_order_relaxed))
+        createStemStretchers(deckId);
 }
 
 void AudioEngine::clearDeckStemBuffers (const juce::String& deckId)
@@ -354,6 +373,9 @@ void AudioEngine::clearDeckStemBuffers (const juce::String& deckId)
         return;
 
     auto& src = deckSources[static_cast<size_t> (slot)];
+
+    // PRD-0022: Tear down stem stretchers
+    destroyStemStretchers(deckId);
 
     // Deactivate first (AC#6) — audio thread will stop reading stem data
     src.stemsActive.store (false, std::memory_order_release);
@@ -373,6 +395,76 @@ void AudioEngine::clearDeckStemBuffers (const juce::String& deckId)
     // Instead, let the next setDeckStemBuffers() or setDeckBuffer() overwrite
     // them naturally, at which point the audio thread will have finished
     // any deactivation crossfade.
+}
+
+// ---------------------------------------------------------------------------
+// Stem time stretcher management (PRD-0022, message thread only)
+// ---------------------------------------------------------------------------
+
+void AudioEngine::createStemStretchers (const juce::String& deckId)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0) return;
+    auto& src = deckSources[static_cast<size_t> (slot)];
+
+    // Must have stems active and valid stem pointers
+    if (!src.stemsActive.load (std::memory_order_relaxed))
+        return;
+
+    double sr = currentSampleRate.load (std::memory_order_relaxed);
+    int maxBlock = currentBufferSize.load (std::memory_order_relaxed);
+    if (maxBlock <= 0) maxBlock = 512;
+
+    for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+    {
+        // Hide old stretcher from audio thread first
+        src.stemTimeStretchers[s].store (nullptr, std::memory_order_release);
+        delete src.stemTimeStretchersOwned[s];
+
+        auto* stretcher = new TimeStretcher (sr, 2, maxBlock * 4);
+
+        // Prime with stem audio
+        auto* stemL = src.stemChannelL[s].load (std::memory_order_relaxed);
+        auto* stemR = src.stemChannelR[s].load (std::memory_order_relaxed);
+        auto  stemLen = src.stemBufferNumFrames[s].load (std::memory_order_relaxed);
+
+        if (stemL != nullptr && stemR != nullptr && stemLen > 0)
+            stretcher->primeWithAudio (stemL, stemR, static_cast<int>(stemLen));
+        else
+            stretcher->prime();
+
+        src.stemTimeStretchersOwned[s] = stretcher;
+    }
+
+    // Cache latency (identical for all stretchers with same params)
+    src.stemStretcherLatency = src.stemTimeStretchersOwned[0]->getLatency();
+
+    // Publish all 4 atomically via release stores
+    for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+        src.stemTimeStretchers[s].store (src.stemTimeStretchersOwned[s], std::memory_order_release);
+
+    src.stemStretchDegraded.store (false, std::memory_order_relaxed);
+}
+
+void AudioEngine::destroyStemStretchers (const juce::String& deckId)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0) return;
+    auto& src = deckSources[static_cast<size_t> (slot)];
+
+    // Hide from audio thread first
+    for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+        src.stemTimeStretchers[s].store (nullptr, std::memory_order_release);
+
+    // Now safe to delete
+    for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+    {
+        delete src.stemTimeStretchersOwned[s];
+        src.stemTimeStretchersOwned[s] = nullptr;
+    }
+
+    src.stemStretcherLatency = 0;
+    src.stemStretchDegraded.store (false, std::memory_order_relaxed);
 }
 
 // ---------------------------------------------------------------------------
@@ -788,17 +880,17 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         // This prevents a cold-start click when the pitch fader first moves.
         bool useStretcher = keyLockOn && stretcher != nullptr && speed > 0.01f;
 
-        // Detect key lock toggle — no crossfade needed.
+        // Detect key lock toggle — apply a short crossfade between
+        // vinyl and stretched paths to avoid a click at the transition.
         // The stretcher runs continuously (always fed) so its output is
-        // valid at all times.  A crossfade between vinyl and stretched
-        // signals is harmful because RubberBand's algorithmic latency
-        // (~2048-4096 samples) puts the two signals at different temporal
-        // positions in the track, causing phase cancellation and clicks.
-        // At speed=1.0 both paths produce identical audio.  At non-1.0
-        // speeds a hard switch is inaudible because the stretcher output
-        // is already continuous.
+        // valid at all times, making the crossfade seamless.
         if (keyLockOn != source->wasKeyLockEnabled)
+        {
             source->wasKeyLockEnabled = keyLockOn;
+            source->keyLockFadeSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+            source->keyLockFadingIn  = keyLockOn;   // TO stretched
+            source->keyLockFadingOut = ! keyLockOn;  // FROM stretched
+        }
 
         // --- Time-stretched path ---
         // Always feed the stretcher when it exists so its internal buffers
@@ -874,6 +966,66 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             stmMuted[1] = audioState->stemDrumsMuted.load (std::memory_order_relaxed);
             stmMuted[2] = audioState->stemBassMuted.load (std::memory_order_relaxed);
             stmMuted[3] = audioState->stemOtherMuted.load (std::memory_order_relaxed);
+        }
+
+        // --- Per-stem time stretching (PRD-0022) ---
+        bool useStemStretchers = false;
+        int stemStretchedAvail[DeckAudioSource::NUM_STEMS] = {};
+
+        if (stemActive && keyLockOn && speed > 0.01f
+            && ! source->stemStretchDegraded.load (std::memory_order_relaxed))
+        {
+            auto* stemStr0 = source->stemTimeStretchers[0].load(std::memory_order_acquire);
+            if (stemStr0 != nullptr)
+            {
+                useStemStretchers = true;
+
+                int sourceSamples = std::min(
+                    static_cast<int>(std::ceil(static_cast<double>(numSamples) * static_cast<double>(speed))),
+                    DeckAudioSource::MAX_STRETCH_BLOCK);
+
+                double timeRatio = 1.0 / static_cast<double>(speed);
+
+                for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+                {
+                    auto* stemStretcher = source->stemTimeStretchers[s].load(std::memory_order_acquire);
+                    if (stemStretcher == nullptr || stmL[s] == nullptr || stmR[s] == nullptr || stmLen[s] <= 0)
+                    {
+                        stemStretchedAvail[s] = 0;
+                        continue;
+                    }
+
+                    // Read stem audio at speed, offset by stem stretcher latency
+                    double readPos = source->playheadAccumulator
+                                   + static_cast<double>(source->stemStretcherLatency);
+                    for (int ss = 0; ss < sourceSamples; ++ss)
+                    {
+                        double sPos = readPos + static_cast<double>(ss) * 1.0;
+                        int64_t sIdx = static_cast<int64_t>(sPos);
+                        if (sIdx >= 0 && sIdx < stmLen[s])
+                        {
+                            float frac = static_cast<float>(sPos - static_cast<double>(sIdx));
+                            float s0L = stmL[s][sIdx];
+                            float s1L = (sIdx + 1 < stmLen[s]) ? stmL[s][sIdx + 1] : stmL[s][sIdx];
+                            source->stemStretchInL[s][ss] = s0L + frac * (s1L - s0L);
+
+                            float s0R = stmR[s][sIdx];
+                            float s1R = (sIdx + 1 < stmLen[s]) ? stmR[s][sIdx + 1] : stmR[s][sIdx];
+                            source->stemStretchInR[s][ss] = s0R + frac * (s1R - s0R);
+                        }
+                        else
+                        {
+                            source->stemStretchInL[s][ss] = 0.0f;
+                            source->stemStretchInR[s][ss] = 0.0f;
+                        }
+                    }
+
+                    const float* inPtrs[2] = { source->stemStretchInL[s], source->stemStretchInR[s] };
+                    float* outPtrs[2] = { source->stemStretchOutL[s], source->stemStretchOutR[s] };
+
+                    stemStretchedAvail[s] = stemStretcher->process(inPtrs, sourceSamples, outPtrs, numSamples, timeRatio);
+                }
+            }
         }
 
         // Detect stems activation transition for crossfade (AC#25)
@@ -1014,8 +1166,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                         continue;
 
                     float sL, sR;
-                    if (idx >= 0 && idx < stmLen[s])
+
+                    if (useStemStretchers && i < stemStretchedAvail[s])
                     {
+                        // PRD-0022: Use per-stem stretched output
+                        sL = source->stemStretchOutL[s][i];
+                        sR = source->stemStretchOutR[s][i];
+                    }
+                    else if (idx >= 0 && idx < stmLen[s])
+                    {
+                        // Direct vinyl read (existing PRD-0021 code)
                         if (speed != 1.0f)
                         {
                             float frac = static_cast<float> (pos - static_cast<double> (idx));
@@ -1045,11 +1205,40 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             }
 
             // Normal path output (stretched or vinyl)
+            // Get stretched sample (stretcher runs continuously so output is always valid)
+            float strL = (stretcher != nullptr && i < stretchedAvail) ? source->stretchOutL[i] : vinylL;
+            float strR = (stretcher != nullptr && i < stretchedAvail) ? source->stretchOutR[i] : vinylR;
+
             float normalL, normalR;
-            if (useStretcher)
+            if (source->keyLockFadeSamplesRemaining > 0)
             {
-                normalL = (i < stretchedAvail) ? source->stretchOutL[i] : vinylL;
-                normalR = (i < stretchedAvail) ? source->stretchOutR[i] : vinylR;
+                // Crossfade between vinyl and stretched paths during key lock toggle
+                float p = static_cast<float> (DeckAudioSource::FADE_RAMP_LENGTH
+                    - source->keyLockFadeSamplesRemaining)
+                    / static_cast<float> (DeckAudioSource::FADE_RAMP_LENGTH);
+                --source->keyLockFadeSamplesRemaining;
+
+                if (source->keyLockFadingIn) // transitioning TO stretched
+                {
+                    normalL = vinylL * (1.0f - p) + strL * p;
+                    normalR = vinylR * (1.0f - p) + strR * p;
+                }
+                else // transitioning FROM stretched
+                {
+                    normalL = strL * (1.0f - p) + vinylL * p;
+                    normalR = strR * (1.0f - p) + vinylR * p;
+                }
+
+                if (source->keyLockFadeSamplesRemaining <= 0)
+                {
+                    source->keyLockFadingIn = false;
+                    source->keyLockFadingOut = false;
+                }
+            }
+            else if (useStretcher)
+            {
+                normalL = strL;
+                normalR = strR;
             }
             else
             {
@@ -1356,7 +1545,17 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
     {
         ++cpuMonitor.consecutiveOverloads;
         if (cpuMonitor.consecutiveOverloads >= 3)
+        {
             cpuMonitor.overloadWarning.store (true, std::memory_order_relaxed);
+
+            // PRD-0022: Degrade to single-stretcher when CPU overloaded
+            for (size_t slot = 0; slot < 4; ++slot)
+            {
+                auto* src = deckSlots[slot].load(std::memory_order_relaxed);
+                if (src != nullptr && src->stemTimeStretchers[0].load(std::memory_order_relaxed) != nullptr)
+                    src->stemStretchDegraded.store(true, std::memory_order_relaxed);
+            }
+        }
     }
     else
     {
@@ -1424,6 +1623,60 @@ void AudioEngine::timerCallback()
         cpuMonitor.loadPercent.load (std::memory_order_relaxed), nullptr);
     audioDeviceNode.setProperty (IDs::cpuOverload,
         cpuMonitor.overloadWarning.load (std::memory_order_relaxed), nullptr);
+
+    // PRD-0022: Check for stem stretcher creation/destruction needs
+    for (size_t slot = 0; slot < 4; ++slot)
+    {
+        auto& src = deckSources[slot];
+        if (src.audioState == nullptr)
+            continue;
+
+        bool keyLock = src.audioState->keyLockEnabled.load(std::memory_order_relaxed);
+        bool stemsActive = src.stemsActive.load(std::memory_order_relaxed);
+        bool hasStemStretchers = src.stemTimeStretchers[0].load(std::memory_order_relaxed) != nullptr;
+
+        bool needStemStretchers = keyLock && stemsActive;
+
+        if (needStemStretchers && !hasStemStretchers)
+        {
+            juce::String deckId;
+            if (slot == 0) deckId = "A";
+            else if (slot == 1) deckId = "B";
+            else if (slot == 2) deckId = "C";
+            else deckId = "D";
+            createStemStretchers(deckId);
+        }
+        else if (!needStemStretchers && hasStemStretchers)
+        {
+            juce::String deckId;
+            if (slot == 0) deckId = "A";
+            else if (slot == 1) deckId = "B";
+            else if (slot == 2) deckId = "C";
+            else deckId = "D";
+            destroyStemStretchers(deckId);
+        }
+    }
+
+    // PRD-0022: Publish stem stretch degradation flag to ValueTree
+    auto decksNode = rootState.getChildWithName(IDs::Decks);
+    if (decksNode.isValid())
+    {
+        for (int i = 0; i < decksNode.getNumChildren(); ++i)
+        {
+            auto deckTree = decksNode.getChild(i);
+            auto stems = deckTree.getChildWithName(IDs::Stems);
+            if (stems.isValid())
+            {
+                int s = deckIdToSlot(deckTree.getProperty(IDs::id).toString());
+                if (s >= 0)
+                {
+                    bool degraded = deckSources[static_cast<size_t>(s)].stemStretchDegraded.load(std::memory_order_relaxed);
+                    if (static_cast<bool>(stems.getProperty(IDs::stemStretchDegraded, false)) != degraded)
+                        stems.setProperty(IDs::stemStretchDegraded, degraded, nullptr);
+                }
+            }
+        }
+    }
 
     // Handle reconnection if device disconnected.
     if (deviceDisconnected)

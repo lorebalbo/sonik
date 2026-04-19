@@ -128,4 +128,22 @@ struct DeckAudioSource
     int  stemsActivationFadeRemaining = 0;
     bool stemsActivationFadeDirection = false; // true = activating stems
     bool wasStemsActiveLocal          = false;
+
+    // --- Stem time stretching (PRD-0022) ---
+
+    // Per-stem stretcher pointers (audio thread reads via acquire, message thread writes via release)
+    std::atomic<TimeStretcher*> stemTimeStretchers[NUM_STEMS] = { {nullptr}, {nullptr}, {nullptr}, {nullptr} };
+    // Message-thread ownership pointers
+    TimeStretcher* stemTimeStretchersOwned[NUM_STEMS] = { nullptr, nullptr, nullptr, nullptr };
+    // Cached stem stretcher latency (same for all 4, set by message thread, read by audio thread)
+    int stemStretcherLatency = 0;
+
+    // Pre-allocated scratch buffers for per-stem stretcher I/O (audio thread only)
+    float stemStretchInL[NUM_STEMS][MAX_STRETCH_BLOCK]  = {};
+    float stemStretchInR[NUM_STEMS][MAX_STRETCH_BLOCK]  = {};
+    float stemStretchOutL[NUM_STEMS][MAX_STRETCH_BLOCK] = {};
+    float stemStretchOutR[NUM_STEMS][MAX_STRETCH_BLOCK] = {};
+
+    // CPU degradation flag: when true, per-stem stretching fell back to single stretcher
+    std::atomic<bool> stemStretchDegraded { false };
 };

@@ -53,6 +53,13 @@ public:
     /// Sets stemsActive = false, nullifies stem channel pointers, releases holders.
     void clearDeckStemBuffers (const juce::String& deckId);
 
+    /// Create per-stem time stretchers for a deck (message thread only, PRD-0022).
+    /// Called when both key lock is on AND stems are active.
+    void createStemStretchers (const juce::String& deckId);
+
+    /// Destroy per-stem time stretchers for a deck (message thread only, PRD-0022).
+    void destroyStemStretchers (const juce::String& deckId);
+
     /// Retrieve the audio buffer for a deck (message thread only).
     AudioBufferHolder::Ptr getDeckBuffer (const juce::String& deckId);
 
