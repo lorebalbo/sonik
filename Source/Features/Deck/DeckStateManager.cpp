@@ -381,6 +381,8 @@ juce::ValueTree DeckStateManager::createDeckTree (const juce::String& deckId) co
     juce::ValueTree stems (IDs::Stems);
     stems.setProperty (IDs::status,       "none", nullptr);
     stems.setProperty (IDs::progress,     0.0f,   nullptr);
+    stems.setProperty (IDs::stemError,    "",     nullptr);
+    stems.setProperty (IDs::modelVersion, "",     nullptr);
     stems.setProperty (IDs::vocalsMuted,  false,  nullptr);
     stems.setProperty (IDs::drumsMuted,   false,  nullptr);
     stems.setProperty (IDs::bassMuted,    false,  nullptr);
@@ -470,6 +472,8 @@ void DeckStateManager::resetTrackSpecificState (juce::ValueTree& deckTree)
     auto stems = deckTree.getChildWithName (IDs::Stems);
     stems.setProperty (IDs::status,       "none", nullptr);
     stems.setProperty (IDs::progress,     0.0f, nullptr);
+    stems.setProperty (IDs::stemError,    "",   nullptr);
+    stems.setProperty (IDs::modelVersion, "",   nullptr);
     stems.setProperty (IDs::vocalsMuted,  false, nullptr);
     stems.setProperty (IDs::drumsMuted,   false, nullptr);
     stems.setProperty (IDs::bassMuted,    false, nullptr);

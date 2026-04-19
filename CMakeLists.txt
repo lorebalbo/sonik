@@ -69,6 +69,22 @@ target_link_libraries(essentia INTERFACE ${ESSENTIA_TRANSITIVE_LIBS})
 # Rubber Band (installed via Homebrew, found via pkg-config)
 pkg_check_modules(RUBBERBAND REQUIRED rubberband)
 
+# ONNX Runtime pre-built release (macOS arm64, MIT license)
+CPMAddPackage(
+    NAME onnxruntime
+    URL "https://github.com/microsoft/onnxruntime/releases/download/v1.19.2/onnxruntime-osx-arm64-1.19.2.tgz"
+    DOWNLOAD_ONLY YES
+)
+
+if(onnxruntime_ADDED)
+    add_library(onnxruntime SHARED IMPORTED)
+    set_target_properties(onnxruntime PROPERTIES
+        IMPORTED_LOCATION "${onnxruntime_SOURCE_DIR}/lib/libonnxruntime.1.19.2.dylib"
+        IMPORTED_SONAME   "@rpath/libonnxruntime.1.19.2.dylib"
+    )
+    target_include_directories(onnxruntime INTERFACE "${onnxruntime_SOURCE_DIR}/include")
+endif()
+
 # Sonik Application
 juce_add_gui_app(Sonik
     PRODUCT_NAME "Sonik"
@@ -145,6 +161,10 @@ target_sources(Sonik PRIVATE
     Source/Features/BeatJump/BeatJumpComponent.cpp
     Source/Features/SlipMode/SlipButtonComponent.h
     Source/Features/SlipMode/SlipButtonComponent.cpp
+    Source/Features/StemSeparation/OnnxInference.h
+    Source/Features/StemSeparation/OnnxInference.cpp
+    Source/Features/StemSeparation/ModelManager.h
+    Source/Features/StemSeparation/ModelManager.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -168,10 +188,19 @@ target_link_libraries(Sonik PRIVATE
     juce::juce_events
     sqlite3
     essentia
+    onnxruntime
     ${RUBBERBAND_LINK_LIBRARIES}
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
+
+# Conditionally link Apple frameworks for CoreML EP (macOS only)
+if(APPLE)
+    target_link_libraries(Sonik PRIVATE
+        "-framework CoreML"
+        "-framework Foundation"
+    )
+endif()
 
 # Test target
 add_executable(SonikTests
@@ -193,6 +222,7 @@ add_executable(SonikTests
     Tests/BeatJumpTests.cpp
     Tests/NeedleDropTests.cpp
     Tests/SlipModeTests.cpp
+    Tests/OnnxInferenceTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -219,6 +249,8 @@ add_executable(SonikTests
     Source/Features/BeatJump/BeatJumpEngine.cpp
     Source/Features/BeatJump/BeatJumpComponent.cpp
     Source/Features/SlipMode/SlipButtonComponent.cpp
+    Source/Features/StemSeparation/OnnxInference.cpp
+    Source/Features/StemSeparation/ModelManager.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})
@@ -242,6 +274,14 @@ target_link_libraries(SonikTests PRIVATE
     juce::juce_events
     sqlite3
     essentia
+    onnxruntime
     ${RUBBERBAND_LINK_LIBRARIES}
     juce::juce_recommended_config_flags
 )
+
+if(APPLE)
+    target_link_libraries(SonikTests PRIVATE
+        "-framework CoreML"
+        "-framework Foundation"
+    )
+endif()

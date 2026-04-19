@@ -48,6 +48,11 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     keyDetectionManager = std::make_unique<KeyDetectionManager> (
         *deckStateManager, *trackDatabase, *audioEngine);
 
+    // Create the model manager for stem separation (PRD-0019)
+    // Validates ONNX model and creates session on a background thread.
+    modelManager = std::make_unique<ModelManager> (
+        deckStateManager->getStateTree());
+
     mainWindow = std::make_unique<MainWindow> (
         *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager, *beatGridManager);
 }
@@ -67,6 +72,9 @@ void SonikApplication::shutdown()
 
     // Stop beat grid manager before engine
     beatGridManager.reset();
+
+    // Stop model manager before engine
+    modelManager.reset();
 
     // Stop audio engine BEFORE destroying DeckStateManager
     audioEngine.reset();

@@ -9,6 +9,7 @@
 #include "Features/BeatGrid/BeatGridManager.h"
 #include "Features/KeyDetection/KeyDetectionManager.h"
 #include "Features/Deck/UI/MainContentComponent.h"
+#include "Features/StemSeparation/ModelManager.h"
 #include <memory>
 
 class MainWindow final : public juce::DocumentWindow
@@ -59,6 +60,7 @@ private:
     std::unique_ptr<WaveformManager>  waveformManager;
     std::unique_ptr<BeatGridManager>  beatGridManager;
     std::unique_ptr<KeyDetectionManager> keyDetectionManager;
+    std::unique_ptr<ModelManager>        modelManager;
     std::unique_ptr<MainWindow>       mainWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SonikApplication)

@@ -143,7 +143,7 @@ Source/Features/
 
 ## 4. PRD Roadmap
 
-- [ ] PRD-0019: ONNX Runtime Integration & Model Management
+- [x] PRD-0019: ONNX Runtime Integration & Model Management
 - [ ] PRD-0020: Stem Separation Engine
 - [ ] PRD-0021: Stem-Aware Audio Playback
 - [ ] PRD-0022: Stem-Aware Time Stretching
