@@ -43,6 +43,12 @@ struct DeckAudioState
     // Slip mode (PRD-0017) – audio thread writes, UI thread reads
     std::atomic<double>   slipShadowPosition { 0.0 };
     std::atomic<bool>     slipDisplaced      { false };
+
+    // Stem mute state (PRD-0021) – audio thread reads, message thread writes
+    std::atomic<bool>     stemVocalsMuted { false };
+    std::atomic<bool>     stemDrumsMuted  { false };
+    std::atomic<bool>     stemBassMuted   { false };
+    std::atomic<bool>     stemOtherMuted  { false };
 };
 
 // Syncs ValueTree property changes to DeckAudioState atomics on the message thread.
@@ -133,6 +139,24 @@ private:
                 }
             }
         }
+
+        // Sync stem mute state (PRD-0021)
+        auto stems = tree.getChildWithName (IDs::Stems);
+        if (stems.isValid())
+        {
+            state.stemVocalsMuted.store (
+                static_cast<bool> (stems.getProperty (IDs::vocalsMuted, false)),
+                std::memory_order_relaxed);
+            state.stemDrumsMuted.store (
+                static_cast<bool> (stems.getProperty (IDs::drumsMuted, false)),
+                std::memory_order_relaxed);
+            state.stemBassMuted.store (
+                static_cast<bool> (stems.getProperty (IDs::bassMuted, false)),
+                std::memory_order_relaxed);
+            state.stemOtherMuted.store (
+                static_cast<bool> (stems.getProperty (IDs::otherMuted, false)),
+                std::memory_order_relaxed);
+        }
     }
 
     void valueTreePropertyChanged (juce::ValueTree& changedTree,
@@ -195,6 +219,22 @@ private:
             else if (property == IDs::active)
                 state.loopActive.store (static_cast<bool> (changedTree[property]),
                                         std::memory_order_relaxed);
+        }
+        // Stem mute state changed (PRD-0021)
+        else if (changedTree.hasType (IDs::Stems))
+        {
+            if (property == IDs::vocalsMuted)
+                state.stemVocalsMuted.store (static_cast<bool> (changedTree[property]),
+                                             std::memory_order_relaxed);
+            else if (property == IDs::drumsMuted)
+                state.stemDrumsMuted.store (static_cast<bool> (changedTree[property]),
+                                            std::memory_order_relaxed);
+            else if (property == IDs::bassMuted)
+                state.stemBassMuted.store (static_cast<bool> (changedTree[property]),
+                                           std::memory_order_relaxed);
+            else if (property == IDs::otherMuted)
+                state.stemOtherMuted.store (static_cast<bool> (changedTree[property]),
+                                            std::memory_order_relaxed);
         }
     }
 

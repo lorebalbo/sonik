@@ -40,6 +40,19 @@ public:
     /// Clear the audio buffer for a deck. Called on the message thread.
     void clearDeckBuffer (const juce::String& deckId);
 
+    /// Set stem buffers for a deck. Called on the message thread only (PRD-0021).
+    /// Stores 4 buffer holders, publishes raw pointers with release stores,
+    /// and sets stemsActive = true. Original buffer holder is NOT released.
+    void setDeckStemBuffers (const juce::String& deckId,
+                             AudioBufferHolder::Ptr vocals,
+                             AudioBufferHolder::Ptr drums,
+                             AudioBufferHolder::Ptr bass,
+                             AudioBufferHolder::Ptr other);
+
+    /// Clear stem buffers for a deck. Called on the message thread only (PRD-0021).
+    /// Sets stemsActive = false, nullifies stem channel pointers, releases holders.
+    void clearDeckStemBuffers (const juce::String& deckId);
+
     /// Retrieve the audio buffer for a deck (message thread only).
     AudioBufferHolder::Ptr getDeckBuffer (const juce::String& deckId);
 

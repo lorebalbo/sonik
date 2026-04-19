@@ -234,6 +234,7 @@ add_executable(SonikTests
     Tests/SlipModeTests.cpp
     Tests/OnnxInferenceTests.cpp
     Tests/StemSeparationTests.cpp
+    Tests/StemPlaybackTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp

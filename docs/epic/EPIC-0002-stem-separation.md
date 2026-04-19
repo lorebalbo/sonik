@@ -145,6 +145,6 @@ Source/Features/
 
 - [x] PRD-0019: ONNX Runtime Integration & Model Management
 - [x] PRD-0020: Stem Separation Engine
-- [ ] PRD-0021: Stem-Aware Audio Playback
+- [x] PRD-0021: Stem-Aware Audio Playback
 - [ ] PRD-0022: Stem-Aware Time Stretching
 - [ ] PRD-0023: Stem Separation UI

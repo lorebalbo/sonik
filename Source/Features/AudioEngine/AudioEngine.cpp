@@ -117,6 +117,22 @@ void AudioEngine::registerDeck (const juce::String& deckId, DeckAudioState* audi
     src.slipDisplacedLocal        = false;
     src.wasLoopActiveLastBlock    = false;
 
+    // Stem state (PRD-0021)
+    for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+    {
+        src.stemChannelL[s].store (nullptr, std::memory_order_relaxed);
+        src.stemChannelR[s].store (nullptr, std::memory_order_relaxed);
+        src.stemBufferNumFrames[s].store (0, std::memory_order_relaxed);
+        src.stemBufferHolders[s] = nullptr;
+        src.stemFadeRemaining[s] = 0;
+        src.stemFadeDirection[s] = false;
+        src.stemWasMuted[s]      = false;
+    }
+    src.stemsActive.store (false, std::memory_order_relaxed);
+    src.stemsActivationFadeRemaining = 0;
+    src.stemsActivationFadeDirection = false;
+    src.wasStemsActiveLocal          = false;
+
     // Publish pointer — use release so the audio thread sees all writes above.
     deckSlots[static_cast<size_t> (slot)].store (&src, std::memory_order_release);
 }
@@ -149,6 +165,16 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
 
     if (holder != nullptr && holder->getBuffer().getNumChannels() >= 2)
     {
+        // PRD-0021: Clear stems on new track load, reset stem mute atomics (AC#20, AC#24)
+        clearDeckStemBuffers (deckId);
+        if (src.audioState != nullptr)
+        {
+            src.audioState->stemVocalsMuted.store (false, std::memory_order_relaxed);
+            src.audioState->stemDrumsMuted.store (false, std::memory_order_relaxed);
+            src.audioState->stemBassMuted.store (false, std::memory_order_relaxed);
+            src.audioState->stemOtherMuted.store (false, std::memory_order_relaxed);
+        }
+
         // Reset transport state so the new track loads stopped at position 0
         src.pendingCommand.store (0, std::memory_order_relaxed);
         src.seekTarget.store (0, std::memory_order_relaxed);
@@ -239,6 +265,16 @@ void AudioEngine::clearDeckBuffer (const juce::String& deckId)
 
     auto& src = deckSources[static_cast<size_t> (slot)];
 
+    // PRD-0021: Clear stems on eject, reset stem mute atomics (AC#19, AC#24)
+    clearDeckStemBuffers (deckId);
+    if (src.audioState != nullptr)
+    {
+        src.audioState->stemVocalsMuted.store (false, std::memory_order_relaxed);
+        src.audioState->stemDrumsMuted.store (false, std::memory_order_relaxed);
+        src.audioState->stemBassMuted.store (false, std::memory_order_relaxed);
+        src.audioState->stemOtherMuted.store (false, std::memory_order_relaxed);
+    }
+
     // Null the pointers first so the audio thread stops reading
     src.channelL.store (nullptr, std::memory_order_release);
     src.channelR.store (nullptr, std::memory_order_release);
@@ -252,6 +288,91 @@ void AudioEngine::clearDeckBuffer (const juce::String& deckId)
 
     // Release ownership
     src.bufferHolder = nullptr;
+
+    // Now safe to release deferred stem holders — audio thread sees no deck data
+    for (int i = 0; i < DeckAudioSource::NUM_STEMS; ++i)
+        src.stemBufferHolders[i] = nullptr;
+}
+
+// ---------------------------------------------------------------------------
+// Stem buffer management (PRD-0021, message thread only)
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Stem buffer management (PRD-0021, message thread only)
+// ---------------------------------------------------------------------------
+
+void AudioEngine::setDeckStemBuffers (const juce::String& deckId,
+                                       AudioBufferHolder::Ptr vocals,
+                                       AudioBufferHolder::Ptr drums,
+                                       AudioBufferHolder::Ptr bass,
+                                       AudioBufferHolder::Ptr other)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto& src = deckSources[static_cast<size_t> (slot)];
+
+    AudioBufferHolder::Ptr holders[DeckAudioSource::NUM_STEMS] = {
+        vocals, drums, bass, other
+    };
+
+    // Store holders first (message thread ownership, AC#3)
+    for (int i = 0; i < DeckAudioSource::NUM_STEMS; ++i)
+        src.stemBufferHolders[i] = holders[i];
+
+    // Extract raw pointers and publish with release stores (AC#21)
+    // All 4 pointer pairs stored BEFORE stemsActive set to true.
+    for (int i = 0; i < DeckAudioSource::NUM_STEMS; ++i)
+    {
+        if (holders[i] != nullptr && holders[i]->getBuffer().getNumChannels() >= 2)
+        {
+            src.stemBufferNumFrames[i].store (holders[i]->getNumFrames(),
+                                              std::memory_order_relaxed);
+            src.stemChannelR[i].store (holders[i]->getBuffer().getReadPointer (1),
+                                       std::memory_order_relaxed);
+            src.stemChannelL[i].store (holders[i]->getBuffer().getReadPointer (0),
+                                       std::memory_order_release);
+        }
+        else
+        {
+            src.stemChannelL[i].store (nullptr, std::memory_order_relaxed);
+            src.stemChannelR[i].store (nullptr, std::memory_order_relaxed);
+            src.stemBufferNumFrames[i].store (0, std::memory_order_relaxed);
+        }
+    }
+
+    // Set stemsActive AFTER all pointers stored (AC#5, AC#21)
+    src.stemsActive.store (true, std::memory_order_release);
+}
+
+void AudioEngine::clearDeckStemBuffers (const juce::String& deckId)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto& src = deckSources[static_cast<size_t> (slot)];
+
+    // Deactivate first (AC#6) — audio thread will stop reading stem data
+    src.stemsActive.store (false, std::memory_order_release);
+
+    // Null all stem channel pointers
+    for (int i = 0; i < DeckAudioSource::NUM_STEMS; ++i)
+    {
+        src.stemChannelL[i].store (nullptr, std::memory_order_release);
+        src.stemChannelR[i].store (nullptr, std::memory_order_relaxed);
+        src.stemBufferNumFrames[i].store (0, std::memory_order_relaxed);
+    }
+
+    // IMPORTANT: Do NOT release stemBufferHolders here.
+    // The audio thread may still be in a 64-sample deactivation crossfade,
+    // reading from the stem buffer pointers it captured before seeing stemsActive=false.
+    // Releasing holders would free the underlying buffers → use-after-free.
+    // Instead, let the next setDeckStemBuffers() or setDeckBuffer() overwrite
+    // them naturally, at which point the audio thread will have finished
+    // any deactivation crossfade.
 }
 
 // ---------------------------------------------------------------------------
@@ -728,6 +849,73 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 inPtrs, sourceSamples, outPtrs, numSamples, timeRatio);
         }
 
+        // --- Stem state (PRD-0021) ---
+        bool stemActive = source->stemsActive.load (std::memory_order_acquire);
+
+        const float* stmL[DeckAudioSource::NUM_STEMS] = {};
+        const float* stmR[DeckAudioSource::NUM_STEMS] = {};
+        int64_t stmLen[DeckAudioSource::NUM_STEMS] = {};
+        bool stmMuted[DeckAudioSource::NUM_STEMS] = {};
+
+        // Need stem data if active or during deactivation crossfade
+        bool computeStems = stemActive;
+        if (! stemActive && source->stemsActivationFadeRemaining > 0)
+            computeStems = true;
+
+        if (computeStems)
+        {
+            for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+            {
+                stmL[s]   = source->stemChannelL[s].load (std::memory_order_acquire);
+                stmR[s]   = source->stemChannelR[s].load (std::memory_order_relaxed);
+                stmLen[s] = source->stemBufferNumFrames[s].load (std::memory_order_relaxed);
+            }
+            stmMuted[0] = audioState->stemVocalsMuted.load (std::memory_order_relaxed);
+            stmMuted[1] = audioState->stemDrumsMuted.load (std::memory_order_relaxed);
+            stmMuted[2] = audioState->stemBassMuted.load (std::memory_order_relaxed);
+            stmMuted[3] = audioState->stemOtherMuted.load (std::memory_order_relaxed);
+        }
+
+        // Detect stems activation transition for crossfade (AC#25)
+        if (stemActive != source->wasStemsActiveLocal)
+        {
+            // On deactivation, check if stem pointers are still valid
+            bool canCrossfade = true;
+            if (! stemActive)
+            {
+                bool anyValid = false;
+                for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+                {
+                    if (stmL[s] != nullptr && stmR[s] != nullptr && stmLen[s] > 0)
+                        anyValid = true;
+                }
+                canCrossfade = anyValid;
+                if (anyValid)
+                    computeStems = true;
+            }
+
+            if (canCrossfade)
+            {
+                source->stemsActivationFadeRemaining = DeckAudioSource::STEM_CROSSFADE_LENGTH;
+                source->stemsActivationFadeDirection = stemActive;
+            }
+        }
+        source->wasStemsActiveLocal = stemActive;
+
+        // Detect per-stem mute transitions (AC#11)
+        if (stemActive)
+        {
+            for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+            {
+                if (stmMuted[s] != source->stemWasMuted[s])
+                {
+                    source->stemFadeRemaining[s] = DeckAudioSource::STEM_CROSSFADE_LENGTH;
+                    source->stemFadeDirection[s] = ! stmMuted[s]; // true = unmuting
+                    source->stemWasMuted[s] = stmMuted[s];
+                }
+            }
+        }
+
         for (int i = 0; i < numSamples; ++i)
         {
             // If not playing and no active fade remaining, skip
@@ -794,22 +982,115 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 vinylR = 0.0f;
             }
 
-            // Select output sample: stretched or vinyl
+            // Select output sample: stems, stretched, or vinyl (PRD-0021)
             float rawL, rawR;
+
+            // Compute per-stem gains with crossfade (AC#11)
+            float stemGains[DeckAudioSource::NUM_STEMS] = { 1.0f, 1.0f, 1.0f, 1.0f };
+            float stemSumL = 0.0f, stemSumR = 0.0f;
+
+            if (computeStems)
+            {
+                for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+                {
+                    if (source->stemFadeRemaining[s] > 0)
+                    {
+                        float p = static_cast<float> (DeckAudioSource::STEM_CROSSFADE_LENGTH
+                            - source->stemFadeRemaining[s])
+                            / static_cast<float> (DeckAudioSource::STEM_CROSSFADE_LENGTH);
+                        stemGains[s] = source->stemFadeDirection[s] ? p : (1.0f - p);
+                        --source->stemFadeRemaining[s];
+                    }
+                    else
+                    {
+                        stemGains[s] = stmMuted[s] ? 0.0f : 1.0f;
+                    }
+                }
+
+                // Read from each stem buffer at current playhead (AC#10, AC#23)
+                for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+                {
+                    if (stmL[s] == nullptr || stmR[s] == nullptr || stmLen[s] <= 0)
+                        continue;
+
+                    float sL, sR;
+                    if (idx >= 0 && idx < stmLen[s])
+                    {
+                        if (speed != 1.0f)
+                        {
+                            float frac = static_cast<float> (pos - static_cast<double> (idx));
+                            float s0L = stmL[s][idx];
+                            float s1L = (idx + 1 < stmLen[s]) ? stmL[s][idx + 1] : stmL[s][idx];
+                            sL = s0L + frac * (s1L - s0L);
+
+                            float s0R = stmR[s][idx];
+                            float s1R = (idx + 1 < stmLen[s]) ? stmR[s][idx + 1] : stmR[s][idx];
+                            sR = s0R + frac * (s1R - s0R);
+                        }
+                        else
+                        {
+                            sL = stmL[s][idx];
+                            sR = stmR[s][idx];
+                        }
+                    }
+                    else
+                    {
+                        sL = 0.0f;
+                        sR = 0.0f;
+                    }
+
+                    stemSumL += sL * stemGains[s];
+                    stemSumR += sR * stemGains[s];
+                }
+            }
+
+            // Normal path output (stretched or vinyl)
+            float normalL, normalR;
             if (useStretcher)
             {
-                // Use stretched output when available; on underrun, use
-                // vinyl to avoid silence gaps.
-                rawL = (i < stretchedAvail) ? source->stretchOutL[i] : vinylL;
-                rawR = (i < stretchedAvail) ? source->stretchOutR[i] : vinylR;
+                normalL = (i < stretchedAvail) ? source->stretchOutL[i] : vinylL;
+                normalR = (i < stretchedAvail) ? source->stretchOutR[i] : vinylR;
             }
             else
             {
-                rawL = vinylL;
-                rawR = vinylR;
+                normalL = vinylL;
+                normalR = vinylR;
             }
 
-            // Loop crossfade blend (PRD-0014)
+            // Select final output based on stems state (AC#9, AC#25)
+            if (stemActive && source->stemsActivationFadeRemaining <= 0)
+            {
+                // Fully in stem mode
+                rawL = stemSumL;
+                rawR = stemSumR;
+            }
+            else if (source->stemsActivationFadeRemaining > 0)
+            {
+                // Crossfade between normal and stem paths
+                float p = static_cast<float> (DeckAudioSource::STEM_CROSSFADE_LENGTH
+                    - source->stemsActivationFadeRemaining)
+                    / static_cast<float> (DeckAudioSource::STEM_CROSSFADE_LENGTH);
+                --source->stemsActivationFadeRemaining;
+
+                if (source->stemsActivationFadeDirection) // activating stems
+                {
+                    rawL = normalL * (1.0f - p) + stemSumL * p;
+                    rawR = normalR * (1.0f - p) + stemSumR * p;
+                }
+                else // deactivating stems
+                {
+                    rawL = stemSumL * (1.0f - p) + normalL * p;
+                    rawR = stemSumR * (1.0f - p) + normalR * p;
+                }
+            }
+            else
+            {
+                // Normal mode — zero overhead (AC#9)
+                rawL = normalL;
+                rawR = normalR;
+            }
+
+            // Loop crossfade blend (PRD-0014, stem-aware PRD-0021 AC#15)
             // After a loop wrap-back, we blend the "old continuation" audio
             // (from past loopOut) with the new audio (from loopIn) to
             // eliminate the click at the loop boundary.
@@ -821,10 +1102,32 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
 
                 int64_t oldIdx = static_cast<int64_t> (source->loopFadeReadPos);
                 float oldL = 0.0f, oldR = 0.0f;
-                if (oldIdx >= 0 && oldIdx < bufLen)
+
+                if (stemActive && source->stemsActivationFadeRemaining <= 0)
                 {
-                    oldL = chL[oldIdx];
-                    oldR = chR[oldIdx];
+                    // Read old continuation from each stem buffer independently
+                    for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+                    {
+                        if (stmL[s] == nullptr || stmR[s] == nullptr || stmLen[s] <= 0)
+                            continue;
+
+                        float oL = 0.0f, oR = 0.0f;
+                        if (oldIdx >= 0 && oldIdx < stmLen[s])
+                        {
+                            oL = stmL[s][oldIdx];
+                            oR = stmR[s][oldIdx];
+                        }
+                        oldL += oL * stemGains[s];
+                        oldR += oR * stemGains[s];
+                    }
+                }
+                else
+                {
+                    if (oldIdx >= 0 && oldIdx < bufLen)
+                    {
+                        oldL = chL[oldIdx];
+                        oldR = chR[oldIdx];
+                    }
                 }
 
                 rawL = rawL * progress + oldL * (1.0f - progress);

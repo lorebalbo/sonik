@@ -103,4 +103,29 @@ struct DeckAudioSource
     float stretchInR[MAX_STRETCH_BLOCK]  = {};
     float stretchOutL[MAX_STRETCH_BLOCK] = {};
     float stretchOutR[MAX_STRETCH_BLOCK] = {};
+
+    // --- Stem buffers (PRD-0021) ---
+    static constexpr int NUM_STEMS = 4;
+    static constexpr int STEM_CROSSFADE_LENGTH = 64;
+
+    // Raw stem channel pointers for audio thread (non-owning, point into holders' buffers)
+    std::atomic<const float*> stemChannelL[NUM_STEMS] = { {nullptr}, {nullptr}, {nullptr}, {nullptr} };
+    std::atomic<const float*> stemChannelR[NUM_STEMS] = { {nullptr}, {nullptr}, {nullptr}, {nullptr} };
+    std::atomic<int64_t>      stemBufferNumFrames[NUM_STEMS] = { {0}, {0}, {0}, {0} };
+
+    // Stems active flag (message thread writes with release, audio thread reads with acquire)
+    std::atomic<bool> stemsActive { false };
+
+    // Ownership of stem buffers (message thread only, NOT accessed by audio thread)
+    AudioBufferHolder::Ptr stemBufferHolders[NUM_STEMS];
+
+    // Per-stem mute crossfade state (audio thread only, AC#11)
+    int  stemFadeRemaining[NUM_STEMS] = { 0, 0, 0, 0 };
+    bool stemFadeDirection[NUM_STEMS] = { false, false, false, false }; // true = unmuting
+    bool stemWasMuted[NUM_STEMS]      = { false, false, false, false };
+
+    // Stems activation crossfade state (audio thread only, AC#25)
+    int  stemsActivationFadeRemaining = 0;
+    bool stemsActivationFadeDirection = false; // true = activating stems
+    bool wasStemsActiveLocal          = false;
 };
