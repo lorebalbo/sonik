@@ -85,16 +85,19 @@ private:
 
     void testModelManagerGetModelVersion()
     {
-        beginTest ("ModelManager - getModelVersion returns htdemucs_v4");
+        beginTest ("ModelManager - getModelVersion returns bs_roformer_v1");
         juce::String version (ModelManager::getModelVersion());
-        expectEquals (version, juce::String ("htdemucs_v4"));
+        expectEquals (version, juce::String ("bs_roformer_v1"));
     }
 
     void testModelManagerGetModelFilename()
     {
-        beginTest ("ModelManager - getModelFilename returns htdemucs.onnx");
+        beginTest ("ModelManager - getModelFilename returns bs_roformer ckpt");
         juce::String filename (ModelManager::getModelFilename());
-        expectEquals (filename, juce::String ("htdemucs.onnx"));
+        expect (filename.contains ("bs_roformer"),
+                "Model filename should contain bs_roformer");
+        expect (filename.endsWith (".ckpt"),
+                "Model filename should end with .ckpt");
     }
 
     void testModelManagerIsModelReadyWhenMissing()
@@ -196,7 +199,7 @@ private:
                              .getChild (0)
                              .getChildWithName (IDs::Stems);
         auto mv = stemsNode.getProperty (IDs::modelVersion).toString();
-        expectEquals (mv, juce::String ("htdemucs_v4"),
+        expectEquals (mv, juce::String ("bs_roformer_v1"),
                       "modelVersion should be set even when model is unavailable");
     }
 };

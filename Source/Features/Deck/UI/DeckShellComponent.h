@@ -20,6 +20,10 @@
 #include "../../BeatJump/BeatJumpEngine.h"
 #include "../../BeatJump/BeatJumpComponent.h"
 #include "../../SlipMode/SlipButtonComponent.h"
+#include "../../StemSeparation/UI/StemSeparateButton.h"
+#include "../../StemSeparation/UI/StemToggleComponent.h"
+
+class StemSeparationManager;
 
 class DeckShellComponent final : public juce::Component,
                                   public juce::FileDragAndDropTarget,
@@ -33,6 +37,7 @@ public:
                         AudioFileLoader& loader,
                         WaveformManager& waveformMgr,
                         BeatGridManager& beatGridMgr,
+                        StemSeparationManager& stemMgr,
                         const juce::String& deckId);
     ~DeckShellComponent() override;
 
@@ -75,6 +80,7 @@ private:
     AudioFileLoader&  audioFileLoader;
     WaveformManager&  waveformManager;
     BeatGridManager&  beatGridManager;
+    StemSeparationManager& stemSeparationManager;
     juce::String      deckId;
     juce::ValueTree   deckTree;
     juce::ValueTree   rootState;
@@ -95,6 +101,9 @@ private:
     std::unique_ptr<BeatJumpEngine>       beatJumpEngine;
     std::unique_ptr<BeatJumpComponent>    beatJumpComponent;
     std::unique_ptr<SlipButtonComponent>  slipButton;
+    std::unique_ptr<StemSeparateButton>    stemSeparateButton;
+    std::unique_ptr<StemToggleComponent>   stemVocToggle;
+    std::unique_ptr<StemToggleComponent>   stemInstToggle;
 
     void hotCuesChanged() override;
     void updateWaveformHotCues();

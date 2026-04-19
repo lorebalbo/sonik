@@ -3,7 +3,6 @@
 #include "StemData.h"
 #include "StemCache.h"
 #include "StemSeparationEngine.h"
-#include "OnnxInference.h"
 #include "ModelManager.h"
 #include "../Deck/DeckStateManager.h"
 #include "../Deck/DeckIdentifiers.h"
@@ -33,12 +32,10 @@ public:
 
     /// @param deckState     Reference to the deck state manager.
     /// @param database      Reference to the track database.
-    /// @param inference     Reference to the shared OnnxInference instance.
-    /// @param modelMgr      Reference to the model manager (for readiness check).
+    /// @param modelMgr      Reference to the model manager.
     /// @param engine        Reference to the audio engine (for buffer access).
     StemSeparationManager (DeckStateManager& deckState,
                             TrackDatabase& database,
-                            OnnxInference& inference,
                             ModelManager& modelMgr,
                             AudioEngine& engine);
     ~StemSeparationManager() override;
@@ -55,6 +52,9 @@ public:
 
     /// Get the stem data for a deck (nullptr if not separated).
     StemData::Ptr getStemData (const juce::String& deckId) const;
+
+    /// Returns true if the model is loaded and ready for inference.
+    bool isModelReady() const;
 
     /// Register a callback for when stems become ready.
     void setStemReadyCallback (StemReadyCallback callback);
@@ -74,7 +74,6 @@ private:
 
     DeckStateManager&  deckStateManager;
     TrackDatabase&     trackDatabase;
-    OnnxInference&     onnxInference;
     ModelManager&      modelManager;
     AudioEngine&       audioEngine;
     StemCache          stemCache;

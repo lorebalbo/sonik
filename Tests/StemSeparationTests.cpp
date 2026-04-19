@@ -5,7 +5,6 @@
 #include "Features/StemSeparation/SpectralProcessor.h"
 #include "Features/StemSeparation/StemData.h"
 #include "Features/StemSeparation/StemCache.h"
-#include "Features/StemSeparation/OnnxInference.h"
 #include "Features/Deck/Database/TrackDatabase.h"
 #include "Features/AudioEngine/AudioBufferHolder.h"
 
@@ -523,38 +522,3 @@ private:
 };
 
 static StemCacheTests stemCacheTests;
-
-// ============================================================================
-// OnnxInference run() Tests
-// ============================================================================
-class OnnxInferenceRunTests : public juce::UnitTest
-{
-public:
-    OnnxInferenceRunTests() : juce::UnitTest ("OnnxInference run()", "Sonik") {}
-
-    void runTest() override
-    {
-        testRunWithoutSessionFails();
-    }
-
-private:
-    void testRunWithoutSessionFails()
-    {
-        beginTest ("OnnxInference - run() without valid session returns failure (no crash)");
-
-        OnnxInference inference;
-        // No session created — calling run() should fail gracefully
-
-        std::vector<float> inputData (100, 0.0f);
-        std::vector<int64_t> inputShape = { 1, 2, 10, 5 };
-
-        auto result = inference.run (inputData, inputShape, "input", "output");
-
-        expect (! result.success,
-                "run() without a valid session should return success=false");
-        expect (! result.errorMessage.empty(),
-                "run() should provide an error message when session is invalid");
-    }
-};
-
-static OnnxInferenceRunTests onnxInferenceRunTests;

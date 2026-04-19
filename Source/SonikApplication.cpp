@@ -49,17 +49,32 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
         *deckStateManager, *trackDatabase, *audioEngine);
 
     // Create the model manager for stem separation (PRD-0019)
-    // Validates ONNX model and creates session on a background thread.
+    // Validates model file and discovers Python on a background thread.
     modelManager = std::make_unique<ModelManager> (
         deckStateManager->getStateTree());
 
     // Create the stem separation manager (PRD-0020)
     stemSeparationManager = std::make_unique<StemSeparationManager> (
         *deckStateManager, *trackDatabase,
-        modelManager->getInference(), *modelManager, *audioEngine);
+        *modelManager, *audioEngine);
+
+    // Wire stem-ready callback to deliver stems to audio engine (PRD-0021)
+    stemSeparationManager->setStemReadyCallback (
+        [this] (const juce::String& deckId, StemData::Ptr stems)
+        {
+            if (audioEngine != nullptr && stems != nullptr)
+            {
+                audioEngine->setDeckStemBuffers (
+                    deckId,
+                    stems->stems[StemData::Vocals],
+                    stems->stems[StemData::Drums],
+                    stems->stems[StemData::Bass],
+                    stems->stems[StemData::Other]);
+            }
+        });
 
     mainWindow = std::make_unique<MainWindow> (
-        *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager, *beatGridManager);
+        *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager, *beatGridManager, *stemSeparationManager);
 }
 
 void SonikApplication::shutdown()
@@ -78,7 +93,7 @@ void SonikApplication::shutdown()
     // Stop beat grid manager before engine
     beatGridManager.reset();
 
-    // Stop stem separation manager before model manager (holds OnnxInference& reference)
+    // Stop stem separation manager before model manager
     stemSeparationManager.reset();
 
     // Stop model manager before engine

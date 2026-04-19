@@ -6,12 +6,10 @@
 
 StemSeparationManager::StemSeparationManager (DeckStateManager& deckState,
                                                TrackDatabase& database,
-                                               OnnxInference& inference,
                                                ModelManager& modelMgr,
                                                AudioEngine& engine)
     : deckStateManager (deckState),
       trackDatabase (database),
-      onnxInference (inference),
       modelManager (modelMgr),
       audioEngine (engine),
       stemCache (database),
@@ -52,8 +50,7 @@ void StemSeparationManager::startSeparation (const juce::String& deckId)
     if (! modelManager.isModelReady())
     {
         auto stems = deckTree.getChildWithName (IDs::Stems);
-        stems.setProperty (IDs::status, "error", nullptr);
-        stems.setProperty (IDs::stemError, "Model not ready", nullptr);
+        stems.setProperty (IDs::status, "model_unavailable", nullptr);
         return;
     }
 
@@ -104,7 +101,10 @@ void StemSeparationManager::startSeparation (const juce::String& deckId)
     auto aliveFlag = alive;
     auto* job = new StemSeparationEngine (
         deckId, contentHash, buffer,
-        onnxInference, stemCache, stems, deviceRate,
+        stemCache, stems, deviceRate,
+        modelManager.getPythonPath(),
+        modelManager.getScriptPath(),
+        ModelManager::getModelDirectory(),
         [this, aliveFlag] (const juce::String& dk, StemData::Ptr result, const juce::String& error)
         {
             if (! aliveFlag->load (std::memory_order_acquire))
@@ -145,6 +145,11 @@ StemData::Ptr StemSeparationManager::getStemData (const juce::String& deckId) co
     if (it != stemDataMap.end())
         return it->second;
     return nullptr;
+}
+
+bool StemSeparationManager::isModelReady() const
+{
+    return modelManager.isModelReady();
 }
 
 void StemSeparationManager::setStemReadyCallback (StemReadyCallback callback)

@@ -2,17 +2,17 @@
 
 #include "StemData.h"
 #include "StemCache.h"
-#include "SpectralProcessor.h"
-#include "OnnxInference.h"
 #include "../AudioEngine/AudioBufferHolder.h"
 #include "../Deck/DeckIdentifiers.h"
 #include <juce_core/juce_core.h>
+#include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_data_structures/juce_data_structures.h>
 #include <functional>
 
 /// Background ThreadPoolJob that performs stem separation on a single track.
 ///
-/// Pipeline: resample → STFT → ONNX inference → iSTFT → resample back → cache.
+/// Pipeline: resample → write temp WAV → Python subprocess (BS-RoFormer)
+///           → read output WAVs → assemble 4-slot StemData → cache.
 /// Cooperative cancellation via shouldExit(), checked after every major step.
 class StemSeparationEngine : public juce::ThreadPoolJob
 {
@@ -24,18 +24,22 @@ public:
     /// @param deckId        The deck requesting separation.
     /// @param contentHash   Content hash of the source track.
     /// @param sourceBuffer  Decoded PCM of the full track (stereo, device rate).
-    /// @param inference     Reference to the OnnxInference session (owned by ModelManager).
     /// @param cache         Reference to the stem cache manager.
     /// @param stemsNode     ValueTree Stems node for this deck (for progress updates).
     /// @param deviceRate    The device sample rate.
+    /// @param pythonPath    Path to the Python 3 interpreter.
+    /// @param scriptPath    Path to the separation helper script.
+    /// @param modelDir      Path to the model directory.
     /// @param callback      Called on completion (success or failure).
     StemSeparationEngine (const juce::String& deckId,
                            const juce::String& contentHash,
                            AudioBufferHolder::Ptr sourceBuffer,
-                           OnnxInference& inference,
                            StemCache& cache,
                            juce::ValueTree stemsNode,
                            double deviceRate,
+                           const juce::String& pythonPath,
+                           const juce::File& scriptPath,
+                           const juce::File& modelDir,
                            CompletionCallback callback);
 
     ~StemSeparationEngine() override = default;
@@ -45,21 +49,17 @@ public:
 private:
     // Pipeline stages
     bool resampleToModelRate (juce::AudioBuffer<float>& output);
-    bool performSTFT (const juce::AudioBuffer<float>& input,
-                       std::vector<float>& specL, std::vector<float>& specR,
-                       int& nFrames);
-    bool performInference (const std::vector<float>& specL,
-                            const std::vector<float>& specR,
-                            int nFrames,
-                            std::vector<std::vector<float>>& stemSpecsL,
-                            std::vector<std::vector<float>>& stemSpecsR);
-    bool performISTFT (const std::vector<std::vector<float>>& stemSpecs,
-                        int nFrames, int originalLength,
-                        std::array<std::vector<float>, StemData::NumStems>& stemSignals);
-    bool assembleStemBuffers (const std::array<std::vector<float>, StemData::NumStems>& stemSignalsL,
-                               const std::array<std::vector<float>, StemData::NumStems>& stemSignalsR,
-                               int originalLength,
-                               StemData& output);
+    bool writeSourceToWav (const juce::AudioBuffer<float>& buffer,
+                           const juce::File& outputFile);
+    bool runPythonSeparation (const juce::File& inputWav,
+                              const juce::File& outputDir,
+                              juce::File& vocalsFile,
+                              juce::File& instrumentalFile);
+    AudioBufferHolder::Ptr readWavFile (const juce::File& file);
+    bool assembleStemData (AudioBufferHolder::Ptr vocals,
+                           AudioBufferHolder::Ptr instrumental,
+                           int numSamples,
+                           StemData& output);
 
     void reportProgress (float prog);
     void reportError (const juce::String& message);
@@ -69,13 +69,14 @@ private:
     juce::String         deckId;
     juce::String         contentHash;
     AudioBufferHolder::Ptr sourceBuffer;
-    OnnxInference&       onnxInference;
     StemCache&           stemCache;
     juce::ValueTree      stemsNode;
     double               deviceSampleRate;
+    juce::String         pythonPath;
+    juce::File           scriptPath;
+    juce::File           modelDir;
     CompletionCallback   completionCallback;
 
-    SpectralProcessor    spectralProcessor;
     double               lastProgressTime = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StemSeparationEngine)

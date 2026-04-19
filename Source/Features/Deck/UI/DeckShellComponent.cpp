@@ -5,12 +5,14 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
                                         AudioFileLoader& loader,
                                         WaveformManager& waveformMgr,
                                         BeatGridManager& beatGridMgr,
+                                        StemSeparationManager& stemMgr,
                                         const juce::String& id)
     : deckStateManager (deckState),
       audioEngine (engine),
       audioFileLoader (loader),
       waveformManager (waveformMgr),
       beatGridManager (beatGridMgr),
+      stemSeparationManager (stemMgr),
       deckId (id),
       deckTree (deckState.getDeckState (id)),
       rootState (deckState.getStateTree())
@@ -47,6 +49,23 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
         deckTree, deckStateManager.getAudioState (deckId),
         audioEngine, deckId);
     addAndMakeVisible (*slipButton);
+
+    // Stem separation button (PRD-0023)
+    stemSeparateButton = std::make_unique<StemSeparateButton> (
+        deckTree, stemSeparationManager, audioEngine, deckId);
+    addAndMakeVisible (*stemSeparateButton);
+
+    // Stem toggle buttons (PRD-0023)
+    stemVocToggle = std::make_unique<StemToggleComponent> (
+        deckTree.getChildWithName (IDs::Stems), "VOC",
+        std::vector<juce::Identifier> { IDs::vocalsMuted });
+    addAndMakeVisible (*stemVocToggle);
+
+    stemInstToggle = std::make_unique<StemToggleComponent> (
+        deckTree.getChildWithName (IDs::Stems), "INST",
+        std::vector<juce::Identifier> { IDs::drumsMuted, IDs::bassMuted, IDs::otherMuted },
+        "Mutes drums, bass, and other non-vocal elements");
+    addAndMakeVisible (*stemInstToggle);
 
     // Create hot cue manager and pad component (PRD-0012)
     hotCueManager = std::make_unique<HotCueManager> (
@@ -283,6 +302,16 @@ void DeckShellComponent::resized()
     // Slip button below quantize (PRD-0017)
     if (slipButton != nullptr)
         slipButton->setBounds (controlStrip.removeFromTop (24).reduced (12, 2));
+
+    // Stem separate button below slip (PRD-0023)
+    if (stemSeparateButton != nullptr)
+        stemSeparateButton->setBounds (controlStrip.removeFromTop (24).reduced (12, 2));
+
+    // Stem toggles below stems button (only visible when ready)
+    if (stemVocToggle != nullptr)
+        stemVocToggle->setBounds (controlStrip.removeFromTop (24).reduced (12, 2));
+    if (stemInstToggle != nullptr)
+        stemInstToggle->setBounds (controlStrip.removeFromTop (24).reduced (12, 2));
 
     // Pitch fader fills rest of control strip
     if (pitchFaderComponent != nullptr)

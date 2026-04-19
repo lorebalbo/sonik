@@ -18,13 +18,13 @@ class MainWindow final : public juce::DocumentWindow
 public:
     MainWindow (AudioFileLoader& loader, DeckStateManager& deckState,
                 AudioEngine& engine, WaveformManager& waveformMgr,
-                BeatGridManager& beatGridMgr)
+                BeatGridManager& beatGridMgr, StemSeparationManager& stemMgr)
         : DocumentWindow ("Sonik",
                           juce::Colour (0xfff9f9f9),
                           DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar (true);
-        setContentOwned (new MainContentComponent (deckState, engine, loader, waveformMgr, beatGridMgr), true);
+        setContentOwned (new MainContentComponent (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr), true);
         setResizable (true, true);
         setResizeLimits (960, 600, 3840, 2160);
         centreWithSize (1280, 800);

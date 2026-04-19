@@ -4,12 +4,14 @@ DeckLayoutManager::DeckLayoutManager (DeckStateManager& deckState,
                                       AudioEngine& engine,
                                       AudioFileLoader& loader,
                                       WaveformManager& waveformMgr,
-                                      BeatGridManager& beatGridMgr)
+                                      BeatGridManager& beatGridMgr,
+                                      StemSeparationManager& stemMgr)
     : deckStateManager (deckState),
       audioEngine (engine),
       audioFileLoader (loader),
       waveformManager (waveformMgr),
       beatGridManager (beatGridMgr),
+      stemSeparationManager (stemMgr),
       decksNode (deckState.getStateTree().getChildWithName (IDs::Decks))
 {
     decksNode.addListener (this);
@@ -35,7 +37,7 @@ void DeckLayoutManager::rebuildDeckShells()
     for (const auto& id : ids)
     {
         auto shell = std::make_unique<DeckShellComponent> (
-            deckStateManager, audioEngine, audioFileLoader, waveformManager, beatGridManager, id);
+            deckStateManager, audioEngine, audioFileLoader, waveformManager, beatGridManager, stemSeparationManager, id);
 
         shell->onRemoveRequested = [this] (const juce::String& deckId)
         {
@@ -62,7 +64,7 @@ void DeckLayoutManager::addDeckShell (const juce::String& deckId)
     }
 
     auto shell = std::make_unique<DeckShellComponent> (
-        deckStateManager, audioEngine, audioFileLoader, waveformManager, beatGridManager, deckId);
+        deckStateManager, audioEngine, audioFileLoader, waveformManager, beatGridManager, stemSeparationManager, deckId);
 
     shell->onRemoveRequested = [this] (const juce::String& id)
     {

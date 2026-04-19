@@ -10,6 +10,8 @@
 #include <vector>
 #include <memory>
 
+class StemSeparationManager;
+
 class DeckLayoutManager final : public juce::Component,
                                  private juce::ValueTree::Listener
 {
@@ -18,7 +20,8 @@ public:
                        AudioEngine& engine,
                        AudioFileLoader& loader,
                        WaveformManager& waveformMgr,
-                       BeatGridManager& beatGridMgr);
+                       BeatGridManager& beatGridMgr,
+                       StemSeparationManager& stemMgr);
     ~DeckLayoutManager() override;
 
     void resized() override;
@@ -42,6 +45,7 @@ private:
     AudioFileLoader&  audioFileLoader;
     WaveformManager&  waveformManager;
     BeatGridManager&  beatGridManager;
+    StemSeparationManager& stemSeparationManager;
     juce::ValueTree   decksNode;
 
     std::vector<std::unique_ptr<DeckShellComponent>> deckShells;

@@ -9,6 +9,8 @@
 #include "GlobalToolbar.h"
 #include "DeckLayoutManager.h"
 
+class StemSeparationManager;
+
 class MainContentComponent final : public juce::Component,
                                     private juce::ValueTree::Listener
 {
@@ -17,12 +19,13 @@ public:
                           AudioEngine& engine,
                           AudioFileLoader& loader,
                           WaveformManager& waveformMgr,
-                          BeatGridManager& beatGridMgr)
+                          BeatGridManager& beatGridMgr,
+                          StemSeparationManager& stemMgr)
         : deckStateManager (deckState),
           audioEngine (engine),
           rootState (deckState.getStateTree()),
           toolbar (deckState),
-          layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr)
+          layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr)
     {
         setOpaque (true);
         setWantsKeyboardFocus (true);
@@ -146,6 +149,7 @@ private:
 
     GlobalToolbar      toolbar;
     DeckLayoutManager  layoutManager;
+    juce::TooltipWindow tooltipWindow { this };
 
     static constexpr int toolbarHeight = 40;
 

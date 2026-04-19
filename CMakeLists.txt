@@ -174,6 +174,10 @@ target_sources(Sonik PRIVATE
     Source/Features/StemSeparation/StemSeparationEngine.cpp
     Source/Features/StemSeparation/StemSeparationManager.h
     Source/Features/StemSeparation/StemSeparationManager.cpp
+    Source/Features/StemSeparation/UI/StemSeparateButton.h
+    Source/Features/StemSeparation/UI/StemSeparateButton.cpp
+    Source/Features/StemSeparation/UI/StemToggleComponent.h
+    Source/Features/StemSeparation/UI/StemToggleComponent.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -268,6 +272,8 @@ add_executable(SonikTests
     Source/Features/StemSeparation/StemCache.cpp
     Source/Features/StemSeparation/StemSeparationEngine.cpp
     Source/Features/StemSeparation/StemSeparationManager.cpp
+    Source/Features/StemSeparation/UI/StemSeparateButton.cpp
+    Source/Features/StemSeparation/UI/StemToggleComponent.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

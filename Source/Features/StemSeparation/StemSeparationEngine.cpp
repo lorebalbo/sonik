@@ -5,19 +5,23 @@
 StemSeparationEngine::StemSeparationEngine (const juce::String& deckId_,
                                              const juce::String& contentHash_,
                                              AudioBufferHolder::Ptr sourceBuffer_,
-                                             OnnxInference& inference,
                                              StemCache& cache,
                                              juce::ValueTree stemsNode_,
                                              double deviceRate,
+                                             const juce::String& pythonPath_,
+                                             const juce::File& scriptPath_,
+                                             const juce::File& modelDir_,
                                              CompletionCallback callback)
     : juce::ThreadPoolJob ("StemSep_" + deckId_),
       deckId (deckId_),
       contentHash (contentHash_),
       sourceBuffer (std::move (sourceBuffer_)),
-      onnxInference (inference),
       stemCache (cache),
       stemsNode (std::move (stemsNode_)),
       deviceSampleRate (deviceRate),
+      pythonPath (pythonPath_),
+      scriptPath (scriptPath_),
+      modelDir (modelDir_),
       completionCallback (std::move (callback))
 {
 }
@@ -30,10 +34,9 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
 {
     lastProgressTime = juce::Time::getMillisecondCounterHiRes();
 
-    // Update status to "separating"
     reportProgress (0.0f);
 
-    // 1. Insert pending DB record before any file writes
+    // 1. Insert pending DB record
     stemCache.insertPendingRecord (contentHash,
                                     juce::String (ModelManager::getModelVersion()));
 
@@ -56,78 +59,81 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
 
     reportProgress (0.05f);
 
-    // 3. STFT — left and right channels
-    std::vector<float> specL, specR;
-    int nFrames = 0;
+    // 3. Write source to temporary WAV file
+    auto tempDir = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                       .getChildFile ("sonik_stem_" + contentHash);
+    tempDir.createDirectory();
 
-    if (! performSTFT (modelRateBuffer, specL, specR, nFrames))
+    auto inputWav = tempDir.getChildFile ("input.wav");
+
+    if (! writeSourceToWav (modelRateBuffer, inputWav))
         return jobHasFinished;
 
     if (shouldExit())
     {
+        tempDir.deleteRecursively();
         stemCache.deletePartialFiles (contentHash);
         return jobHasFinished;
     }
 
-    reportProgress (0.15f);
+    reportProgress (0.10f);
 
-    // 4. ONNX inference — single stereo call produces 4 stem spectrograms (L+R)
-    std::vector<std::vector<float>> stemSpecsL, stemSpecsR;
+    // 4. Run Python subprocess for separation
+    auto outputDir = tempDir.getChildFile ("output");
+    outputDir.createDirectory();
 
-    if (! performInference (specL, specR, nFrames, stemSpecsL, stemSpecsR))
-        return jobHasFinished;
+    juce::File vocalsFile, instrumentalFile;
 
-    if (shouldExit())
+    if (! runPythonSeparation (inputWav, outputDir, vocalsFile, instrumentalFile))
     {
-        stemCache.deletePartialFiles (contentHash);
+        tempDir.deleteRecursively();
         return jobHasFinished;
     }
 
-    reportProgress (0.70f);
-
-    // 5. iSTFT — convert each stem spectrogram back to time domain
-    const int originalLength = modelRateBuffer.getNumSamples();
-
-    std::array<std::vector<float>, StemData::NumStems> stemSignalsL;
-    if (! performISTFT (stemSpecsL, nFrames, originalLength, stemSignalsL))
-        return jobHasFinished;
-
-    std::array<std::vector<float>, StemData::NumStems> stemSignalsR;
-    if (! performISTFT (stemSpecsR, nFrames, originalLength, stemSignalsR))
-        return jobHasFinished;
-
     if (shouldExit())
     {
-        stemCache.deletePartialFiles (contentHash);
-        return jobHasFinished;
-    }
-
-    reportProgress (0.80f);
-
-    // 6. Assemble stereo AudioBufferHolder for each stem
-    auto stemResult = new StemData();
-    if (! assembleStemBuffers (stemSignalsL, stemSignalsR, originalLength, *stemResult))
-        return jobHasFinished;
-
-    StemData::Ptr stemPtr (stemResult);
-
-    if (shouldExit())
-    {
+        tempDir.deleteRecursively();
         stemCache.deletePartialFiles (contentHash);
         return jobHasFinished;
     }
 
     reportProgress (0.85f);
 
-    // 7. Write stems to disk cache
-    // Determine write sample rate: if device rate != model rate, we write at device rate
-    // so that cached files match the device rate directly.
-    double writeSampleRate = deviceSampleRate;
+    // 5. Read output WAV files
+    auto vocalsHolder = readWavFile (vocalsFile);
+    auto instrumentalHolder = readWavFile (instrumentalFile);
 
-    // Resample stems back to device rate if needed, then write
+    if (vocalsHolder == nullptr || instrumentalHolder == nullptr)
+    {
+        reportError ("Failed to read separated stem WAV files");
+        tempDir.deleteRecursively();
+        return jobHasFinished;
+    }
+
+    if (shouldExit())
+    {
+        tempDir.deleteRecursively();
+        stemCache.deletePartialFiles (contentHash);
+        return jobHasFinished;
+    }
+
+    reportProgress (0.90f);
+
+    // 6. Assemble StemData (4 slots: vocals, instrumental, silence, silence)
+    const int numSamples = modelRateBuffer.getNumSamples();
+    auto stemResult = new StemData();
+
+    if (! assembleStemData (vocalsHolder, instrumentalHolder, numSamples, *stemResult))
+    {
+        tempDir.deleteRecursively();
+        return jobHasFinished;
+    }
+
+    StemData::Ptr stemPtr (stemResult);
+
+    // 7. Resample stems back to device rate if needed
     if (std::abs (deviceSampleRate - kModelSampleRate) > 0.01)
     {
-        // Stems are currently at model rate — resample to device rate
         for (int s = 0; s < StemData::NumStems; ++s)
         {
             auto stemHolder = stemPtr->stems[static_cast<size_t> (s)];
@@ -157,27 +163,35 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
 
     if (shouldExit())
     {
+        tempDir.deleteRecursively();
         stemCache.deletePartialFiles (contentHash);
         return jobHasFinished;
     }
 
-    reportProgress (0.90f);
+    reportProgress (0.95f);
+
+    // 8. Write stems to disk cache
+    double writeSampleRate = deviceSampleRate;
 
     if (! stemCache.writeStemsToDisk (contentHash,
                                        juce::String (ModelManager::getModelVersion()),
                                        *stemPtr, writeSampleRate))
     {
-        reportError ("Failed to write stem files to disk (disk full or permissions error)");
+        reportError ("Failed to write stem files to disk");
         stemCache.deletePartialFiles (contentHash);
+        tempDir.deleteRecursively();
         return jobHasFinished;
     }
+
+    // Clean up temp files
+    tempDir.deleteRecursively();
 
     if (shouldExit())
         return jobHasFinished;
 
     reportProgress (1.0f);
 
-    // 8. Deliver result via callback
+    // 9. Deliver result via callback
     auto cb = completionCallback;
     auto dk = deckId;
     auto sp = stemPtr;
@@ -202,7 +216,6 @@ bool StemSeparationEngine::resampleToModelRate (juce::AudioBuffer<float>& output
 
     if (std::abs (srcRate - kModelSampleRate) < 0.01)
     {
-        // No resampling needed — copy
         output = srcBuf;
         return true;
     }
@@ -226,237 +239,189 @@ bool StemSeparationEngine::resampleToModelRate (juce::AudioBuffer<float>& output
     return true;
 }
 
-bool StemSeparationEngine::performSTFT (const juce::AudioBuffer<float>& input,
-                                          std::vector<float>& specL,
-                                          std::vector<float>& specR,
-                                          int& nFrames)
+bool StemSeparationEngine::writeSourceToWav (const juce::AudioBuffer<float>& buffer,
+                                               const juce::File& outputFile)
 {
-    const int numSamples = input.getNumSamples();
-    nFrames = SpectralProcessor::numFrames (numSamples);
+    juce::WavAudioFormat wavFormat;
+    auto stream = std::unique_ptr<juce::FileOutputStream> (outputFile.createOutputStream());
 
-    if (nFrames <= 0)
+    if (stream == nullptr)
     {
-        reportError ("Track too short for STFT processing");
+        reportError ("Failed to create temp WAV file: " + outputFile.getFullPathName());
         return false;
     }
 
-    // Left channel STFT
-    spectralProcessor.forward (input.getReadPointer (0), numSamples, specL);
+    auto writer = std::unique_ptr<juce::AudioFormatWriter> (
+        wavFormat.createWriterFor (stream.get(),
+                                   kModelSampleRate,
+                                   static_cast<unsigned int> (buffer.getNumChannels()),
+                                   32,      // 32-bit float
+                                   {},
+                                   0));
 
-    if (shouldExit())
+    if (writer == nullptr)
     {
-        stemCache.deletePartialFiles (contentHash);
+        reportError ("Failed to create WAV writer");
         return false;
     }
 
-    // Right channel STFT (or duplicate if mono)
-    if (input.getNumChannels() >= 2)
-        spectralProcessor.forward (input.getReadPointer (1), numSamples, specR);
-    else
-        specR = specL;
+    stream.release(); // writer takes ownership
+
+    if (! writer->writeFromAudioSampleBuffer (buffer, 0, buffer.getNumSamples()))
+    {
+        reportError ("Failed to write audio data to WAV");
+        return false;
+    }
 
     return true;
 }
 
-bool StemSeparationEngine::performInference (const std::vector<float>& specL,
-                                               const std::vector<float>& specR,
-                                               int nFrames,
-                                               std::vector<std::vector<float>>& stemSpecsL,
-                                               std::vector<std::vector<float>>& stemSpecsR)
+bool StemSeparationEngine::runPythonSeparation (const juce::File& inputWav,
+                                                  const juce::File& outputDir,
+                                                  juce::File& vocalsFile,
+                                                  juce::File& instrumentalFile)
 {
-    // htdemucs model expects input shape: [batch=1, channels=2, freq_bins, time_frames]
-    // with interleaved real+imaginary -> channels = 2 * 2 = 4 (re_L, im_L, re_R, im_R)
-    // Simplified: we pack as [1, 2, numBins*2, nFrames] where channel dim has L and R
-    // Each "channel" has interleaved re/im per bin.
-    //
-    // Actual htdemucs: input is waveform or spectrogram depending on model export.
-    // For an ONNX spectrogram model: [batch, 2, freq_bins, frames] with complex as separate channels.
-    //
-    // We use a practical layout: [1, 4, numBins, nFrames]
-    // channels: [re_L, im_L, re_R, im_R]
+    juce::StringArray args;
+    args.add (pythonPath);
+    args.add (scriptPath.getFullPathName());
+    args.add ("--separate");
+    args.add (inputWav.getFullPathName());
+    args.add (outputDir.getFullPathName());
+    args.add (modelDir.getFullPathName());
 
-    const int nBins = SpectralProcessor::numBins();
+    juce::ChildProcess process;
 
-    // Reshape from interleaved [frame * bins * 2] to [channel, bins, frames]
-    // specL layout: for each frame f, for each bin b: [real, imag]
-    std::vector<float> inputTensor (static_cast<size_t> (4 * nBins * nFrames), 0.0f);
-
-    auto fillChannel = [&] (const std::vector<float>& spec, int reChannelIdx, int imChannelIdx)
+    if (! process.start (args))
     {
-        for (int f = 0; f < nFrames; ++f)
-        {
-            if (shouldExit()) return;
-
-            for (int b = 0; b < nBins; ++b)
-            {
-                size_t srcIdx = static_cast<size_t> (f * nBins * 2 + b * 2);
-                size_t reIdx  = static_cast<size_t> (reChannelIdx * nBins * nFrames + b * nFrames + f);
-                size_t imIdx  = static_cast<size_t> (imChannelIdx * nBins * nFrames + b * nFrames + f);
-
-                inputTensor[reIdx] = spec[srcIdx];      // real
-                inputTensor[imIdx] = spec[srcIdx + 1];  // imag
-            }
-        }
-    };
-
-    fillChannel (specL, 0, 1); // re_L, im_L
-    if (shouldExit()) return false;
-    fillChannel (specR, 2, 3); // re_R, im_R
-    if (shouldExit()) return false;
-
-    // Input shape: [1, 4, numBins, nFrames]
-    std::vector<int64_t> inputShape = { 1, 4, static_cast<int64_t> (nBins),
-                                         static_cast<int64_t> (nFrames) };
-
-    // Run inference
-    auto result = onnxInference.run (inputTensor, inputShape, "mix", "stems");
-
-    if (! result.success)
-    {
-        reportError (juce::String (result.errorMessage));
+        reportError ("Failed to start Python separation process");
         return false;
     }
 
-    // Expected output shape: [1, stems=4, channels=2, numBins, nFrames]
-    // Total elements = 4 * 2 * numBins * nFrames
-    // Per stem: 2 * numBins * nFrames (L channel then R channel)
-
-    const size_t totalOutput = result.outputData.size();
-    const size_t perStem = totalOutput / StemData::NumStems;
-    const size_t perChannel = perStem / 2; // L and R per stem
-
-    stemSpecsL.resize (StemData::NumStems);
-    stemSpecsR.resize (StemData::NumStems);
-
-    for (int s = 0; s < StemData::NumStems; ++s)
+    // Wait for completion (separation can take minutes)
+    // Check shouldExit periodically
+    while (process.isRunning())
     {
-        if (shouldExit()) return false;
-
-        auto& specOutL = stemSpecsL[static_cast<size_t> (s)];
-        auto& specOutR = stemSpecsR[static_cast<size_t> (s)];
-
-        const float* stemData = result.outputData.data()
-                                + static_cast<size_t> (s) * perStem;
-
-        if (perChannel == static_cast<size_t> (nBins * nFrames))
+        if (shouldExit())
         {
-            // Output layout: [bins, frames] per channel — reshape to [frame, bin, re/im]
-            // Channel 0 = L, Channel 1 = R
-            specOutL.resize (static_cast<size_t> (nFrames * nBins * 2));
-            specOutR.resize (static_cast<size_t> (nFrames * nBins * 2));
-
-            const float* chL = stemData;                     // channel 0
-            const float* chR = stemData + perChannel;        // channel 1
-
-            for (int f = 0; f < nFrames; ++f)
-            {
-                for (int b = 0; b < nBins; ++b)
-                {
-                    size_t dstIdx = static_cast<size_t> (f * nBins * 2 + b * 2);
-                    size_t srcIdx = static_cast<size_t> (b * nFrames + f);
-
-                    specOutL[dstIdx]     = chL[srcIdx]; // real
-                    specOutL[dstIdx + 1] = 0.0f;        // imag (separate pass below)
-                    specOutR[dstIdx]     = chR[srcIdx];
-                    specOutR[dstIdx + 1] = 0.0f;
-                }
-            }
+            process.kill();
+            stemCache.deletePartialFiles (contentHash);
+            return false;
         }
-        else if (perChannel == static_cast<size_t> (nBins * nFrames * 2))
+
+        juce::Thread::sleep (500);
+    }
+
+    auto exitCode = process.getExitCode();
+    auto output = process.readAllProcessOutput();
+
+    if (exitCode != 0)
+    {
+        // Try to parse JSON error
+        auto parsed = juce::JSON::parse (output);
+
+        if (parsed.isObject())
         {
-            // Output has re+im per channel: [re_ch, im_ch] each of size [bins, frames]
-            specOutL.resize (static_cast<size_t> (nFrames * nBins * 2));
-            specOutR.resize (static_cast<size_t> (nFrames * nBins * 2));
-
-            const float* chL = stemData;
-            const float* chR = stemData + perChannel;
-            const size_t halfCh = static_cast<size_t> (nBins * nFrames);
-
-            for (int f = 0; f < nFrames; ++f)
-            {
-                for (int b = 0; b < nBins; ++b)
-                {
-                    size_t dstIdx = static_cast<size_t> (f * nBins * 2 + b * 2);
-                    size_t srcIdx = static_cast<size_t> (b * nFrames + f);
-
-                    specOutL[dstIdx]     = chL[srcIdx];             // real L
-                    specOutL[dstIdx + 1] = chL[halfCh + srcIdx];    // imag L
-                    specOutR[dstIdx]     = chR[srcIdx];             // real R
-                    specOutR[dstIdx + 1] = chR[halfCh + srcIdx];    // imag R
-                }
-            }
+            auto errorMsg = parsed.getProperty ("error", "Unknown error").toString();
+            reportError ("Separation failed: " + errorMsg);
         }
         else
         {
-            // Fallback: split raw data evenly between L and R
-            specOutL.assign (stemData, stemData + static_cast<ptrdiff_t> (perChannel));
-            specOutR.assign (stemData + static_cast<ptrdiff_t> (perChannel),
-                              stemData + static_cast<ptrdiff_t> (perStem));
+            reportError ("Separation process failed (exit code "
+                        + juce::String (exitCode) + "): " + output.substring (0, 500));
         }
+
+        return false;
+    }
+
+    // Parse JSON output to get file paths — extract last line containing JSON
+    // (output may contain progress bars and other text before the JSON)
+    juce::String jsonLine;
+    auto lines = juce::StringArray::fromLines (output);
+    for (int i = lines.size() - 1; i >= 0; --i)
+    {
+        auto trimmed = lines[i].trim();
+        if (trimmed.startsWith ("{") && trimmed.endsWith ("}"))
+        {
+            jsonLine = trimmed;
+            break;
+        }
+    }
+
+    auto parsed = juce::JSON::parse (jsonLine);
+
+    if (! parsed.isObject())
+    {
+        reportError ("Invalid JSON output from separation script");
+        return false;
+    }
+
+    auto vocalsPath = parsed.getProperty ("vocals", "").toString();
+    auto instrumentalPath = parsed.getProperty ("instrumental", "").toString();
+
+    if (vocalsPath.isEmpty() || instrumentalPath.isEmpty())
+    {
+        reportError ("Separation script did not return expected file paths");
+        return false;
+    }
+
+    vocalsFile = juce::File (vocalsPath);
+    instrumentalFile = juce::File (instrumentalPath);
+
+    // If paths are relative (just filenames), resolve against output directory
+    if (! vocalsFile.existsAsFile())
+        vocalsFile = outputDir.getChildFile (vocalsPath);
+    if (! instrumentalFile.existsAsFile())
+        instrumentalFile = outputDir.getChildFile (instrumentalPath);
+
+    if (! vocalsFile.existsAsFile() || ! instrumentalFile.existsAsFile())
+    {
+        reportError ("Separation output files not found on disk");
+        return false;
     }
 
     return true;
 }
 
-bool StemSeparationEngine::performISTFT (const std::vector<std::vector<float>>& stemSpecs,
-                                           int nFrames, int originalLength,
-                                           std::array<std::vector<float>, StemData::NumStems>& stemSignals)
+AudioBufferHolder::Ptr StemSeparationEngine::readWavFile (const juce::File& file)
 {
-    for (int s = 0; s < StemData::NumStems; ++s)
-    {
-        if (shouldExit())
-        {
-            stemCache.deletePartialFiles (contentHash);
-            return false;
-        }
+    juce::AudioFormatManager formatManager;
+    formatManager.registerBasicFormats();
 
-        int outputLen = spectralProcessor.inverse (stemSpecs[static_cast<size_t> (s)].data(),
-                                                     nFrames,
-                                                     stemSignals[static_cast<size_t> (s)]);
+    auto reader = std::unique_ptr<juce::AudioFormatReader> (
+        formatManager.createReaderFor (file));
 
-        // Trim to original length
-        if (outputLen > originalLength)
-            stemSignals[static_cast<size_t> (s)].resize (static_cast<size_t> (originalLength));
-        else if (outputLen < originalLength)
-            stemSignals[static_cast<size_t> (s)].resize (static_cast<size_t> (originalLength), 0.0f);
-    }
+    if (reader == nullptr)
+        return nullptr;
 
-    return true;
+    const auto numChannels = juce::jmax (2, static_cast<int> (reader->numChannels));
+    const auto numSamples  = static_cast<int> (reader->lengthInSamples);
+
+    juce::AudioBuffer<float> buffer (numChannels, numSamples);
+    buffer.clear();
+    reader->read (&buffer, 0, numSamples, 0, true, numChannels > 1);
+
+    return new AudioBufferHolder (std::move (buffer), reader->sampleRate,
+                                   static_cast<int64_t> (numSamples));
 }
 
-bool StemSeparationEngine::assembleStemBuffers (
-    const std::array<std::vector<float>, StemData::NumStems>& stemSignalsL,
-    const std::array<std::vector<float>, StemData::NumStems>& stemSignalsR,
-    int originalLength,
-    StemData& output)
+bool StemSeparationEngine::assembleStemData (AudioBufferHolder::Ptr vocals,
+                                              AudioBufferHolder::Ptr instrumental,
+                                              int numSamples,
+                                              StemData& output)
 {
-    for (int s = 0; s < StemData::NumStems; ++s)
+    // Slot 0: Vocals
+    output.stems[StemData::Vocals] = vocals;
+
+    // Slot 1: Instrumental (mapped to "Drums" slot for UI compatibility)
+    output.stems[StemData::Drums] = instrumental;
+
+    // Slots 2-3: Silence (Bass, Other)
+    for (int s = StemData::Bass; s <= StemData::Other; ++s)
     {
-        if (shouldExit())
-        {
-            stemCache.deletePartialFiles (contentHash);
-            return false;
-        }
-
-        juce::AudioBuffer<float> buf (2, originalLength);
-        buf.clear();
-
-        // Left channel
-        const auto& sigL = stemSignalsL[static_cast<size_t> (s)];
-        int lenL = juce::jmin (static_cast<int> (sigL.size()), originalLength);
-        if (lenL > 0)
-            std::memcpy (buf.getWritePointer (0), sigL.data(),
-                          static_cast<size_t> (lenL) * sizeof (float));
-
-        // Right channel
-        const auto& sigR = stemSignalsR[static_cast<size_t> (s)];
-        int lenR = juce::jmin (static_cast<int> (sigR.size()), originalLength);
-        if (lenR > 0)
-            std::memcpy (buf.getWritePointer (1), sigR.data(),
-                          static_cast<size_t> (lenR) * sizeof (float));
-
+        juce::AudioBuffer<float> silentBuf (2, numSamples);
+        silentBuf.clear();
         output.stems[static_cast<size_t> (s)] =
-            new AudioBufferHolder (std::move (buf), kModelSampleRate, originalLength);
+            new AudioBufferHolder (std::move (silentBuf), kModelSampleRate, numSamples);
     }
 
     return true;
@@ -468,7 +433,6 @@ bool StemSeparationEngine::assembleStemBuffers (
 
 void StemSeparationEngine::reportProgress (float prog)
 {
-    // Throttle to at most once per second
     double now = juce::Time::getMillisecondCounterHiRes();
     if (prog < 1.0f && (now - lastProgressTime) < 1000.0)
         return;
@@ -489,6 +453,7 @@ void StemSeparationEngine::reportProgress (float prog)
 
 void StemSeparationEngine::reportError (const juce::String& message)
 {
+    DBG ("StemSeparationEngine ERROR: " + message);
     stemCache.deletePartialFiles (contentHash);
 
     auto node = stemsNode;
@@ -505,3 +470,4 @@ void StemSeparationEngine::reportError (const juce::String& message)
         cb (dk, nullptr, message);
     });
 }
+

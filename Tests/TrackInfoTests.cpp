@@ -11,6 +11,8 @@
 #include "Features/Deck/UI/DeckShellComponent.h"
 #include "Features/Waveform/WaveformManager.h"
 #include "Features/BeatGrid/BeatGridManager.h"
+#include "Features/StemSeparation/StemSeparationManager.h"
+#include "Features/StemSeparation/ModelManager.h"
 
 class TrackInfoTests : public juce::UnitTest
 {
@@ -77,6 +79,8 @@ private:
         std::unique_ptr<DeckStateManager> mgr;
         std::unique_ptr<AudioEngine> engine;
         std::unique_ptr<AudioFileLoader> loader;
+        std::unique_ptr<ModelManager> modelMgr;
+        std::unique_ptr<StemSeparationManager> stemMgr;
 
         TestContext()
         {
@@ -85,10 +89,15 @@ private:
             mgr    = std::make_unique<DeckStateManager> (*db);
             engine = std::make_unique<AudioEngine> (mgr->getStateTree());
             loader = std::make_unique<AudioFileLoader> (*mgr, *engine, 44100.0);
+            modelMgr = std::make_unique<ModelManager> (mgr->getStateTree());
+            stemMgr  = std::make_unique<StemSeparationManager> (
+                *mgr, *db, *modelMgr, *engine);
         }
 
         ~TestContext()
         {
+            stemMgr.reset();
+            modelMgr.reset();
             loader.reset();
             engine.reset();
             mgr.reset();
@@ -300,13 +309,13 @@ private:
         WaveformManager waveformMgr (*ctx.mgr, *ctx.db, *ctx.engine);
         BeatGridManager beatGridMgr (*ctx.mgr, *ctx.db, *ctx.engine);
 
-        DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, beatGridMgr, deckId);
+        DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, beatGridMgr, *ctx.stemMgr, deckId);
         shell.setBounds (0, 0, 400, 300);
 
-        // Before loading: remove button + pitch fader + gain knob + key lock button + quantize button + slip button + hot cue pads + loop controls + beat jump
+        // Before loading: remove button + pitch fader + gain knob + key lock button + quantize button + slip button + stem separate button + stem voc toggle + stem inst toggle + hot cue pads + loop controls + beat jump
         int initialChildren = shell.getNumChildComponents();
-        expectEquals (initialChildren, 9,
-                      "Before track load, DeckShellComponent should have remove button, pitch fader, gain knob, key lock button, quantize button, slip button, hot cue pads, loop controls, and beat jump");
+        expectEquals (initialChildren, 12,
+                      "Before track load, DeckShellComponent should have remove button, pitch fader, gain knob, key lock button, quantize button, slip button, stem buttons, hot cue pads, loop controls, and beat jump");
 
         // Load a track
         auto meta = makeSampleMetadata ("Lifecycle Track");
