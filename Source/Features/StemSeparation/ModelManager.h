@@ -38,6 +38,9 @@ public:
     /// Returns true if a valid ONNX session is available.
     bool isModelReady() const;
 
+    /// Returns a reference to the OnnxInference instance (for separation engine).
+    OnnxInference& getInference() { return inference; }
+
 private:
     void run() override;  // juce::Thread — performs off-thread initialisation
 

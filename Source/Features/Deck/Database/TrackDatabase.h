@@ -3,6 +3,7 @@
 #include <juce_core/juce_core.h>
 #include <optional>
 #include <cstdint>
+#include <vector>
 
 struct sqlite3;
 
@@ -55,6 +56,29 @@ public:
     // Loop persistence (PRD-0014)
     void saveLoopsJson (const juce::String& contentHash, const juce::String& json);
     juce::String loadLoopsJson (const juce::String& contentHash);
+
+    // Stem cache persistence (PRD-0020)
+    void insertStemRecord (const juce::String& contentHash,
+                            const juce::String& modelVersion,
+                            const juce::String& status);
+    void updateStemRecord (const juce::String& contentHash,
+                            const juce::String& status,
+                            int64_t fileSizeBytes,
+                            const juce::String& vocalPath,
+                            const juce::String& drumsPath,
+                            const juce::String& bassPath,
+                            const juce::String& otherPath);
+    bool hasStemRecord (const juce::String& contentHash) const;
+    void deleteStemRecord (const juce::String& contentHash);
+    juce::StringArray getPendingStemHashes();
+
+    struct StemRecordInfo
+    {
+        juce::String contentHash;
+        int64_t      fileSizeBytes = 0;
+        int64_t      createdAt     = 0;
+    };
+    std::vector<StemRecordInfo> getAllStemRecords();
 
 private:
     void createTables();

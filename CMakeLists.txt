@@ -165,6 +165,15 @@ target_sources(Sonik PRIVATE
     Source/Features/StemSeparation/OnnxInference.cpp
     Source/Features/StemSeparation/ModelManager.h
     Source/Features/StemSeparation/ModelManager.cpp
+    Source/Features/StemSeparation/StemData.h
+    Source/Features/StemSeparation/SpectralProcessor.h
+    Source/Features/StemSeparation/SpectralProcessor.cpp
+    Source/Features/StemSeparation/StemCache.h
+    Source/Features/StemSeparation/StemCache.cpp
+    Source/Features/StemSeparation/StemSeparationEngine.h
+    Source/Features/StemSeparation/StemSeparationEngine.cpp
+    Source/Features/StemSeparation/StemSeparationManager.h
+    Source/Features/StemSeparation/StemSeparationManager.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -186,6 +195,7 @@ target_link_libraries(Sonik PRIVATE
     juce::juce_data_structures
     juce::juce_core
     juce::juce_events
+    juce::juce_dsp
     sqlite3
     essentia
     onnxruntime
@@ -223,6 +233,7 @@ add_executable(SonikTests
     Tests/NeedleDropTests.cpp
     Tests/SlipModeTests.cpp
     Tests/OnnxInferenceTests.cpp
+    Tests/StemSeparationTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -251,6 +262,10 @@ add_executable(SonikTests
     Source/Features/SlipMode/SlipButtonComponent.cpp
     Source/Features/StemSeparation/OnnxInference.cpp
     Source/Features/StemSeparation/ModelManager.cpp
+    Source/Features/StemSeparation/SpectralProcessor.cpp
+    Source/Features/StemSeparation/StemCache.cpp
+    Source/Features/StemSeparation/StemSeparationEngine.cpp
+    Source/Features/StemSeparation/StemSeparationManager.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})
@@ -272,6 +287,7 @@ target_link_libraries(SonikTests PRIVATE
     juce::juce_data_structures
     juce::juce_core
     juce::juce_events
+    juce::juce_dsp
     sqlite3
     essentia
     onnxruntime

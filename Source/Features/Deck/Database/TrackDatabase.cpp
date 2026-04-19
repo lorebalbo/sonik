@@ -53,6 +53,18 @@ void TrackDatabase::createTables()
           "  loops_json   TEXT NOT NULL,"
           "  updated_at   INTEGER"
           ");");
+
+    exec ("CREATE TABLE IF NOT EXISTS stems_data ("
+          "  content_hash    TEXT PRIMARY KEY,"
+          "  model_version   TEXT,"
+          "  status          TEXT DEFAULT 'pending',"
+          "  vocal_path      TEXT,"
+          "  drums_path      TEXT,"
+          "  bass_path       TEXT,"
+          "  other_path      TEXT,"
+          "  created_at      INTEGER,"
+          "  file_size_bytes INTEGER DEFAULT 0"
+          ");");
 }
 
 void TrackDatabase::exec (const juce::String& sql)
@@ -345,4 +357,147 @@ juce::String TrackDatabase::loadLoopsJson (const juce::String& contentHash)
     }
 
     return result;
+}
+
+// ---------------------------------------------------------------------------
+// Stem cache persistence (PRD-0020)
+// ---------------------------------------------------------------------------
+
+void TrackDatabase::insertStemRecord (const juce::String& contentHash,
+                                       const juce::String& modelVersion,
+                                       const juce::String& status)
+{
+    if (dbHandle == nullptr) return;
+
+    const char* sql =
+        "INSERT OR REPLACE INTO stems_data "
+        "(content_hash, model_version, status, created_at) "
+        "VALUES (?, ?, ?, ?);";
+
+    sqlite3_stmt* stmt2 = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt2, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text  (stmt2, 1, contentHash.toRawUTF8(),  -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text  (stmt2, 2, modelVersion.toRawUTF8(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text  (stmt2, 3, status.toRawUTF8(),       -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64 (stmt2, 4, static_cast<sqlite3_int64> (
+            juce::Time::currentTimeMillis() / 1000));
+        sqlite3_step (stmt2);
+        sqlite3_finalize (stmt2);
+    }
+}
+
+void TrackDatabase::updateStemRecord (const juce::String& contentHash,
+                                       const juce::String& status,
+                                       int64_t fileSizeBytes,
+                                       const juce::String& vocalPath,
+                                       const juce::String& drumsPath,
+                                       const juce::String& bassPath,
+                                       const juce::String& otherPath)
+{
+    if (dbHandle == nullptr) return;
+
+    const char* sql =
+        "UPDATE stems_data SET status = ?, file_size_bytes = ?, "
+        "vocal_path = ?, drums_path = ?, bass_path = ?, other_path = ? "
+        "WHERE content_hash = ?;";
+
+    sqlite3_stmt* stmt2 = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt2, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text  (stmt2, 1, status.toRawUTF8(),       -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int64 (stmt2, 2, static_cast<sqlite3_int64> (fileSizeBytes));
+        sqlite3_bind_text  (stmt2, 3, vocalPath.toRawUTF8(),    -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text  (stmt2, 4, drumsPath.toRawUTF8(),    -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text  (stmt2, 5, bassPath.toRawUTF8(),     -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text  (stmt2, 6, otherPath.toRawUTF8(),    -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text  (stmt2, 7, contentHash.toRawUTF8(),  -1, SQLITE_TRANSIENT);
+        sqlite3_step (stmt2);
+        sqlite3_finalize (stmt2);
+    }
+}
+
+bool TrackDatabase::hasStemRecord (const juce::String& contentHash) const
+{
+    if (dbHandle == nullptr) return false;
+
+    const char* sql =
+        "SELECT 1 FROM stems_data WHERE content_hash = ? AND status = 'complete' LIMIT 1;";
+
+    sqlite3_stmt* stmt2 = nullptr;
+    bool found = false;
+
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt2, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text (stmt2, 1, contentHash.toRawUTF8(), -1, SQLITE_TRANSIENT);
+        found = (sqlite3_step (stmt2) == SQLITE_ROW);
+        sqlite3_finalize (stmt2);
+    }
+
+    return found;
+}
+
+void TrackDatabase::deleteStemRecord (const juce::String& contentHash)
+{
+    if (dbHandle == nullptr) return;
+
+    const char* sql = "DELETE FROM stems_data WHERE content_hash = ?;";
+
+    sqlite3_stmt* stmt2 = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt2, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text (stmt2, 1, contentHash.toRawUTF8(), -1, SQLITE_TRANSIENT);
+        sqlite3_step (stmt2);
+        sqlite3_finalize (stmt2);
+    }
+}
+
+juce::StringArray TrackDatabase::getPendingStemHashes()
+{
+    juce::StringArray hashes;
+    if (dbHandle == nullptr) return hashes;
+
+    const char* sql = "SELECT content_hash FROM stems_data WHERE status = 'pending';";
+
+    sqlite3_stmt* stmt2 = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt2, nullptr) == SQLITE_OK)
+    {
+        while (sqlite3_step (stmt2) == SQLITE_ROW)
+        {
+            auto col = sqlite3_column_text (stmt2, 0);
+            if (col != nullptr)
+                hashes.add (juce::String::fromUTF8 (reinterpret_cast<const char*> (col)));
+        }
+        sqlite3_finalize (stmt2);
+    }
+
+    return hashes;
+}
+
+std::vector<TrackDatabase::StemRecordInfo> TrackDatabase::getAllStemRecords()
+{
+    std::vector<StemRecordInfo> records;
+    if (dbHandle == nullptr) return records;
+
+    const char* sql =
+        "SELECT content_hash, file_size_bytes, created_at "
+        "FROM stems_data WHERE status = 'complete' ORDER BY created_at ASC;";
+
+    sqlite3_stmt* stmt2 = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt2, nullptr) == SQLITE_OK)
+    {
+        while (sqlite3_step (stmt2) == SQLITE_ROW)
+        {
+            StemRecordInfo info;
+            auto col = sqlite3_column_text (stmt2, 0);
+            if (col != nullptr)
+                info.contentHash = juce::String::fromUTF8 (reinterpret_cast<const char*> (col));
+            info.fileSizeBytes = sqlite3_column_int64 (stmt2, 1);
+            info.createdAt     = sqlite3_column_int64 (stmt2, 2);
+            records.push_back (std::move (info));
+        }
+        sqlite3_finalize (stmt2);
+    }
+
+    return records;
 }

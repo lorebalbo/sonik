@@ -53,6 +53,11 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     modelManager = std::make_unique<ModelManager> (
         deckStateManager->getStateTree());
 
+    // Create the stem separation manager (PRD-0020)
+    stemSeparationManager = std::make_unique<StemSeparationManager> (
+        *deckStateManager, *trackDatabase,
+        modelManager->getInference(), *modelManager, *audioEngine);
+
     mainWindow = std::make_unique<MainWindow> (
         *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager, *beatGridManager);
 }
@@ -72,6 +77,9 @@ void SonikApplication::shutdown()
 
     // Stop beat grid manager before engine
     beatGridManager.reset();
+
+    // Stop stem separation manager before model manager (holds OnnxInference& reference)
+    stemSeparationManager.reset();
 
     // Stop model manager before engine
     modelManager.reset();

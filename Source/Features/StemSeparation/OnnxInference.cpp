@@ -76,3 +76,67 @@ bool OnnxInference::hasValidSession() const
 {
     return pImpl->session != nullptr;
 }
+
+OnnxInference::RunResult OnnxInference::run (const std::vector<float>& inputData,
+                                              const std::vector<int64_t>& inputShape,
+                                              const std::string& inputName,
+                                              const std::string& outputName)
+{
+    RunResult result;
+
+    if (pImpl->session == nullptr)
+    {
+        result.success      = false;
+        result.errorMessage  = "No valid ONNX session";
+        return result;
+    }
+
+    try
+    {
+        Ort::MemoryInfo memInfo = Ort::MemoryInfo::CreateCpu (
+            OrtAllocatorType::OrtArenaAllocator, OrtMemType::OrtMemTypeDefault);
+
+        // Create input tensor
+        auto inputTensor = Ort::Value::CreateTensor<float> (
+            memInfo,
+            const_cast<float*> (inputData.data()),
+            inputData.size(),
+            inputShape.data(),
+            inputShape.size());
+
+        // Run inference
+        const char* inputNames[]  = { inputName.c_str() };
+        const char* outputNames[] = { outputName.c_str() };
+
+        auto outputTensors = pImpl->session->Run (
+            Ort::RunOptions { nullptr },
+            inputNames, &inputTensor, 1,
+            outputNames, 1);
+
+        // Extract output
+        auto& outputTensor = outputTensors.front();
+        auto typeInfo = outputTensor.GetTensorTypeAndShapeInfo();
+
+        result.outputShape = typeInfo.GetShape();
+
+        size_t totalElements = 1;
+        for (auto dim : result.outputShape)
+            totalElements *= static_cast<size_t> (dim);
+
+        const float* outputPtr = outputTensor.GetTensorData<float>();
+        result.outputData.assign (outputPtr, outputPtr + totalElements);
+        result.success = true;
+    }
+    catch (const Ort::Exception& e)
+    {
+        result.success      = false;
+        result.errorMessage  = std::string ("ONNX inference error: ") + e.what();
+    }
+    catch (const std::exception& e)
+    {
+        result.success      = false;
+        result.errorMessage  = std::string ("Inference error: ") + e.what();
+    }
+
+    return result;
+}
