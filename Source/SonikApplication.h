@@ -26,7 +26,7 @@ public:
         setUsingNativeTitleBar (true);
         setContentOwned (new MainContentComponent (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr), true);
         setResizable (true, true);
-        setResizeLimits (960, 600, 3840, 2160);
+        setResizeLimits (1120, 600, 3840, 2160);
         centreWithSize (1280, 800);
         setVisible (true);
     }
