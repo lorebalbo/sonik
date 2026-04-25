@@ -1,9 +1,10 @@
 #include "StemToggleComponent.h"
 
-// Monochrome palette (DESIGN.md)
-static constexpr juce::uint32 kBlack   = 0xff000000;
-static constexpr juce::uint32 kWhite   = 0xfff9f9f9;
-static constexpr juce::uint32 kSurface = 0xffe2e2e2;
+// Design-system palette
+static const juce::Colour kLight { 0xFFF9F9F9 };
+static const juce::Colour kDark  { 0xFF2D2D2D };
+static const juce::Colour kGreen { 0xFF0AD691 };
+static const juce::Colour kRed   { 0xFFFF3C3B };
 
 // ---------------------------------------------------------------------------
 StemToggleComponent::StemToggleComponent (juce::ValueTree stems,
@@ -34,11 +35,14 @@ void StemToggleComponent::refreshState()
     // Check if stems are ready
     isReady = stemsNode.getProperty (IDs::status, "none").toString() == "ready";
 
-    // Only visible when stems are ready
-    setVisible (isReady);
+    // Always visible — readiness is shown via disabled/dimmed paint state
 
     if (! isReady)
+    {
+        isMuted = false;
+        repaint();
         return;
+    }
 
     // Muted if ANY of the controlled properties is true
     bool anyMuted = false;
@@ -56,28 +60,40 @@ void StemToggleComponent::refreshState()
 // ---------------------------------------------------------------------------
 void StemToggleComponent::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
+    auto bounds = getLocalBounds();
+
+    if (! isReady)
+    {
+        // Disabled: light bg, dimmed text and border
+        g.setColour (kLight);
+        g.fillRect (bounds);
+        g.setColour (kDark.withAlpha (0.3f));
+        g.drawRect (bounds, 2);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+        g.drawText (labelText, bounds, juce::Justification::centred, false);
+        return;
+    }
 
     if (isMuted)
     {
-        // Muted: surface fill, dark text at 50% opacity
-        g.setColour (juce::Colour (kSurface));
+        // Muted: light bg, dark text
+        g.setColour (kLight);
         g.fillRect (bounds);
-        g.setColour (juce::Colour (kBlack));
-        g.drawRect (bounds, 1.0f);
-        g.setColour (juce::Colour (kBlack).withAlpha (0.5f));
+        g.setColour (kDark);
+        g.drawRect (bounds, 2);
+        g.setColour (kDark);
     }
     else
     {
-        // Active (unmuted): black fill, white text
-        g.setColour (juce::Colour (kBlack));
+        // Active (unmuted): dark bg, light text
+        g.setColour (kDark);
         g.fillRect (bounds);
-        g.setColour (juce::Colour (kWhite));
-        g.drawRect (bounds, 1.0f);
-        g.setColour (juce::Colour (kWhite));
+        g.setColour (kDark);
+        g.drawRect (bounds, 2);
+        g.setColour (kLight);
     }
 
-    g.setFont (juce::Font (juce::FontOptions (10.0f)));
+    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
     g.drawText (labelText, bounds, juce::Justification::centred, false);
 }
 

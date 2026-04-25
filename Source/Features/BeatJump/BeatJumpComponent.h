@@ -5,7 +5,9 @@
 #include "../Deck/DeckIdentifiers.h"
 #include <functional>
 
-/// Beat jump UI strip: [<] [size] [>]
+/// Beat jump UI strip: [◄] [2] [4] [8] [16] [►]
+/// Clicking a size button selects it (writes beatJumpSize to the ValueTree).
+/// Arrows trigger onJumpBackward / onJumpForward.
 /// Monochrome style per DESIGN.md: #000000/#F9F9F9, zero border-radius.
 class BeatJumpComponent final : public juce::Component,
                                  public juce::SettableTooltipClient,
@@ -17,7 +19,6 @@ public:
 
     std::function<void()> onJumpForward;
     std::function<void()> onJumpBackward;
-    std::function<void (bool forward)> onCycleSize;
 
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
@@ -32,12 +33,12 @@ private:
     void valueTreeChildOrderChanged (juce::ValueTree&, int, int) override {}
     void valueTreeParentChanged (juce::ValueTree&) override {}
 
-    enum class Region { None, Backward, Size, Forward };
+    // 6 buttons: idx 0=Backward, 1-4=Size(2/4/8/16), 5=Forward
+    enum class Region { None, Backward, Size0, Size1, Size2, Size3, Forward };
 
-    Region getRegionAt (int x, int y) const;
-    juce::Rectangle<int> getBackwardBounds() const;
-    juce::Rectangle<int> getSizeBounds() const;
-    juce::Rectangle<int> getForwardBounds() const;
+    Region  getRegionAt (int x, int y) const;
+    juce::Rectangle<int> getButtonBounds (int idx) const;
+    static int regionToSizeIndex (Region r) noexcept;
 
     juce::String formatSize (double beats) const;
     bool isDeckEmpty() const;
@@ -54,7 +55,16 @@ private:
     int64_t flashStartTime = 0;
     static constexpr int flashDurationMs = 100;
 
-    static constexpr int buttonGap = 2;
+    // Fixed button sizes per DESIGN.md (50px standard, 25px arrow)
+    static constexpr int kArrowW   = 25;   // ◄ and ► buttons
+    static constexpr int kBtnW     = 50;   // size buttons
+    static constexpr int kBtnH     = 46;
+    static constexpr int kBorderW  = 2;
+    // Total: 2×25 + 4×50 − 5×2 = 240 px
+    static constexpr int kTotalW   = 2 * kArrowW + 4 * kBtnW - 5 * kBorderW;
+
+    static constexpr int kNumSizes = 4;
+    static constexpr double kSizes[kNumSizes] = { 2.0, 4.0, 8.0, 16.0 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BeatJumpComponent)
 };

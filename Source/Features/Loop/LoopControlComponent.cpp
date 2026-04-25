@@ -49,17 +49,31 @@ juce::Rectangle<int> LoopControlComponent::getButtonBounds (int index) const
     if (index < 0 || index >= numButtons)
         return {};
 
-    auto bounds = getLocalBounds();
-    int totalGaps  = (numButtons - 1) * buttonGap;
-    int totalWidth = bounds.getWidth() - totalGaps;
-    int btnWidth   = totalWidth / numButtons;
-    int x = bounds.getX() + index * (btnWidth + buttonGap);
+    // Center the kTotalW × kBtnH content block within the component.
+    const int xOff = juce::jmax (0, (getWidth()  - kTotalW) / 2);
+    const int yOff = juce::jmax (0, (getHeight() - kBtnH)   / 2);
 
-    // Last button absorbs remaining space
-    if (index == numButtons - 1)
-        btnWidth = bounds.getRight() - x;
+    // Group A: buttons 0-2 (IN, OUT, LOOP) — standard width, merged 2px borders.
+    if (index < 3)
+        return { xOff + index * (kBtnW - kBorderW), yOff, kBtnW, kBtnH };
 
-    return { x, bounds.getY(), btnWidth, bounds.getHeight() };
+    // Group B starts after Group A + gap.
+    const int xB = xOff + kGroupAW + kGroupGap;
+
+    // index 3: < arrow (half-width)
+    if (index == 3)
+        return { xB, yOff, kArrowW, kBtnH };
+
+    // index 4-7: standard buttons (2, 4, 8, 16)
+    if (index < 8)
+    {
+        const int stdIdx = index - 4;  // 0..3
+        return { xB + (kArrowW - kBorderW) + stdIdx * (kBtnW - kBorderW),
+                 yOff, kBtnW, kBtnH };
+    }
+
+    // index 8: > arrow (half-width)
+    return { xB + (kArrowW - kBorderW) + 4 * (kBtnW - kBorderW), yOff, kArrowW, kBtnH };
 }
 
 int LoopControlComponent::getButtonAt (int x, int y) const
@@ -86,7 +100,6 @@ void LoopControlComponent::paint (juce::Graphics& g)
         const auto& def = buttons[i];
 
         bool isActive = false;
-
         if (def.type == BtnType::Toggle)
             isActive = loopIsActive;
         else if (def.type == BtnType::AutoLoop)
@@ -95,41 +108,39 @@ void LoopControlComponent::paint (juce::Graphics& g)
             isActive = pendingIn;
 
         // Background
+        juce::Colour bg;
         if (empty)
-        {
-            g.setColour (juce::Colour (0xFFE2E2E2));
-        }
+            bg = juce::Colour (0xFFF9F9F9);
         else if (isActive)
-        {
-            g.setColour (juce::Colour (0xFF000000));
-        }
+            bg = juce::Colour (0xFF2D2D2D);
         else if (i == hoveredButton)
-        {
-            g.setColour (juce::Colour (0xFFD0D0D0));
-        }
+            bg = juce::Colour (0xFFE5E5E5);
         else
-        {
-            g.setColour (juce::Colour (0xFFF9F9F9));
-        }
+            bg = juce::Colour (0xFFF9F9F9);
+
+        g.setColour (bg);
         g.fillRect (area);
 
-        // Border
-        g.setColour (juce::Colour (0xFF000000).withAlpha (empty ? 0.2f : 0.4f));
-        g.drawRect (area, 1);
+        // Border (2px). Because adjacent buttons within a group overlap by 2px,
+        // each drawRect reuses its neighbours border, producing a single shared
+        // 2px line — the "attached" look from Figma.
+        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (empty ? 0.3f : 1.0f));
+        g.drawRect (area, 2);
 
-        // Text
+        // Text / label
+        juce::Colour textColor;
         if (empty)
-            g.setColour (juce::Colour (0xFF999999));
+            textColor = juce::Colour (0xFF2D2D2D).withAlpha (0.3f);
         else if (isActive)
-            g.setColour (juce::Colour (0xFFF9F9F9));
+            textColor = juce::Colour (0xFFF9F9F9);
         else
-            g.setColour (juce::Colour (0xFF000000));
+            textColor = juce::Colour (0xFF2D2D2D);
 
-        // Inactive but loop defined: show LOOP button at reduced opacity
         if (def.type == BtnType::Toggle && ! loopIsActive && loopIsDefined && ! empty)
-            g.setColour (juce::Colour (0xFF000000).withAlpha (0.5f));
+            textColor = juce::Colour (0xFF2D2D2D).withAlpha (0.5f);
 
-        g.setFont (juce::FontOptions (10.0f).withStyle ("Bold"));
+        g.setColour (textColor);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
         g.drawText (def.label, area, juce::Justification::centred);
     }
 }
@@ -167,10 +178,10 @@ void LoopControlComponent::mouseDown (const juce::MouseEvent& e)
                 if (onReLoop) onReLoop();
             }
             break;
-        case BtnType::Halve:
+        case BtnType::ArrowLeft:
             if (onLoopHalve) onLoopHalve();
             break;
-        case BtnType::Double:
+        case BtnType::ArrowRight:
             if (onLoopDouble) onLoopDouble();
             break;
         case BtnType::AutoLoop:

@@ -172,12 +172,13 @@ juce::Rectangle<int> HotCuePadComponent::getPadBounds (int padIndex) const
     if (padIndex < 0 || padIndex >= numPads)
         return {};
 
-    int h = getHeight();
-    int padSize = h;
-    int totalWidth = numPads * padSize + (numPads - 1) * padGap;
-    int startX = (getWidth() - totalWidth) / 2;
+    // Center the kTotalW × kPadH strip within the component bounds.
+    const int xOff = juce::jmax (0, (getWidth()  - kTotalW) / 2);
+    const int yOff = juce::jmax (0, (getHeight() - kPadH)   / 2);
 
-    return { startX + padIndex * (padSize + padGap), 0, padSize, padSize };
+    // Adjacent pads share a single padBorderW border (merged — no visible gap).
+    const int x = xOff + padIndex * (kPadW - padBorderW);
+    return { x, yOff, kPadW, kPadH };
 }
 
 int HotCuePadComponent::getPadIndexAt (int x, int y) const
@@ -203,60 +204,53 @@ void HotCuePadComponent::paint (juce::Graphics& g)
         auto bounds = getPadBounds (i);
         bool active = isCueActive (i);
 
-        // Determine pad fill color
-        juce::Colour fillColor;
+        // Monochrome design system:
+        //   unset pad  → light background  (#F9F9F9), dark text
+        //   set pad    → dark background   (#2D2D2D), light text
+        //   empty deck → both dimmed at 30% opacity
+        juce::Colour bg, border, textColor;
+
         if (empty)
         {
-            fillColor = juce::Colour (0xFF333333);
+            bg        = juce::Colour (0xFFF9F9F9);
+            border    = juce::Colour (0xFF2D2D2D).withAlpha (0.3f);
+            textColor = juce::Colour (0xFF2D2D2D).withAlpha (0.3f);
         }
         else if (active)
         {
-            fillColor = HotCueColors::getColour (getCueColorIndex (i));
+            juce::Colour activeBg = juce::Colour (0xFF2D2D2D);
+            if (i == pressedPad)
+                activeBg = juce::Colour (0xFF111111);
+            else if (i == hoveredPad)
+                activeBg = juce::Colour (0xFF444444);
+
+            bg        = activeBg;
+            border    = juce::Colour (0xFF2D2D2D);
+            textColor = juce::Colour (0xFFF9F9F9);
         }
         else
         {
-            fillColor = juce::Colour (0xFF1A1A1A);
+            juce::Colour inactiveBg = juce::Colour (0xFFF9F9F9);
+            if (i == hoveredPad)
+                inactiveBg = juce::Colour (0xFFE5E5E5);
+
+            bg        = inactiveBg;
+            border    = juce::Colour (0xFF2D2D2D);
+            textColor = juce::Colour (0xFF2D2D2D);
         }
 
-        // Hover / press modulation
-        if (! empty)
-        {
-            if (i == pressedPad)
-                fillColor = fillColor.darker (0.1f);
-            else if (i == hoveredPad)
-                fillColor = fillColor.brighter (0.2f);
-        }
-
-        g.setColour (fillColor);
+        g.setColour (bg);
         g.fillRect (bounds);
 
-        // Border
-        g.setColour (juce::Colour (0xFF000000));
-        g.drawRect (bounds, 1);
+        // 2px border. Adjacent pads overlap by 2px so shared edges appear
+        // as a single line — matching the Figma CUE BUTTONS component.
+        g.setColour (border);
+        g.drawRect (bounds, padBorderW);
 
-        // Pad letter
-        auto textColor = (active && ! empty) ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF888888);
-        if (empty) textColor = juce::Colour (0xFF555555);
-
+        // Pad letter (A–H), Space Mono 10px
         g.setColour (textColor);
-        g.setFont (juce::FontOptions (13.0f).withStyle ("Bold"));
-
-        auto label = getCueLabel (i);
-        if (label.isNotEmpty() && active && ! empty)
-        {
-            // Letter at top, label below
-            auto topArea = bounds.removeFromTop (bounds.getHeight() / 2);
-            g.drawText (juce::String::charToString (padLetters[i]),
-                        topArea, juce::Justification::centred);
-
-            g.setFont (juce::FontOptions (9.0f));
-            g.drawText (label, bounds, juce::Justification::centred);
-        }
-        else
-        {
-            g.drawText (juce::String::charToString (padLetters[i]),
-                        bounds, juce::Justification::centred);
-        }
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
+        g.drawText (juce::String::charToString (padLetters[i]), bounds, juce::Justification::centred);
     }
 }
 

@@ -113,14 +113,20 @@ void DeckLayoutManager::applyLayout()
     switch (n)
     {
         case 1:
-            deckShells[0]->setBounds (area);
+        {
+            // Cap height so the deck doesn't stretch to fill the window vertically.
+            int deckH = juce::jmin (area.getHeight(), kPreferredDeckH);
+            deckShells[0]->setBounds (area.withHeight (deckH));
             break;
+        }
 
         case 2:
         {
             int halfW = area.getWidth() / 2;
-            deckShells[0]->setBounds (area.withWidth (halfW - halfGap));
-            deckShells[1]->setBounds (area.withTrimmedLeft (halfW + halfGap));
+            int deckH = juce::jmin (area.getHeight(), kPreferredDeckH);
+            deckShells[0]->setBounds (area.getX(), area.getY(), halfW - halfGap, deckH);
+            deckShells[1]->setBounds (area.getX() + halfW + halfGap, area.getY(),
+                                      area.getWidth() - halfW - halfGap, deckH);
             break;
         }
 

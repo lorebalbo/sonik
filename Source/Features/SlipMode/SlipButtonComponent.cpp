@@ -1,10 +1,10 @@
 #include "SlipButtonComponent.h"
 #include "../AudioEngine/AudioEngine.h"
 
-// Monochrome palette (DESIGN.md)
-static constexpr juce::uint32 kBlack   = 0xff000000;
-static constexpr juce::uint32 kWhite   = 0xfff9f9f9;
-static constexpr juce::uint32 kSurface = 0xffe2e2e2;
+// Design-system palette
+static const juce::Colour kBlack  { 0xFF2D2D2D };
+static const juce::Colour kWhite  { 0xFFF9F9F9 };
+static const juce::Colour kSurface { 0xFFF9F9F9 };
 
 static constexpr juce::int64 kShortPressThresholdMs = 300;
 
@@ -53,36 +53,35 @@ void SlipButtonComponent::paint (juce::Graphics& g)
             alpha *= pulseAlpha;
         }
 
-        // Active: black fill, white text
-        g.setColour (juce::Colour (kBlack).withAlpha (alpha));
-        g.fillRect (bounds);
+    // Active: dark fill, light text
+    g.setColour (kBlack.withAlpha (alpha));
+    g.fillRect (bounds);
 
-        g.setColour (juce::Colour (kWhite).withAlpha (alpha));
+    g.setColour (kWhite.withAlpha (alpha));
     }
     else
     {
-        // Inactive: surface fill, dark text at 50 % opacity
-        g.setColour (juce::Colour (kSurface).withAlpha (alpha));
+        // Inactive: light fill, dark text at 50 % opacity
+        g.setColour (kSurface.withAlpha (alpha));
         g.fillRect (bounds);
 
-        g.setColour (juce::Colour (kBlack).withAlpha (alpha * 0.5f));
+        g.setColour (kBlack.withAlpha (alpha * 0.5f));
     }
 
-    // Border
-    g.setColour (juce::Colour (kBlack).withAlpha (alpha));
-    g.drawRect (bounds, 1.0f);
+    // Border (2px)
+    g.setColour (kBlack.withAlpha (alpha));
+    g.drawRect (bounds.toNearestInt(), 2);
 
     // Label
-    auto font = juce::Font (juce::FontOptions (10.0f));
-    g.setFont (font);
+    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
 
     juce::String label = "SLIP";
     if (slipEnabled)
-        g.setColour (juce::Colour (kWhite).withAlpha (alpha));
+        g.setColour (kWhite.withAlpha (alpha));
     else
-        g.setColour (juce::Colour (kBlack).withAlpha (alpha * 0.5f));
+        g.setColour (kBlack.withAlpha (alpha));
 
-    g.drawText (label, bounds, juce::Justification::centred, false);
+    g.drawText (label, bounds.toNearestInt(), juce::Justification::centred, false);
 }
 
 // ---------------------------------------------------------------------------

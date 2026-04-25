@@ -14,34 +14,33 @@ void QuantizeButtonComponent::paint (juce::Graphics& g)
 
     if (enabled && ! isEmpty)
     {
-        // ON state: filled black background
-        g.setColour (juce::Colour (0xFF000000).withAlpha (alpha));
+        // ON state: dark background
+        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (alpha));
         g.fillRect (bounds);
 
-        // Border
-        g.setColour (juce::Colour (0xFF000000));
-        g.drawRect (bounds, 1);
+        // Border 2px
+        g.setColour (juce::Colour (0xFF2D2D2D));
+        g.drawRect (bounds, 2);
 
-        // "Q" label in light colour
+        // Label in light colour
         g.setColour (juce::Colour (0xFFF9F9F9).withAlpha (alpha));
     }
     else
     {
-        // OFF state: surface background with outline
-        g.setColour (juce::Colour (0xFFE2E2E2).withAlpha (alpha));
+        // OFF state: light background
+        g.setColour (juce::Colour (0xFFF9F9F9).withAlpha (alpha));
         g.fillRect (bounds);
 
-        // Border
-        g.setColour (juce::Colour (0xFF000000).withAlpha (alpha));
-        g.drawRect (bounds, 1);
+        // Border 2px
+        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (alpha));
+        g.drawRect (bounds, 2);
 
-        // "Q" label in dark colour, low opacity when off
-        float textAlpha = isEmpty ? 0.3f : 0.5f;
-        g.setColour (juce::Colour (0xFF000000).withAlpha (textAlpha));
+        // Label in dark colour — full opacity to match SYNC style
+        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (alpha));
     }
 
-    g.setFont (juce::FontOptions (11.0f).withStyle ("Bold"));
-    g.drawText ("Q", bounds, juce::Justification::centred);
+    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+    g.drawText ("QUANTIZE", bounds, juce::Justification::centred);
 }
 
 void QuantizeButtonComponent::mouseDown (const juce::MouseEvent&)

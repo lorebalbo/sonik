@@ -53,8 +53,14 @@ private:
     int hoveredPad = -1;
     int pressedPad = -1;
 
-    static constexpr int numPads = 8;
-    static constexpr int padGap  = 3;
+    static constexpr int numPads    = 8;
+
+    // Fixed pad sizes — match GRID buttons (50 × 46 px)
+    static constexpr int kPadW     = 50;
+    static constexpr int kPadH     = 46;
+    static constexpr int padBorderW = 2;   // shared border between adjacent pads
+    // Total strip width: 8×50 − 7×2 = 386 px
+    static constexpr int kTotalW   = numPads * kPadW - (numPads - 1) * padBorderW;
     static constexpr char padLetters[] = "ABCDEFGH";
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (HotCuePadComponent)

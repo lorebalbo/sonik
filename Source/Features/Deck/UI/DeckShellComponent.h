@@ -10,8 +10,10 @@
 #include "../../BeatGrid/BeatGridManager.h"
 #include "TrackInfoComponent.h"
 #include "PitchFaderComponent.h"
-#include "GainKnobComponent.h"
 #include "KeyLockButton.h"
+#include "KeyStepperComponent.h"
+#include "SyncButtonComponent.h"
+#include "ControllerWidget.h"
 #include "../../Cue/HotCueManager.h"
 #include "../../Cue/HotCuePadComponent.h"
 #include "../../Quantize/QuantizeButtonComponent.h"
@@ -65,45 +67,64 @@ private:
     void valueTreePropertyChanged (juce::ValueTree& tree,
                                    const juce::Identifier& property) override;
 
-    void paintHeader (juce::Graphics& g, juce::Rectangle<int> area);
-    void paintEmptyState (juce::Graphics& g, juce::Rectangle<int> area);
-    void paintActiveIndicator (juce::Graphics& g);
+    void paintDeckBackground (juce::Graphics& g);
+    void paintEmptyState     (juce::Graphics& g, juce::Rectangle<int> area);
 
     bool isTrackLoaded() const;
     bool isPlaying() const;
     bool isActive() const;
 
-    static juce::Colour getDeckAccentColour (const juce::String& id);
+    // Playback helpers wired into ControllerWidget JUMP tab callbacks
+    void handleCuePress();
+    void handleStopPress();
+    void handlePlayPress();
 
-    DeckStateManager& deckStateManager;
-    AudioEngine&      audioEngine;
-    AudioFileLoader&  audioFileLoader;
-    WaveformManager&  waveformManager;
-    BeatGridManager&  beatGridManager;
+    // Beatgrid helpers wired into ControllerWidget GRID tab callbacks
+    void handleGridSet();
+    void handleGridDelete();
+    void handleGridNudge (int delta);
+
+    DeckStateManager&      deckStateManager;
+    AudioEngine&           audioEngine;
+    AudioFileLoader&       audioFileLoader;
+    WaveformManager&       waveformManager;
+    BeatGridManager&       beatGridManager;
     StemSeparationManager& stemSeparationManager;
-    juce::String      deckId;
-    juce::ValueTree   deckTree;
-    juce::ValueTree   rootState;
+    juce::String           deckId;
+    juce::ValueTree        deckTree;
+    juce::ValueTree        rootState;
 
-    juce::TextButton  removeButton;
-    bool              isDragOver = false;
+    bool isDragOver = false;
 
-    std::unique_ptr<WaveformComponent>   waveformComponent;
+    // Deck header (always visible, shows track info + deck badge)
     std::unique_ptr<TrackInfoComponent>   trackInfoComponent;
-    std::unique_ptr<PitchFaderComponent>  pitchFaderComponent;
-    std::unique_ptr<GainKnobComponent>    gainKnobComponent;
+
+    // Stems row
+    std::unique_ptr<StemSeparateButton>   stemSeparateButton;
+    std::unique_ptr<StemToggleComponent>  stemVocToggle;
+    std::unique_ptr<StemToggleComponent>  stemInstToggle;
+
+    // Waveform
+    std::unique_ptr<WaveformComponent>    waveformComponent;
+
+    // Time & Pitch sidebar (right of waveform)
     std::unique_ptr<KeyLockButton>        keyLockButton;
+    std::unique_ptr<KeyStepperComponent>  keyStepperComponent;
+    std::unique_ptr<PitchFaderComponent>  pitchFaderComponent;
+
+    // Control row (below waveform)
+    std::unique_ptr<SyncButtonComponent>     syncButton;
     std::unique_ptr<QuantizeButtonComponent> quantizeButton;
+    std::unique_ptr<SlipButtonComponent>     slipButton;
+
+    // Controller Widget (tabbed LOOP / CUE / JUMP / GRID)
     std::unique_ptr<HotCueManager>        hotCueManager;
     std::unique_ptr<HotCuePadComponent>   hotCuePadComponent;
     std::unique_ptr<LoopEngine>           loopEngine;
     std::unique_ptr<LoopControlComponent> loopControlComponent;
     std::unique_ptr<BeatJumpEngine>       beatJumpEngine;
     std::unique_ptr<BeatJumpComponent>    beatJumpComponent;
-    std::unique_ptr<SlipButtonComponent>  slipButton;
-    std::unique_ptr<StemSeparateButton>    stemSeparateButton;
-    std::unique_ptr<StemToggleComponent>   stemVocToggle;
-    std::unique_ptr<StemToggleComponent>   stemInstToggle;
+    std::unique_ptr<ControllerWidget>     controllerWidget;
 
     void hotCuesChanged() override;
     void updateWaveformHotCues();
@@ -111,13 +132,34 @@ private:
     void loopStateChanged() override;
     void updateLoopControlState();
 
-    static constexpr int headerHeight        = 32;
-    static constexpr int trackInfoHeight     = 90;
-    static constexpr int activeIndicatorWidth = 3;
-    static constexpr int controlStripWidth    = 80;
-    static constexpr int hotCuePadHeight      = 50;
-    static constexpr int loopControlHeight    = 36;
-    static constexpr int beatJumpHeight       = 30;
+    // -----------------------------------------------------------------------
+    // Layout constants matching Figma Deck frame (592 x 505, padding 20)
+    // -----------------------------------------------------------------------
+    static constexpr int kPad              = 20;   // outer padding
+    static constexpr int kGap              = 12;   // gap between rows
+    static constexpr int kHeaderH          = 59;   // Deck Header height
+    static constexpr int kStemsH           = 23;   // Stems row height
+    static constexpr int kMainH            = 226;  // Waveform + Pitch section height
+    static constexpr int kControlRowH      = 23;   // SYNC / QUANT / SLIP row height
+    static constexpr int kControllerH      = 86;   // Controller Widget height
+    static constexpr int kPitchSidebarW    = 70;   // Time & Pitch section width
+    static constexpr int kPanelW           = 474;  // Waveform / panel width (Figma 592px deck)
+    static constexpr int kSidebarGap       = 8;    // gap between panel and sidebar
+
+    // Dynamic panel width — adapts to the actual component width.
+    // When the deck is exactly 592 px wide this equals kPanelW (474).
+    int getPanelW() const noexcept
+    {
+        return juce::jmax (1, getWidth() - 2 * kPad - kSidebarGap - kPitchSidebarW);
+    }
+
+    // Minimum deck height derived from above constants
+    static constexpr int kMinDeckH = kPad + kHeaderH + kGap
+                                   + kStemsH  + kGap
+                                   + kMainH   + kGap
+                                   + kControlRowH + kGap
+                                   + kControllerH + kPad;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckShellComponent)
 };
+

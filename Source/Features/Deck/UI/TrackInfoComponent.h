@@ -37,13 +37,13 @@ private:
     // Helpers
     void refreshMetadata();
     void refreshAlbumArt();
-    juce::String formatTime (double seconds, bool negative) const;
     juce::String getCamelotKey (int keyIdx) const;
     float getScrollOffset (float textWidth, float areaWidth, float& offset, bool hovering) const;
 
-    void paintAlbumArt (juce::Graphics& g, juce::Rectangle<int> area);
-    void paintTextInfo (juce::Graphics& g, juce::Rectangle<int> area);
-    void paintBpmKeyTime (juce::Graphics& g, juce::Rectangle<int> area);
+    void paintAlbumArt    (juce::Graphics& g, juce::Rectangle<int> area);
+    void paintTextInfo    (juce::Graphics& g, juce::Rectangle<int> area);
+    void paintBpmKeyInfo  (juce::Graphics& g, juce::Rectangle<int> area);
+    void paintDeckBadge   (juce::Graphics& g, juce::Rectangle<int> area);
 
     juce::ValueTree   deckTree;
     DeckStateManager& deckStateManager;
@@ -53,6 +53,7 @@ private:
     // Cached metadata
     juce::String cachedTitle;
     juce::String cachedArtist;
+    juce::String cachedAlbum;
     juce::String cachedContentHash;
     juce::Image  albumArt;
     double       sampleRate   = 44100.0;
@@ -60,7 +61,7 @@ private:
     double       baseBpm      = 0.0;
     int          keyIndex     = -1;
 
-    // Scrolling state
+    // Scrolling state (title)
     bool  isHovering         = false;
     float titleScrollOffset  = 0.0f;
     float artistScrollOffset = 0.0f;
@@ -69,8 +70,12 @@ private:
 
     static constexpr float scrollSpeed   = 50.0f;  // px/sec
     static constexpr float pauseDuration = 1.0f;   // seconds
-    static constexpr int   artSize       = 80;
-    static constexpr int   padding       = 5;
+
+    // Layout constants matching Figma Deck Header
+    static constexpr int artWidth    = 70;   // art column width (matches Figma 70x59)
+    static constexpr int badgeWidth  = 70;   // deck identifier badge width
+    static constexpr int bpmColWidth = 48;   // BPM/key numbers column
+    static constexpr int colGap      = 8;    // gap between columns
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TrackInfoComponent)
 };

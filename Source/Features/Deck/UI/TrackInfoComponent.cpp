@@ -34,11 +34,12 @@ void TrackInfoComponent::refreshMetadata()
     auto metaTree = deckTree.getChildWithName (IDs::TrackMetadata);
     if (metaTree.isValid())
     {
-        cachedTitle      = metaTree.getProperty (IDs::title).toString();
-        cachedArtist     = metaTree.getProperty (IDs::artist).toString();
+        cachedTitle       = metaTree.getProperty (IDs::title).toString();
+        cachedArtist      = metaTree.getProperty (IDs::artist).toString();
+        cachedAlbum       = metaTree.getProperty (IDs::album).toString();
         cachedContentHash = metaTree.getProperty (IDs::contentHash).toString();
-        sampleRate       = static_cast<double> (metaTree.getProperty (IDs::sampleRate, 44100.0));
-        totalSamples     = static_cast<int64_t> (metaTree.getProperty (IDs::totalSamples, 0));
+        sampleRate        = static_cast<double> (metaTree.getProperty (IDs::sampleRate, 44100.0));
+        totalSamples      = static_cast<int64_t> (metaTree.getProperty (IDs::totalSamples, 0));
     }
 
     auto beatTree = deckTree.getChildWithName (IDs::BeatGrid);
@@ -126,21 +127,6 @@ void TrackInfoComponent::mouseExit (const juce::MouseEvent& e)
     artistScrollOffset = 0.0f;
 }
 
-// --- Time formatting ---
-
-juce::String TrackInfoComponent::formatTime (double seconds, bool negative) const
-{
-    if (seconds < 0.0)
-        seconds = 0.0;
-
-    int totalSecs = static_cast<int> (seconds);
-    int mins = totalSecs / 60;
-    int secs = totalSecs % 60;
-
-    auto timeStr = juce::String (mins) + ":" + juce::String (secs).paddedLeft ('0', 2);
-    return negative ? ("-" + timeStr) : timeStr;
-}
-
 // --- Camelot key ---
 
 juce::String TrackInfoComponent::getCamelotKey (int keyIdx) const
@@ -178,60 +164,75 @@ void TrackInfoComponent::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
 
-    // Background
-    g.setColour (juce::Colour (0xFFF3F3F4)); // surface-container-low
+    // Background — matches Figma Deck background #e5e5e5
+    g.setColour (juce::Colour (0xFFE5E5E5));
     g.fillRect (bounds);
 
-    auto contentArea = bounds.reduced (padding);
+    // Borders on art and badge blocks only — omitting the full-width horizontal
+    // top/bottom lines that would visually connect the two dark blocks across the
+    // text area in the middle.
+    g.setColour (juce::Colour (0xFF2D2D2D));
+    g.drawRect (bounds.withWidth (artWidth), 2);
+    g.drawRect (bounds.withTrimmedLeft (bounds.getWidth() - badgeWidth), 2);
 
-    // Album art area
-    auto artArea = contentArea.removeFromLeft (artSize);
+    auto area = bounds;
+
+    // 1. Album art (left, fixed width)
+    auto artArea = area.removeFromLeft (artWidth);
     paintAlbumArt (g, artArea);
 
-    contentArea.removeFromLeft (padding); // gap after art
+    // 2. Deck identifier badge (right, fixed width)
+    auto badgeArea = area.removeFromRight (badgeWidth);
+    paintDeckBadge (g, badgeArea);
 
-    // BPM/Key column on the right
-    auto rightCol = contentArea.removeFromRight (70);
-    paintBpmKeyTime (g, rightCol);
+    // 3. BPM / Key / OrigBPM column (right of text, left of badge)
+    area.removeFromRight (colGap);
+    auto bpmKeyArea = area.removeFromRight (bpmColWidth);
+    paintBpmKeyInfo (g, bpmKeyArea);
 
-    // Text info in the middle
-    paintTextInfo (g, contentArea);
+    // 4. Text info (title / artist / album) — remaining space
+    area.removeFromLeft (colGap);
+    paintTextInfo (g, area);
 }
 
 void TrackInfoComponent::paintAlbumArt (juce::Graphics& g, juce::Rectangle<int> area)
 {
-    auto artRect = area.withSizeKeepingCentre (artSize, artSize);
-
     if (albumArt.isValid())
     {
-        g.drawImage (albumArt, artRect.toFloat(),
-                     juce::RectanglePlacement::stretchToFit);
+        g.drawImage (albumArt, area.toFloat(), juce::RectanglePlacement::stretchToFit);
     }
     else
     {
-        // Placeholder: dark rect with music note symbol
-        g.setColour (juce::Colour (0xFF000000));
-        g.fillRect (artRect);
+        // Black placeholder matching Figma "Song Cover Image"
+        g.setColour (juce::Colour (0xFF2D2D2D));
+        g.fillRect (area);
 
         g.setColour (juce::Colour (0xFFF9F9F9));
-        g.setFont (juce::FontOptions (28.0f));
-        g.drawText (juce::String::charToString (0x266A), artRect, // ♪
-                    juce::Justification::centred);
+        g.setFont (juce::FontOptions (20.0f));
+        g.drawText (juce::String::charToString (0x266A), area, juce::Justification::centred);
     }
 }
 
 void TrackInfoComponent::paintTextInfo (juce::Graphics& g, juce::Rectangle<int> area)
 {
-    auto titleArea  = area.removeFromTop (area.getHeight() / 3);
-    auto artistArea = area.removeFromTop (area.getHeight() / 2);
-    auto timeArea   = area;
+    // Three equal rows: title (13px), artist (10px), album (10px)
+    // with 4px top padding to align with Figma "py-[4px]"
+    auto content = area.withTrimmedTop (4).withTrimmedBottom (4);
+    int rowH = content.getHeight() / 3;
 
-    // Title
-    g.setColour (juce::Colours::black);
-    auto titleFont = juce::FontOptions (13.0f).withStyle ("Bold");
-    g.setFont (titleFont);
+    auto titleArea  = content.removeFromTop (rowH);
+    auto artistArea = content.removeFromTop (rowH);
+    auto albumArea  = content; // remaining
 
-    auto displayTitle = cachedTitle.isEmpty() ? juce::String ("--") : cachedTitle;
+    auto displayTitle  = cachedTitle.isEmpty()  ? juce::String ("--") : cachedTitle;
+    auto displayArtist = cachedArtist.isEmpty() ? juce::String ("--") : cachedArtist;
+    auto displayAlbum  = cachedAlbum.isEmpty()  ? juce::String ("--") : cachedAlbum;
+
+    // Title — 13px Space Mono bold
+    auto monoFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
+    g.setFont (monoFont);
+    g.setColour (juce::Colour (0xFF2D2D2D));
+
     juce::GlyphArrangement titleGlyphs;
     titleGlyphs.addLineOfText (g.getCurrentFont(), displayTitle, 0.0f, 0.0f);
     float titleTextWidth = titleGlyphs.getBoundingBox (0, -1, false).getWidth();
@@ -239,12 +240,11 @@ void TrackInfoComponent::paintTextInfo (juce::Graphics& g, juce::Rectangle<int> 
 
     if (isHovering && titleTextWidth > titleAreaWidth)
     {
-        float scrollOff = getScrollOffset (titleTextWidth, titleAreaWidth,
-                                           titleScrollOffset, isHovering);
-        auto wideRect = titleArea.toFloat().withWidth (titleTextWidth).translated (-scrollOff, 0.0f);
+        float scrollOff = getScrollOffset (titleTextWidth, titleAreaWidth, titleScrollOffset, isHovering);
         g.saveState();
         g.reduceClipRegion (titleArea);
-        g.drawText (displayTitle, wideRect.toNearestInt(),
+        g.drawText (displayTitle,
+                    titleArea.toFloat().withWidth (titleTextWidth).translated (-scrollOff, 0.0f).toNearestInt(),
                     juce::Justification::centredLeft, false);
         g.restoreState();
     }
@@ -253,12 +253,10 @@ void TrackInfoComponent::paintTextInfo (juce::Graphics& g, juce::Rectangle<int> 
         g.drawText (displayTitle, titleArea, juce::Justification::centredLeft, true);
     }
 
-    // Artist
-    auto artistFont = juce::FontOptions (11.0f);
-    g.setFont (artistFont);
-    g.setColour (juce::Colour (0xCC000000));
+    // Artist — 10px
+    auto smallFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain);
+    g.setFont (smallFont);
 
-    auto displayArtist = cachedArtist.isEmpty() ? juce::String ("--") : cachedArtist;
     juce::GlyphArrangement artistGlyphs;
     artistGlyphs.addLineOfText (g.getCurrentFont(), displayArtist, 0.0f, 0.0f);
     float artistTextWidth = artistGlyphs.getBoundingBox (0, -1, false).getWidth();
@@ -266,12 +264,11 @@ void TrackInfoComponent::paintTextInfo (juce::Graphics& g, juce::Rectangle<int> 
 
     if (isHovering && artistTextWidth > artistAreaWidth)
     {
-        float scrollOff = getScrollOffset (artistTextWidth, artistAreaWidth,
-                                           artistScrollOffset, isHovering);
-        auto wideRect = artistArea.toFloat().withWidth (artistTextWidth).translated (-scrollOff, 0.0f);
+        float scrollOff = getScrollOffset (artistTextWidth, artistAreaWidth, artistScrollOffset, isHovering);
         g.saveState();
         g.reduceClipRegion (artistArea);
-        g.drawText (displayArtist, wideRect.toNearestInt(),
+        g.drawText (displayArtist,
+                    artistArea.toFloat().withWidth (artistTextWidth).translated (-scrollOff, 0.0f).toNearestInt(),
                     juce::Justification::centredLeft, false);
         g.restoreState();
     }
@@ -280,69 +277,56 @@ void TrackInfoComponent::paintTextInfo (juce::Graphics& g, juce::Rectangle<int> 
         g.drawText (displayArtist, artistArea, juce::Justification::centredLeft, true);
     }
 
-    // Elapsed / Remaining time
-    auto monoFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain);
-    g.setFont (monoFont);
-    g.setColour (juce::Colours::black);
-
-    auto* audioState = deckStateManager.getAudioState (deckId);
-    int64_t playhead = 0;
-    if (audioState != nullptr)
-        playhead = audioState->playheadPosition.load (std::memory_order_relaxed);
-
-    double elapsed   = (sampleRate > 0.0) ? static_cast<double> (playhead) / sampleRate : 0.0;
-    double remaining = (sampleRate > 0.0) ? static_cast<double> (totalSamples - playhead) / sampleRate : 0.0;
-
-    auto elapsedStr   = formatTime (elapsed, false);
-    auto remainingStr = formatTime (remaining, true);
-
-    auto elapsedArea  = timeArea.removeFromLeft (timeArea.getWidth() / 2);
-    auto remainArea   = timeArea;
-
-    g.drawText (elapsedStr, elapsedArea, juce::Justification::centredLeft, false);
-    g.drawText (remainingStr, remainArea, juce::Justification::centredRight, false);
+    // Album — 10px
+    g.drawText (displayAlbum, albumArea, juce::Justification::centredLeft, true);
 }
 
-void TrackInfoComponent::paintBpmKeyTime (juce::Graphics& g, juce::Rectangle<int> area)
+void TrackInfoComponent::paintBpmKeyInfo (juce::Graphics& g, juce::Rectangle<int> area)
 {
-    auto monoFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain);
-    g.setFont (monoFont);
-    g.setColour (juce::Colours::black);
+    // Three rows: currentBPM (13px), key (10px), origBPM (10px)
+    // matches Figma Frame 4: right-aligned numbers
+    auto content = area.withTrimmedTop (4).withTrimmedBottom (4);
+    int rowH = content.getHeight() / 3;
 
-    auto bpmArea = area.removeFromTop (area.getHeight() / 2);
-    auto keyArea = area;
+    auto currentBpmArea = content.removeFromTop (rowH);
+    auto keyArea        = content.removeFromTop (rowH);
+    auto origBpmArea    = content;
 
-    // BPM: originalBPM * speedMultiplier
     auto* audioState = deckStateManager.getAudioState (deckId);
     float speedMul = 1.0f;
     if (audioState != nullptr)
         speedMul = audioState->speedMultiplier.load (std::memory_order_relaxed);
 
     double displayBpm = baseBpm * static_cast<double> (speedMul);
-    juce::String bpmStr;
-    if (baseBpm <= 0.0)
-        bpmStr = "--";
-    else
-        bpmStr = juce::String (displayBpm, 1);
+    auto currentBpmStr = (baseBpm <= 0.0) ? juce::String ("--") : juce::String (displayBpm, 2);
+    auto origBpmStr    = (baseBpm <= 0.0) ? juce::String ("--") : juce::String (baseBpm, 2);
+    auto keyStr        = getCamelotKey (keyIndex);
 
-    g.drawText (bpmStr, bpmArea, juce::Justification::centredRight, false);
+    // Current BPM — 13px
+    auto monoFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
+    g.setFont (monoFont);
+    g.setColour (juce::Colour (0xFF2D2D2D));
+    g.drawText (currentBpmStr, currentBpmArea, juce::Justification::centredRight, false);
 
-    // Key in Camelot with color indicator
-    auto keyStr = getCamelotKey (keyIndex);
-    auto keyColour = KeyUtils::getCamelotColour (keyIndex);
-
-    if (keyColour != juce::Colours::transparentBlack)
-    {
-        // Draw a small color swatch before the key text
-        auto swatchSize = 8;
-        auto swatchArea = keyArea.removeFromRight (swatchSize + 4);
-        auto swatchRect = swatchArea.withSizeKeepingCentre (swatchSize, swatchSize);
-        g.setColour (keyColour);
-        g.fillRect (swatchRect);
-    }
-
-    g.setColour (juce::Colours::black);
+    // Key — 10px
+    auto smallFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain);
+    g.setFont (smallFont);
     g.drawText (keyStr, keyArea, juce::Justification::centredRight, false);
+
+    // Original BPM — 10px
+    g.drawText (origBpmStr, origBpmArea, juce::Justification::centredRight, false);
+}
+
+void TrackInfoComponent::paintDeckBadge (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    // Filled black rect (matching Figma "Deck Identifier" node: bg-[#2d2d2d])
+    g.setColour (juce::Colour (0xFF2D2D2D));
+    g.fillRect (area);
+
+    // Large deck letter centred
+    g.setColour (juce::Colour (0xFFF9F9F9));
+    g.setFont (juce::FontOptions (28.0f).withStyle ("Bold"));
+    g.drawText (deckId, area, juce::Justification::centred);
 }
 
 void TrackInfoComponent::resized()

@@ -39,7 +39,7 @@ private:
 
     bool isDeckEmpty() const;
 
-    enum class BtnType { LoopIn, LoopOut, Toggle, Halve, Double, AutoLoop };
+    enum class BtnType { LoopIn, LoopOut, Toggle, ArrowLeft, ArrowRight, AutoLoop };
 
     struct ButtonDef
     {
@@ -60,22 +60,34 @@ private:
     bool  loopIsDefined   = false;
     int   hoveredButton   = -1;
 
-    static constexpr int buttonGap  = 2;
-    static constexpr int numButtons = 12;
+    // Visible buttons: [IN|OUT|LOOP] gap [<|2|4|8|16|>]
+    // Buttons /2, x2, 1/2, 1, 32 are hidden from the UI but their callbacks
+    // remain wired (< maps to halve, > maps to double).
+    static constexpr int numButtons = 9;
+
+    // Fixed button sizes — matches GRID section (50 × 46 px).
+    // Arrow buttons (< and >) are half-width.
+    static constexpr int kBtnW    = 50;
+    static constexpr int kArrowW  = 25;   // half of kBtnW
+    static constexpr int kBtnH    = 46;
+    static constexpr int kBorderW = 2;    // shared border between adjacent buttons
+    static constexpr int kGroupGap = 8;   // gap between IN/OUT/LOOP group and beat group
+
+    // Pre-computed group widths (accounting for shared 2-px borders)
+    static constexpr int kGroupAW = 3 * kBtnW  - 2 * kBorderW;              // 146
+    static constexpr int kGroupBW = 2 * kArrowW + 4 * kBtnW - 5 * kBorderW; // 240
+    static constexpr int kTotalW  = kGroupAW + kGroupGap + kGroupBW;         // 394
 
     static inline const ButtonDef buttons[] = {
-        { "IN",   BtnType::LoopIn,   0.0f },
-        { "OUT",  BtnType::LoopOut,  0.0f },
-        { "LOOP", BtnType::Toggle,   0.0f },
-        { "/2",   BtnType::Halve,    0.0f },
-        { "x2",   BtnType::Double,   0.0f },
-        { "1/2",  BtnType::AutoLoop, 0.5f },
-        { "1",    BtnType::AutoLoop, 1.0f },
-        { "2",    BtnType::AutoLoop, 2.0f },
-        { "4",    BtnType::AutoLoop, 4.0f },
-        { "8",    BtnType::AutoLoop, 8.0f },
-        { "16",   BtnType::AutoLoop, 16.0f },
-        { "32",   BtnType::AutoLoop, 32.0f },
+        { "IN",   BtnType::LoopIn,     0.0f },  // 0
+        { "OUT",  BtnType::LoopOut,    0.0f },  // 1
+        { "LOOP", BtnType::Toggle,     0.0f },  // 2
+        { "<",    BtnType::ArrowLeft,  0.0f },  // 3  (halve)
+        { "2",    BtnType::AutoLoop,   2.0f },  // 4
+        { "4",    BtnType::AutoLoop,   4.0f },  // 5
+        { "8",    BtnType::AutoLoop,   8.0f },  // 6
+        { "16",   BtnType::AutoLoop,  16.0f },  // 7
+        { ">",    BtnType::ArrowRight, 0.0f },  // 8  (double)
     };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LoopControlComponent)

@@ -90,6 +90,15 @@ DECLARE_ID (loadingProgress)
 DECLARE_ID (loadingError)
 DECLARE_ID (channelCount)
 
+// Key transpose (UI — semitone offset applied on top of detected key)
+DECLARE_ID (keyShift)
+
+// Sync mode (UI — deck BPM sync with master)
+DECLARE_ID (syncEnabled)
+
+// Active controller tab: "loop" | "cue" | "jump" | "grid"
+DECLARE_ID (controllerTab)
+
 #undef DECLARE_ID
 
 } // namespace IDs

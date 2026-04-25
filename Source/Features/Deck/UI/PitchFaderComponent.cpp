@@ -25,20 +25,17 @@ float PitchFaderComponent::getNormalizedValue() const
 juce::Rectangle<int> PitchFaderComponent::getTrackArea() const
 {
     auto bounds = getLocalBounds();
-    int trackWidth = juce::jmax (6, bounds.getWidth() / 3);
+    constexpr int trackWidth = 4;  // narrow dark rail (req 1)
     int x = (bounds.getWidth() - trackWidth) / 2;
     return { x, trackMarginTop, trackWidth, bounds.getHeight() - trackMarginTop - trackMarginBot };
 }
 
 juce::Rectangle<int> PitchFaderComponent::getHandleArea() const
 {
-    auto track = getTrackArea();
     float norm = pitchPercentToNormalized (pitchPercent);
-    int y = static_cast<int> (normalizedToY (norm)) - handleHeight / 2;
-
-    int handleWidth = track.getWidth() + handleMargin * 2;
-    int hx = track.getX() - handleMargin;
-    return { hx, y, handleWidth, handleHeight };
+    int y      = static_cast<int> (normalizedToY (norm)) - handleHeight / 2;
+    // Leave 3px on right for drop shadow (req 5)
+    return { 2, y, getWidth() - 5, handleHeight };
 }
 
 float PitchFaderComponent::pitchPercentToNormalized (float pitchPct) const
@@ -89,85 +86,58 @@ float PitchFaderComponent::getMouseWheelIncrement() const
 
 void PitchFaderComponent::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds();
+    const juce::Colour kDark  (0xFF2D2D2D);
+    const juce::Colour kLight (0xFFF9F9F9);
 
-    // Pitch percentage display at top
-    {
-        juce::String displayText;
-        if (std::abs (pitchPercent) < 0.005f)
-            displayText = "0.00%";
-        else if (pitchPercent > 0.0f)
-            displayText = "+" + juce::String (pitchPercent, 2) + "%";
-        else
-            displayText = juce::String (pitchPercent, 2) + "%";
-
-        g.setColour (juce::Colours::black);
-        g.setFont (juce::FontOptions (11.0f).withStyle ("Bold"));
-        g.drawText (displayText,
-                    bounds.removeFromTop (displayHeight),
-                    juce::Justification::centred);
-    }
-
-    // Range label top: "-X%" (slower, CDJ convention: top = negative pitch)
-    {
-        juce::String topLabel = "-" + juce::String (pitchRange) + "%";
-        g.setColour (juce::Colour (0xFF888888));
-        g.setFont (juce::FontOptions (9.0f));
-        auto labelArea = juce::Rectangle<int> (0, trackMarginTop - labelHeight, getWidth(), labelHeight);
-        g.drawText (topLabel, labelArea, juce::Justification::centred);
-    }
-
-    // Fader track
     auto track = getTrackArea();
-    g.setColour (juce::Colour (0xFFE2E2E2)); // surface-container-highest
+
+    // ── Tick marks ────────────────────────────────────────────────────────
+    // 2px thick, drawn before handle. Topmost/bottommost pair aligned with
+    // the 2px track border (req 2). Gap of 1px from track sides.
+    {
+        constexpr int numTicks = 9;
+        g.setColour (kDark);
+        for (int i = 0; i < numTicks; ++i)
+        {
+            // ty aligns tick[0] with top border, tick[8] with bottom border
+            int ty = track.getY() + i * (track.getHeight() - 2) / (numTicks - 1);
+            bool isCenter = (i == numTicks / 2);
+            int  tw = isCenter ? 14 : 10;
+            // Left
+            g.fillRect (track.getX() - tw - 1, ty, tw, 2);
+            // Right
+            g.fillRect (track.getRight() + 1,  ty, tw, 2);
+        }
+    }
+
+    // ── Track (narrow, fully dark — req 1) ───────────────────────────────────
+    g.setColour (kDark);
     g.fillRect (track);
+    g.setColour (kDark);
+    g.drawRect (track, 2);
 
-    // Center tick mark (1px line)
-    int centerY = track.getY() + track.getHeight() / 2;
-    g.setColour (juce::Colour (0xFFAAAAAA));
-    g.drawHorizontalLine (centerY, static_cast<float> (track.getX() - 3),
-                          static_cast<float> (track.getRight() + 3));
-
-    // Handle
+    // ── Handle drop shadow (blur=0, +3px right+down, #2D2D2D @75% — req 5) ─────
     auto handle = getHandleArea();
-    g.setColour (juce::Colours::black);
+    g.setColour (juce::Colour (0xBF2D2D2D));  // 0xBF ≈ 75% opacity
+    g.fillRect (handle.translated (3, 3));
+
+    // ── Handle (light fill, dark border) ────────────────────────────────────
+    g.setColour (kLight);
     g.fillRect (handle);
+    g.setColour (kDark);
+    g.drawRect (handle, 2);
 
-    // Range label bottom: "+X%" (faster, CDJ convention: bottom = positive pitch)
+    // ── Range button at bottom — SYNC style ─────────────────────────────────
     {
-        juce::String botLabel = "+" + juce::String (pitchRange) + "%";
-        g.setColour (juce::Colour (0xFF888888));
-        g.setFont (juce::FontOptions (9.0f));
-        auto labelArea = juce::Rectangle<int> (0, getHeight() - trackMarginBot, getWidth(), labelHeight);
-        g.drawText (botLabel, labelArea, juce::Justification::centred);
-    }
-
-    // Pitch range button and reset button at very bottom
-    int btnY = getHeight() - trackMarginBot + labelHeight + 2;
-    int btnW = juce::jmin (getWidth() - 4, 28);
-    int btnX = (getWidth() - btnW) / 2;
-
-    // Range button
-    {
-        auto rangeArea = juce::Rectangle<int> (btnX, btnY, btnW, 14);
-        g.setColour (juce::Colour (0xFFE2E2E2));
+        auto rangeArea = juce::Rectangle<int> (0, getHeight() - 23, getWidth(), 23);
+        g.setColour (kLight);
         g.fillRect (rangeArea);
-        g.setColour (juce::Colours::black);
-        g.drawRect (rangeArea, 1);
-        g.setFont (juce::FontOptions (8.0f).withStyle ("Bold"));
-        g.drawText (juce::String (juce::CharPointer_UTF8 ("\xc2\xb1")) + juce::String (pitchRange),
+        g.setColour (kDark);
+        g.drawRect (rangeArea, 2);
+        g.setColour (kDark);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+        g.drawText (juce::String (juce::CharPointer_UTF8 ("\xc2\xb1")) + juce::String (pitchRange) + "%",
                     rangeArea, juce::Justification::centred);
-    }
-
-    // Reset button below range
-    {
-        auto resetArea = juce::Rectangle<int> (btnX, btnY + 16, btnW, 14);
-        g.setColour (juce::Colour (0xFFE2E2E2));
-        g.fillRect (resetArea);
-        g.setColour (juce::Colours::black);
-        g.drawRect (resetArea, 1);
-        g.setFont (juce::FontOptions (8.0f).withStyle ("Bold"));
-        g.drawText ("0", resetArea, juce::Justification::centred);
     }
 }
 
@@ -180,24 +150,11 @@ void PitchFaderComponent::resized()
 
 void PitchFaderComponent::mouseDown (const juce::MouseEvent& e)
 {
-    auto bounds = getLocalBounds();
-    int btnW = juce::jmin (getWidth() - 4, 28);
-    int btnX = (getWidth() - btnW) / 2;
-    int btnY = getHeight() - trackMarginBot + labelHeight + 2;
-
-    // Check range button hit
-    auto rangeArea = juce::Rectangle<int> (btnX, btnY, btnW, 14);
+    // Check range button (bottom 23px)
+    auto rangeArea = juce::Rectangle<int> (0, getHeight() - 23, getWidth(), 23);
     if (rangeArea.contains (e.getPosition()))
     {
         cyclePitchRange();
-        return;
-    }
-
-    // Check reset button hit
-    auto resetArea = juce::Rectangle<int> (btnX, btnY + 16, btnW, 14);
-    if (resetArea.contains (e.getPosition()))
-    {
-        setPitchPercent (0.0f, true);
         return;
     }
 

@@ -50,9 +50,11 @@ private:
 
     std::vector<std::unique_ptr<DeckShellComponent>> deckShells;
 
-    static constexpr int deckGap       = 4;
-    static constexpr int minDeckWidth  = 420;
-    static constexpr int minDeckHeight = 280;
+    static constexpr int deckGap         = 4;
+    static constexpr int minDeckWidth    = 420;
+    static constexpr int minDeckHeight   = 280;
+    // Fixed preferred height per deck — matches DeckShellComponent::kMinDeckH (505)
+    static constexpr int kPreferredDeckH = 505;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckLayoutManager)
 };

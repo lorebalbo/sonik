@@ -12,6 +12,8 @@ public:
     ~PitchFaderComponent() override;
 
     float getNormalizedValue() const;
+    int   getPitchRange() const { return pitchRange; }
+    void  cyclePitchRange();
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -29,7 +31,6 @@ private:
     void updateFromState();
     void setPitchPercent (float newPitch, bool animate = false);
     void commitToState();
-    void cyclePitchRange();
 
     float pitchPercentToNormalized (float pitchPct) const;
     float normalizedToPitchPercent (float norm) const;
@@ -52,12 +53,9 @@ private:
     float animTarget     = 0.0f;
 
     static constexpr float deadZone        = 0.10f;
-    static constexpr int   handleHeight    = 12;
-    static constexpr int   handleMargin    = 2;
-    static constexpr int   trackMarginTop  = 48;
-    static constexpr int   trackMarginBot  = 50;
-    static constexpr int   labelHeight     = 14;
-    static constexpr int   displayHeight   = 18;
+    static constexpr int   handleHeight    = 16;   // req 5: shorter handle
+    static constexpr int   trackMarginTop  = 0;    // gap comes from DeckShell sideGap above
+    static constexpr int   trackMarginBot  = 35;   // 12px gap + 23px range button (req 3)
 
     static const std::array<int, 4> ranges;
 

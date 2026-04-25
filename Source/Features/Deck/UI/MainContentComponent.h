@@ -35,6 +35,11 @@ public:
             handleAddDeck();
         };
 
+        toolbar.onRemoveDeckClicked = [this]()
+        {
+            handleRemoveDeck();
+        };
+
         addAndMakeVisible (toolbar);
         addAndMakeVisible (layoutManager);
 
@@ -55,6 +60,7 @@ public:
     {
         auto bounds = getLocalBounds();
         toolbar.setBounds (bounds.removeFromTop (toolbarHeight));
+        bounds.reduce (8, 8);  // outer padding: separates decks from the window border
         layoutManager.setBounds (bounds);
     }
 
@@ -125,20 +131,28 @@ private:
             if (state != nullptr)
                 audioEngine.registerDeck (newId, state);
 
-            toolbar.updateAddDeckButton();
+            toolbar.updateButtons();
         }
     }
 
-    // ValueTree::Listener — update toolbar when deck count changes
+    void handleRemoveDeck()
+    {
+        auto activeId = deckStateManager.getActiveDeckId();
+        deckStateManager.removeDeck (activeId);
+        toolbar.updateButtons();
+    }
+
+    // ValueTree::Listener — update toolbar when deck count or active deck changes
     void valueTreePropertyChanged (juce::ValueTree& tree,
                                    const juce::Identifier& property) override
     {
-        if (tree == rootState && property == IDs::deckCount)
+        if (tree == rootState
+            && (property == IDs::deckCount || property == IDs::activeDeckId))
         {
             juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
             {
                 if (safeThis != nullptr)
-                    safeThis->toolbar.updateAddDeckButton();
+                    safeThis->toolbar.updateButtons();
             });
         }
     }

@@ -17,34 +17,55 @@ BeatJumpComponent::~BeatJumpComponent()
 // Layout helpers
 // ---------------------------------------------------------------------------
 
-juce::Rectangle<int> BeatJumpComponent::getBackwardBounds() const
+// Returns bounds for button at index:
+//   0 = ◄ (arrow back)   width=kArrowW
+//   1-4 = size buttons    width=kBtnW
+//   5 = ► (arrow fwd)    width=kArrowW
+juce::Rectangle<int> BeatJumpComponent::getButtonBounds (int idx) const
 {
-    auto b = getLocalBounds();
-    int thirdW = b.getWidth() / 3;
-    return b.removeFromLeft (thirdW);
-}
+    const int xOff = juce::jmax (0, (getWidth()  - kTotalW) / 2);
+    const int yOff = juce::jmax (0, (getHeight() - kBtnH)   / 2);
 
-juce::Rectangle<int> BeatJumpComponent::getSizeBounds() const
-{
-    auto b = getLocalBounds();
-    int thirdW = b.getWidth() / 3;
-    return b.withTrimmedLeft (thirdW).withTrimmedRight (thirdW);
-}
+    if (idx == 0)
+        return { xOff, yOff, kArrowW, kBtnH };
 
-juce::Rectangle<int> BeatJumpComponent::getForwardBounds() const
-{
-    auto b = getLocalBounds();
-    int thirdW = b.getWidth() / 3;
-    return b.removeFromRight (thirdW);
+    if (idx >= 1 && idx <= 4)
+    {
+        const int x = xOff + (kArrowW - kBorderW) + (idx - 1) * (kBtnW - kBorderW);
+        return { x, yOff, kBtnW, kBtnH };
+    }
+
+    // idx == 5 (forward arrow)
+    const int x = xOff + (kArrowW - kBorderW) + 4 * (kBtnW - kBorderW);
+    return { x, yOff, kArrowW, kBtnH };
 }
 
 BeatJumpComponent::Region BeatJumpComponent::getRegionAt (int x, int y) const
 {
     auto pt = juce::Point<int> (x, y);
-    if (getBackwardBounds().contains (pt))  return Region::Backward;
-    if (getSizeBounds().contains (pt))      return Region::Size;
-    if (getForwardBounds().contains (pt))   return Region::Forward;
+    for (int i = 0; i <= 5; ++i)
+    {
+        if (getButtonBounds (i).contains (pt))
+        {
+            if (i == 0) return Region::Backward;
+            if (i == 5) return Region::Forward;
+            // i == 1..4 → Size0..Size3
+            return static_cast<Region> (static_cast<int> (Region::Size0) + (i - 1));
+        }
+    }
     return Region::None;
+}
+
+int BeatJumpComponent::regionToSizeIndex (Region r) noexcept
+{
+    switch (r)
+    {
+        case Region::Size0: return 0;
+        case Region::Size1: return 1;
+        case Region::Size2: return 2;
+        case Region::Size3: return 3;
+        default:            return -1;
+    }
 }
 
 juce::String BeatJumpComponent::formatSize (double beats) const
@@ -92,10 +113,9 @@ void BeatJumpComponent::triggerFlash (Region r)
 
 void BeatJumpComponent::paint (juce::Graphics& g)
 {
-    bool empty     = isDeckEmpty();
-    bool hasBg     = hasBeatgrid();
-    float alpha    = empty ? 0.3f : 1.0f;
-    float sizeAlpha = (! empty && ! hasBg) ? 0.5f : alpha;
+    bool empty  = isDeckEmpty();
+    bool hasBg  = hasBeatgrid();
+    float alpha = empty ? 0.3f : 1.0f;
 
     // Check if flash is still active
     bool flashActive = false;
@@ -107,48 +127,58 @@ void BeatJumpComponent::paint (juce::Graphics& g)
             flashRegion = Region::None;
     }
 
-    auto drawButton = [&] (juce::Rectangle<int> bounds, const juce::String& label,
-                           Region region, const juce::String& tooltip)
+    // Draw 6 buttons: [◄] [2] [4] [8] [16] [►]
+    for (int idx = 0; idx <= 5; ++idx)
     {
-        bool isHovered = (hoveredRegion == region && ! empty);
-        bool isFlashing = (flashActive && flashRegion == region);
+        auto bounds = getButtonBounds (idx);
 
-        if (isFlashing)
+        // Determine which Region this button is
+        Region btnRegion;
+        if (idx == 0)       btnRegion = Region::Backward;
+        else if (idx == 5)  btnRegion = Region::Forward;
+        else                btnRegion = static_cast<Region> (static_cast<int> (Region::Size0) + (idx - 1));
+
+        bool isSizeBtn   = (idx >= 1 && idx <= 4);
+        bool isActive    = isSizeBtn && (kSizes[idx - 1] == currentSize) && (! empty) && hasBg;
+        bool isHovered   = (hoveredRegion == btnRegion) && (! empty);
+        bool isFlashing  = flashActive && (flashRegion == btnRegion);
+
+        // Label
+        juce::String label;
+        if (idx == 0) label = juce::String::charToString (0x25C4);
+        else if (idx == 5) label = juce::String::charToString (0x25BA);
+        else label = formatSize (kSizes[idx - 1]);
+
+        // Uniform alpha for all buttons — matches Loop panel pattern.
+        // Beatgrid availability only controls interactivity (mouseDown), not visuals.
+        juce::Colour bg, fg;
+        if (isFlashing || isActive)
         {
-            // Accent flash: inverted colours
-            g.setColour (juce::Colour (0xFF000000).withAlpha (alpha));
-            g.fillRect (bounds);
-            g.setColour (juce::Colour (0xFFF9F9F9).withAlpha (alpha));
+            // Active / flashing: inverted (dark bg, light text)
+            bg = juce::Colour (0xFF2D2D2D).withAlpha (alpha);
+            fg = juce::Colour (0xFFF9F9F9).withAlpha (alpha);
         }
         else if (isHovered)
         {
-            g.setColour (juce::Colour (0xFFE2E2E2).withAlpha (alpha));
-            g.fillRect (bounds);
-            g.setColour (juce::Colour (0xFF000000).withAlpha (alpha));
+            bg = juce::Colour (0xFFE5E5E5).withAlpha (alpha);
+            fg = juce::Colour (0xFF2D2D2D).withAlpha (alpha);
         }
         else
         {
-            g.setColour (juce::Colour (0xFFF3F3F4).withAlpha (alpha));
-            g.fillRect (bounds);
-            g.setColour (juce::Colour (0xFF000000).withAlpha (alpha));
+            bg = juce::Colour (0xFFF9F9F9).withAlpha (alpha);
+            fg = juce::Colour (0xFF2D2D2D).withAlpha (alpha);
         }
 
-        // Border
-        g.setColour (juce::Colour (0xFF000000).withAlpha (alpha * 0.5f));
-        g.drawRect (bounds, 1);
+        g.setColour (bg);
+        g.fillRect (bounds);
 
-        // Label
-        float textAlpha = (region == Region::Size) ? sizeAlpha : alpha;
-        g.setColour (isFlashing
-            ? juce::Colour (0xFFF9F9F9).withAlpha (textAlpha)
-            : juce::Colour (0xFF000000).withAlpha (textAlpha));
-        g.setFont (juce::FontOptions (11.0f).withStyle ("Bold"));
+        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (alpha));
+        g.drawRect (bounds, 2);
+
+        g.setColour (fg);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
         g.drawText (label, bounds, juce::Justification::centred);
-    };
-
-    drawButton (getBackwardBounds(), juce::String::charToString (0x25C0), Region::Backward, "Beat Jump Backward");
-    drawButton (getSizeBounds(), formatSize (currentSize), Region::Size, "Beat Jump Size (click to change)");
-    drawButton (getForwardBounds(), juce::String::charToString (0x25B6), Region::Forward, "Beat Jump Forward");
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -178,10 +208,18 @@ void BeatJumpComponent::mouseDown (const juce::MouseEvent& e)
             repaint();
             break;
 
-        case Region::Size:
-            if (onCycleSize)
-                onCycleSize (! e.mods.isShiftDown()); // Shift+click = cycle backward
+        case Region::Size0:
+        case Region::Size1:
+        case Region::Size2:
+        case Region::Size3:
+        {
+            if (! hasBeatgrid())
+                break;
+            int sIdx = regionToSizeIndex (region);
+            deckTree.setProperty (IDs::beatJumpSize, kSizes[sIdx], nullptr);
+            repaint();
             break;
+        }
 
         case Region::None:
             break;
@@ -195,12 +233,14 @@ void BeatJumpComponent::mouseMove (const juce::MouseEvent& e)
     {
         hoveredRegion = newRegion;
 
-        // Update tooltip based on region
         switch (hoveredRegion)
         {
             case Region::Backward: setTooltip ("Beat Jump Backward"); break;
             case Region::Forward:  setTooltip ("Beat Jump Forward"); break;
-            case Region::Size:     setTooltip ("Beat Jump Size (click to change)"); break;
+            case Region::Size0:    setTooltip ("Jump 2 beats"); break;
+            case Region::Size1:    setTooltip ("Jump 4 beats"); break;
+            case Region::Size2:    setTooltip ("Jump 8 beats"); break;
+            case Region::Size3:    setTooltip ("Jump 16 beats"); break;
             case Region::None:     setTooltip ("Beat Jump"); break;
         }
 
