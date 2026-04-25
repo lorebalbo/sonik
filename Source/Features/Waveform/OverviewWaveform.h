@@ -56,7 +56,7 @@ private:
     std::array<HotCueInfo, 8> hotCues;
 
     // Loop overlay colour (PRD-0014)
-    juce::Colour deckAccentColour { juce::Colours::white };
+    juce::Colour deckAccentColour { juce::Colours::black };
 
     juce::Image cachedImage;
     int         cachedWidth  = 0;

@@ -58,7 +58,7 @@ private:
     std::array<HotCueInfo, 8> hotCues;
 
     // Loop overlay colour (PRD-0014)
-    juce::Colour deckAccentColour { juce::Colours::white };
+    juce::Colour deckAccentColour { juce::Colours::black };
 
     // Zoom: visible duration in seconds
     int     zoomLevelIndex    = 2; // default: 16s

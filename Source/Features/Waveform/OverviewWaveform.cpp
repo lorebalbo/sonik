@@ -86,11 +86,6 @@ void OverviewWaveform::rebuildImage()
     auto numPoints = static_cast<int> (points.size());
     float halfH = static_cast<float> (h) * 0.5f;
 
-    // Three-band colors
-    juce::Colour lowColor  (0xFFFF4444);
-    juce::Colour midColor  (0xFF44FF44);
-    juce::Colour highColor (0xFF44CCFF);
-
     for (int x = 0; x < w; ++x)
     {
         float frac = static_cast<float> (x) / static_cast<float> (w);
@@ -101,49 +96,44 @@ void OverviewWaveform::rebuildImage()
         float peak = juce::jmax (pt.peakL, pt.peakR);
         float rms  = juce::jmax (pt.rmsL, pt.rmsR);
 
-        // Normalize energies for color weighting
         float totalEnergy = pt.energyLow + pt.energyMid + pt.energyHigh;
 
-        juce::Colour barColor;
+        // 1-bit density: bass = solid black, treble = lighter gray (sparse)
+        juce::Colour barColour;
         if (totalEnergy > 0.0001f)
         {
-            float wLow  = pt.energyLow / totalEnergy;
-            float wMid  = pt.energyMid / totalEnergy;
+            float wMid  = pt.energyMid  / totalEnergy;
             float wHigh = pt.energyHigh / totalEnergy;
-
-            barColor = juce::Colour (
-                static_cast<uint8_t> (juce::jlimit (0.0f, 255.0f, wLow * 255.0f + wHigh * 68.0f)),
-                static_cast<uint8_t> (juce::jlimit (0.0f, 255.0f, wMid * 255.0f + wHigh * 204.0f)),
-                static_cast<uint8_t> (juce::jlimit (0.0f, 255.0f, wLow * 68.0f + wHigh * 255.0f))
-            );
+            auto grey = static_cast<uint8_t> (juce::jlimit (0.0f, 180.0f, wMid * 80.0f + wHigh * 160.0f));
+            barColour = juce::Colour (grey, grey, grey);
         }
         else
         {
-            barColor = juce::Colour (0xFF333333);
+            barColour = juce::Colour (0xFFC8C8C8);
         }
 
-        // Peak envelope
+        // Peak envelope (translucent outer shell)
         float peakHeight = peak * halfH;
-        ig.setColour (barColor.withAlpha (0.6f));
-        ig.drawVerticalLine (x,
-                             halfH - peakHeight,
-                             halfH + peakHeight);
+        ig.setColour (barColour.withAlpha (0.35f));
+        ig.drawVerticalLine (x, halfH - peakHeight, halfH + peakHeight);
 
-        // RMS region (brighter)
+        // RMS core (opaque inner body)
         float rmsHeight = rms * halfH;
-        ig.setColour (barColor.withAlpha (0.9f));
-        ig.drawVerticalLine (x,
-                             halfH - rmsHeight,
-                             halfH + rmsHeight);
+        ig.setColour (barColour);
+        ig.drawVerticalLine (x, halfH - rmsHeight, halfH + rmsHeight);
     }
+
+    // Center divider
+    ig.setColour (juce::Colour (0xFFD8D8D8));
+    ig.drawHorizontalLine (static_cast<int> (halfH), 0.0f, static_cast<float> (w));
 }
 
 void OverviewWaveform::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
 
-    // Background
-    g.setColour (juce::Colour (0xFF0A0A0A));
+    // Background — surface-container-lowest per DESIGN.md (high-priority visual canvas)
+    g.setColour (juce::Colour (0xFFFFFFFF));
     g.fillRect (bounds);
 
     if (waveformData == nullptr)
@@ -156,7 +146,7 @@ void OverviewWaveform::paint (juce::Graphics& g)
     if (cachedImage.isValid())
         g.drawImageAt (cachedImage, 0, 0);
 
-    // Viewport rectangle
+    // Viewport rectangle — subtle dark tint + 1px border
     if (totalSamples > 0 && visibleEnd > visibleStart)
     {
         float xStart = static_cast<float> (visibleStart) / static_cast<float> (totalSamples)
@@ -164,10 +154,10 @@ void OverviewWaveform::paint (juce::Graphics& g)
         float xEnd   = static_cast<float> (visibleEnd) / static_cast<float> (totalSamples)
                         * static_cast<float> (getWidth());
 
-        g.setColour (juce::Colours::white.withAlpha (0.15f));
+        g.setColour (juce::Colour (0x20000000));
         g.fillRect (xStart, 0.0f, xEnd - xStart, static_cast<float> (getHeight()));
 
-        g.setColour (juce::Colours::white.withAlpha (0.4f));
+        g.setColour (juce::Colour (0xFF2D2D2D));
         g.drawRect (xStart, 0.0f, xEnd - xStart, static_cast<float> (getHeight()), 1.0f);
     }
 
@@ -178,7 +168,7 @@ void OverviewWaveform::paint (juce::Graphics& g)
         float xPos = static_cast<float> (pos) / static_cast<float> (totalSamples)
                      * static_cast<float> (getWidth());
 
-        g.setColour (juce::Colours::white);
+        g.setColour (juce::Colours::black);
         g.drawVerticalLine (static_cast<int> (xPos), 0.0f, static_cast<float> (getHeight()));
 
         // PRD-0017: Slip ghost marker (shadow playhead)
@@ -189,7 +179,7 @@ void OverviewWaveform::paint (juce::Graphics& g)
             float ghostX = static_cast<float> (shadowPos) / static_cast<float> (totalSamples)
                            * static_cast<float> (getWidth());
 
-            g.setColour (juce::Colours::white.withAlpha (0.4f));
+            g.setColour (juce::Colour (0x66000000));
             g.drawVerticalLine (static_cast<int> (ghostX), 0.0f,
                                 static_cast<float> (getHeight()));
         }
