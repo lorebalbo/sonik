@@ -78,6 +78,11 @@ struct DeckAudioSource
     std::atomic<TimeStretcher*> timeStretcher { nullptr };
     TimeStretcher* timeStretcherOwned = nullptr; // message thread ownership
 
+    // Deferred deletion: the previously-active stretcher is kept alive here
+    // until the *next* replacement, guaranteeing the audio thread has finished
+    // any in-flight process() call before the object is freed.
+    TimeStretcher* timeStretcherPendingDelete = nullptr; // message thread only
+
     // Cached stretcher latency for read-position compensation (audio thread)
     int stretcherLatency = 0;
 
@@ -135,6 +140,8 @@ struct DeckAudioSource
     std::atomic<TimeStretcher*> stemTimeStretchers[NUM_STEMS] = { {nullptr}, {nullptr}, {nullptr}, {nullptr} };
     // Message-thread ownership pointers
     TimeStretcher* stemTimeStretchersOwned[NUM_STEMS] = { nullptr, nullptr, nullptr, nullptr };
+    // Deferred deletion for per-stem stretchers (same pattern as main stretcher)
+    TimeStretcher* stemStretchersPendingDelete[NUM_STEMS] = { nullptr, nullptr, nullptr, nullptr };
     // Cached stem stretcher latency (same for all 4, set by message thread, read by audio thread)
     int stemStretcherLatency = 0;
 

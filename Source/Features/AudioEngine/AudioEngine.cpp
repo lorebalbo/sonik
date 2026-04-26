@@ -24,6 +24,26 @@ AudioEngine::AudioEngine (juce::ValueTree parentState)
 AudioEngine::~AudioEngine()
 {
     stop();
+
+    // Flush all deferred-delete stretcher slots.
+    // After stop(), the audio callback is no longer running, so all
+    // pending stretchers can be freed safely.
+    for (auto& src : deckSources)
+    {
+        delete src.timeStretcherOwned;
+        src.timeStretcherOwned = nullptr;
+        delete src.timeStretcherPendingDelete;
+        src.timeStretcherPendingDelete = nullptr;
+
+        for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+        {
+            delete src.stemTimeStretchersOwned[s];
+            src.stemTimeStretchersOwned[s] = nullptr;
+            delete src.stemStretchersPendingDelete[s];
+            src.stemStretchersPendingDelete[s] = nullptr;
+        }
+    }
+
     rootState.removeChild (audioDeviceNode, nullptr);
 }
 
@@ -162,6 +182,21 @@ void AudioEngine::unregisterDeck (const juce::String& deckId)
     src.peakR.store (0.0f, std::memory_order_relaxed);
     src.rmsL.store (0.0f, std::memory_order_relaxed);
     src.rmsR.store (0.0f, std::memory_order_relaxed);
+
+    // Flush deferred-delete slots — the deck is fully hidden from the
+    // audio thread now, so all pending stretchers can be freed safely.
+    delete src.timeStretcherOwned;
+    src.timeStretcherOwned = nullptr;
+    delete src.timeStretcherPendingDelete;
+    src.timeStretcherPendingDelete = nullptr;
+
+    for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+    {
+        delete src.stemTimeStretchersOwned[s];
+        src.stemTimeStretchersOwned[s] = nullptr;
+        delete src.stemStretchersPendingDelete[s];
+        src.stemStretchersPendingDelete[s] = nullptr;
+    }
 }
 
 void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::Ptr holder)
@@ -221,9 +256,17 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
             int maxBlock = currentBufferSize.load (std::memory_order_relaxed);
             if (maxBlock <= 0) maxBlock = 512;
 
-            // Tear down old stretcher first (hide from audio thread)
+            // Tear down old stretcher: hide from audio thread, then defer
+            // deletion so any in-flight audio callback finishes safely.
             src.timeStretcher.store (nullptr, std::memory_order_release);
-            delete src.timeStretcherOwned;
+
+            // Delete the *previous* pending-delete (safe — it has been hidden
+            // for at least one full setDeckBuffer cycle).
+            delete src.timeStretcherPendingDelete;
+            // Move the current stretcher into the pending-delete slot instead
+            // of deleting it immediately — the audio thread may still be
+            // inside process() on this very object.
+            src.timeStretcherPendingDelete = src.timeStretcherOwned;
 
             auto* newStretcher = new TimeStretcher (sr, 2, maxBlock * 4);
 
@@ -292,9 +335,11 @@ void AudioEngine::clearDeckBuffer (const juce::String& deckId)
     src.channelR.store (nullptr, std::memory_order_release);
     src.bufferNumFrames.store (0, std::memory_order_relaxed);
 
-    // Destroy time stretcher (hide from audio thread first)
+    // Destroy time stretcher — hide from audio thread, then defer deletion
+    // so any in-flight audio callback finishes safely before the object is freed.
     src.timeStretcher.store (nullptr, std::memory_order_release);
-    delete src.timeStretcherOwned;
+    delete src.timeStretcherPendingDelete;
+    src.timeStretcherPendingDelete = src.timeStretcherOwned;
     src.timeStretcherOwned = nullptr;
     src.stretcherLatency = 0;
 
@@ -417,9 +462,10 @@ void AudioEngine::createStemStretchers (const juce::String& deckId)
 
     for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
     {
-        // Hide old stretcher from audio thread first
+        // Hide old stretcher from audio thread, defer deletion
         src.stemTimeStretchers[s].store (nullptr, std::memory_order_release);
-        delete src.stemTimeStretchersOwned[s];
+        delete src.stemStretchersPendingDelete[s];
+        src.stemStretchersPendingDelete[s] = src.stemTimeStretchersOwned[s];
 
         auto* stretcher = new TimeStretcher (sr, 2, maxBlock * 4);
 
@@ -456,10 +502,13 @@ void AudioEngine::destroyStemStretchers (const juce::String& deckId)
     for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
         src.stemTimeStretchers[s].store (nullptr, std::memory_order_release);
 
-    // Now safe to delete
+    // Defer deletion — the audio thread may still be mid-process() on the
+    // old stretcher.  Move to pending-delete; the *previous* pending-delete
+    // is safe to free (it has been hidden for at least one full cycle).
     for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
     {
-        delete src.stemTimeStretchersOwned[s];
+        delete src.stemStretchersPendingDelete[s];
+        src.stemStretchersPendingDelete[s] = src.stemTimeStretchersOwned[s];
         src.stemTimeStretchersOwned[s] = nullptr;
     }
 
