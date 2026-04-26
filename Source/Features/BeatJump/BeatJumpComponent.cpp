@@ -176,7 +176,7 @@ void BeatJumpComponent::paint (juce::Graphics& g)
         g.drawRect (bounds, 2);
 
         g.setColour (fg);
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
         g.drawText (label, bounds, juce::Justification::centred);
     }
 }

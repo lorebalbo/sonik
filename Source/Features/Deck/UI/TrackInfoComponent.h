@@ -18,8 +18,13 @@ public:
 
     void paint (juce::Graphics& g) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent& e) override;
     void mouseEnter (const juce::MouseEvent& e) override;
-    void mouseExit (const juce::MouseEvent& e) override;
+    void mouseMove  (const juce::MouseEvent& e) override;
+    void mouseExit  (const juce::MouseEvent& e) override;
+
+    /// Called when the user clicks the trash icon that appears on badge hover.
+    std::function<void()> onRemoveRequested;
 
 private:
     // ValueTree::Listener
@@ -44,6 +49,9 @@ private:
     void paintTextInfo    (juce::Graphics& g, juce::Rectangle<int> area);
     void paintBpmKeyInfo  (juce::Graphics& g, juce::Rectangle<int> area);
     void paintDeckBadge   (juce::Graphics& g, juce::Rectangle<int> area);
+    void paintTrashIcon   (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour col);
+
+    bool canRemoveDeck() const;
 
     juce::ValueTree   deckTree;
     DeckStateManager& deckStateManager;
@@ -63,6 +71,7 @@ private:
 
     // Scrolling state (title)
     bool  isHovering         = false;
+    bool  badgeHovered       = false;   // true only when mouse is over badge AND can remove
     float titleScrollOffset  = 0.0f;
     float artistScrollOffset = 0.0f;
     float scrollPauseTimer   = 0.0f;

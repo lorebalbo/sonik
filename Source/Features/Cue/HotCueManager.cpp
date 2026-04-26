@@ -103,6 +103,18 @@ void HotCueManager::triggerCue (int padIndex)
     // PRD-0017: Use slip-aware seek when slip is enabled
     bool slipOn = static_cast<bool> (tree.getProperty (IDs::slipEnabled, false));
 
+    // Deactivate any active loop before jumping to the cue point.
+    // The loop wrap-back would prevent reaching a cue outside the loop region,
+    // and should be cleared regardless of cue position for consistent behaviour.
+    {
+        auto loopNode = tree.getChildWithName (IDs::Loop);
+        if (loopNode.isValid() && static_cast<bool> (loopNode.getProperty (IDs::active, false)))
+        {
+            loopNode.setProperty (IDs::active,   false, nullptr);
+            loopNode.setProperty (IDs::loopMode, 0,     nullptr);
+        }
+    }
+
     if (isPlaying)
     {
         if (slipOn)

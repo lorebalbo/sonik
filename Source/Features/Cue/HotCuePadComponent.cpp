@@ -199,6 +199,18 @@ void HotCuePadComponent::paint (juce::Graphics& g)
 {
     bool empty = isDeckEmpty();
 
+    // Fixed per-pad fill colors when a cue is set (A–H)
+    static const juce::Colour padActiveColors[8] = {
+        juce::Colour (0xFFFF4D4D), // A: Red
+        juce::Colour (0xFFFF9E1B), // B: Orange
+        juce::Colour (0xFFFFD700), // C: Yellow
+        juce::Colour (0xFF00E676), // D: Green
+        juce::Colour (0xFF00E5FF), // E: Cyan
+        juce::Colour (0xFF2979FF), // F: Blue
+        juce::Colour (0xFFD500F9), // G: Violet
+        juce::Colour (0xFFF50057), // H: Magenta
+    };
+
     for (int i = 0; i < numPads; ++i)
     {
         auto bounds = getPadBounds (i);
@@ -206,7 +218,7 @@ void HotCuePadComponent::paint (juce::Graphics& g)
 
         // Monochrome design system:
         //   unset pad  → light background  (#F9F9F9), dark text
-        //   set pad    → dark background   (#2D2D2D), light text
+        //   set pad    → per-pad color fill, border stays #2D2D2D
         //   empty deck → both dimmed at 30% opacity
         juce::Colour bg, border, textColor;
 
@@ -218,15 +230,23 @@ void HotCuePadComponent::paint (juce::Graphics& g)
         }
         else if (active)
         {
-            juce::Colour activeBg = juce::Colour (0xFF2D2D2D);
+            juce::Colour baseColor = padActiveColors[i];
+            juce::Colour activeBg;
             if (i == pressedPad)
-                activeBg = juce::Colour (0xFF111111);
+                activeBg = baseColor.darker (0.3f);
             else if (i == hoveredPad)
-                activeBg = juce::Colour (0xFF444444);
+                activeBg = baseColor.brighter (0.15f);
+            else
+                activeBg = baseColor;
+
+            // Auto text color: dark on bright colors, light on dark colors
+            float lum = 0.299f * baseColor.getFloatRed()
+                      + 0.587f * baseColor.getFloatGreen()
+                      + 0.114f * baseColor.getFloatBlue();
 
             bg        = activeBg;
             border    = juce::Colour (0xFF2D2D2D);
-            textColor = juce::Colour (0xFFF9F9F9);
+            textColor = (lum > 0.5f) ? juce::Colour (0xFF2D2D2D) : juce::Colour (0xFFF9F9F9);
         }
         else
         {
@@ -249,7 +269,7 @@ void HotCuePadComponent::paint (juce::Graphics& g)
 
         // Pad letter (A–H), Space Mono 10px
         g.setColour (textColor);
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
         g.drawText (juce::String::charToString (padLetters[i]), bounds, juce::Justification::centred);
     }
 }

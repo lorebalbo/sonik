@@ -35,11 +35,6 @@ public:
             handleAddDeck();
         };
 
-        toolbar.onRemoveDeckClicked = [this]()
-        {
-            handleRemoveDeck();
-        };
-
         addAndMakeVisible (toolbar);
         addAndMakeVisible (layoutManager);
 
@@ -133,13 +128,6 @@ private:
 
             toolbar.updateButtons();
         }
-    }
-
-    void handleRemoveDeck()
-    {
-        auto activeId = deckStateManager.getActiveDeckId();
-        deckStateManager.removeDeck (activeId);
-        toolbar.updateButtons();
     }
 
     // ValueTree::Listener — update toolbar when deck count or active deck changes

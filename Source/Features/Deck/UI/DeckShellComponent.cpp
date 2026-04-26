@@ -24,6 +24,11 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     // -----------------------------------------------------------------------
     trackInfoComponent = std::make_unique<TrackInfoComponent> (
         deckTree, deckStateManager, audioFileLoader, deckId);
+    trackInfoComponent->onRemoveRequested = [this]()
+    {
+        if (onRemoveRequested)
+            onRemoveRequested (deckId);
+    };
     addAndMakeVisible (*trackInfoComponent);
 
     // -----------------------------------------------------------------------
@@ -315,7 +320,7 @@ void DeckShellComponent::paintEmptyState (juce::Graphics& g, juce::Rectangle<int
     g.drawRect (area, 2);
 
     g.setColour (juce::Colour (0x80000000));
-    g.setFont (juce::FontOptions (13.0f));
+    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
     g.drawText ("Drop a track here or browse your library",
                 emptyBox, juce::Justification::centred);
 }

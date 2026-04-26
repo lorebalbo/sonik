@@ -102,7 +102,7 @@ public:
             g.drawRect (tabRect, 2);
 
             g.setColour (isActive ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF2D2D2D));
-            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
             g.drawText (tabNames[i], tabRect, juce::Justification::centred);
         }
 
@@ -274,7 +274,7 @@ private:
         // BPM display
 
         // BPM label + value box
-        auto monoFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain);
+        auto monoFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
         g.setFont (monoFont);
         g.setColour (juce::Colour (0xFF2D2D2D));
 

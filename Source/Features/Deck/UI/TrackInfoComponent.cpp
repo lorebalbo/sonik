@@ -111,20 +111,62 @@ void TrackInfoComponent::timerCallback()
 
 void TrackInfoComponent::mouseEnter (const juce::MouseEvent& e)
 {
-    juce::ignoreUnused (e);
     isHovering = true;
     titleScrollOffset  = 0.0f;
     artistScrollOffset = 0.0f;
     scrollPauseTimer   = 0.0f;
     scrollPaused       = false;
+
+    // Check if already hovering over badge
+    auto bounds = getLocalBounds();
+    auto badgeArea = bounds.removeFromRight (badgeWidth);
+    bool newBadgeHovered = canRemoveDeck() && badgeArea.contains (e.getPosition());
+    if (newBadgeHovered != badgeHovered)
+    {
+        badgeHovered = newBadgeHovered;
+        repaint();
+    }
+}
+
+void TrackInfoComponent::mouseMove (const juce::MouseEvent& e)
+{
+    auto bounds = getLocalBounds();
+    auto badgeArea = bounds.removeFromRight (badgeWidth);
+    bool newBadgeHovered = canRemoveDeck() && badgeArea.contains (e.getPosition());
+    if (newBadgeHovered != badgeHovered)
+    {
+        badgeHovered = newBadgeHovered;
+        repaint();
+    }
 }
 
 void TrackInfoComponent::mouseExit (const juce::MouseEvent& e)
 {
     juce::ignoreUnused (e);
-    isHovering = false;
+    isHovering   = false;
+    badgeHovered = false;
     titleScrollOffset  = 0.0f;
     artistScrollOffset = 0.0f;
+    repaint();
+}
+
+void TrackInfoComponent::mouseDown (const juce::MouseEvent& e)
+{
+    juce::ignoreUnused (e);
+    // Activate the deck on any click (same behaviour as DeckShellComponent::mouseDown)
+    deckStateManager.setActiveDeck (deckId);
+
+    // If hovering over the badge trash icon, request deck removal
+    if (badgeHovered)
+    {
+        if (onRemoveRequested)
+            onRemoveRequested();
+    }
+}
+
+bool TrackInfoComponent::canRemoveDeck() const
+{
+    return deckStateManager.canRemoveDeck (deckId);
 }
 
 // --- Camelot key ---
@@ -208,7 +250,7 @@ void TrackInfoComponent::paintAlbumArt (juce::Graphics& g, juce::Rectangle<int> 
         g.fillRect (area);
 
         g.setColour (juce::Colour (0xFFF9F9F9));
-        g.setFont (juce::FontOptions (20.0f));
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
         g.drawText (juce::String::charToString (0x266A), area, juce::Justification::centred);
     }
 }
@@ -253,8 +295,8 @@ void TrackInfoComponent::paintTextInfo (juce::Graphics& g, juce::Rectangle<int> 
         g.drawText (displayTitle, titleArea, juce::Justification::centredLeft, true);
     }
 
-    // Artist — 10px
-    auto smallFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain);
+    // Artist — 13px
+    auto smallFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
     g.setFont (smallFont);
 
     juce::GlyphArrangement artistGlyphs;
@@ -308,12 +350,12 @@ void TrackInfoComponent::paintBpmKeyInfo (juce::Graphics& g, juce::Rectangle<int
     g.setColour (juce::Colour (0xFF2D2D2D));
     g.drawText (currentBpmStr, currentBpmArea, juce::Justification::centredRight, false);
 
-    // Key — 10px
-    auto smallFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain);
+    // Key — 13px
+    auto smallFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
     g.setFont (smallFont);
     g.drawText (keyStr, keyArea, juce::Justification::centredRight, false);
 
-    // Original BPM — 10px
+    // Original BPM — 13px
     g.drawText (origBpmStr, origBpmArea, juce::Justification::centredRight, false);
 }
 
@@ -323,10 +365,59 @@ void TrackInfoComponent::paintDeckBadge (juce::Graphics& g, juce::Rectangle<int>
     g.setColour (juce::Colour (0xFF2D2D2D));
     g.fillRect (area);
 
-    // Large deck letter centred
-    g.setColour (juce::Colour (0xFFF9F9F9));
-    g.setFont (juce::FontOptions (28.0f).withStyle ("Bold"));
-    g.drawText (deckId, area, juce::Justification::centred);
+    if (badgeHovered)
+    {
+        // Show pixel-art trash icon instead of deck letter
+        paintTrashIcon (g, area, juce::Colour (0xFFF9F9F9));
+    }
+    else
+    {
+        // Large deck letter centred — monospace to match SYNC/QUANTIZE/SLIP style
+        g.setColour (juce::Colour (0xFFF9F9F9));
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 28.0f, juce::Font::bold));
+        g.drawText (deckId, area, juce::Justification::centred);
+    }
+}
+
+void TrackInfoComponent::paintTrashIcon (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour col)
+{
+    // Pixel-art monochrome trash can
+    // Total icon: 18 wide x 20 tall
+    const int canW  = 16;
+    const int canH  = 12;
+    const int lidW  = 18;
+    const int lidH  = 3;
+    const int hdlW  = 6;
+    const int hdlH  = 2;
+    const int totalH = hdlH + 1 + lidH + 2 + canH; // 2+1+3+2+12 = 20
+    const int totalW = lidW;                         // 18
+
+    const int ox = area.getX() + (area.getWidth()  - totalW) / 2;
+    const int oy = area.getY() + (area.getHeight() - totalH) / 2;
+
+    g.setColour (col);
+
+    // Handle
+    g.fillRect (ox + (totalW - hdlW) / 2, oy, hdlW, hdlH);
+
+    // Lid
+    g.fillRect (ox, oy + hdlH + 1, lidW, lidH);
+
+    // Body
+    const int bodyX = ox + 1;
+    const int bodyY = oy + hdlH + 1 + lidH + 2;
+
+    g.fillRect (bodyX,            bodyY, 2,    canH); // left edge
+    g.fillRect (bodyX + canW - 2, bodyY, 2,    canH); // right edge
+    g.fillRect (bodyX,  bodyY + canH - 2, canW, 2);   // bottom edge
+    // top edge  (optional – lid already implies the top)
+    g.fillRect (bodyX, bodyY, canW, 2);               // top edge
+
+    // Two vertical dividers inside the body
+    const int divY = bodyY + 3;
+    const int divH = canH - 5;
+    g.fillRect (bodyX + 5, divY, 1, divH);
+    g.fillRect (bodyX + 9, divY, 1, divH);
 }
 
 void TrackInfoComponent::resized()

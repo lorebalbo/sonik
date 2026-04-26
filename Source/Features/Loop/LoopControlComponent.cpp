@@ -140,7 +140,7 @@ void LoopControlComponent::paint (juce::Graphics& g)
             textColor = juce::Colour (0xFF2D2D2D).withAlpha (0.5f);
 
         g.setColour (textColor);
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
         g.drawText (def.label, area, juce::Justification::centred);
     }
 }
