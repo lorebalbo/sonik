@@ -104,3 +104,5 @@ Each PRD produces code organized under its feature slice:
 - [x] PRD-0016: Needle Drop & Waveform Seeking
 - [x] PRD-0017: Slip Mode
 - [ ] PRD-0018: Jog Wheel
+- [ ] PRD-0024: BPM Editor and Beatgrid Offset Controls
+- [ ] PRD-0025: Key Stepper Pitch Transposition
