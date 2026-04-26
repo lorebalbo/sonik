@@ -201,14 +201,14 @@ void HotCuePadComponent::paint (juce::Graphics& g)
 
     // Fixed per-pad fill colors when a cue is set (A–H)
     static const juce::Colour padActiveColors[8] = {
-        juce::Colour (0xFFFF4D4D), // A: Red
-        juce::Colour (0xFFFF9E1B), // B: Orange
-        juce::Colour (0xFFFFD700), // C: Yellow
-        juce::Colour (0xFF00E676), // D: Green
-        juce::Colour (0xFF00E5FF), // E: Cyan
-        juce::Colour (0xFF2979FF), // F: Blue
-        juce::Colour (0xFFD500F9), // G: Violet
-        juce::Colour (0xFFF50057), // H: Magenta
+        juce::Colour (0xFF18FFFF), // A: Cyan
+        juce::Colour (0xFF00B0FF), // B: Sky Blue
+        juce::Colour (0xFF2979FF), // C: Blue
+        juce::Colour (0xFF651FFF), // D: Deep Violet
+        juce::Colour (0xFFD500F9), // E: Violet
+        juce::Colour (0xFFF50057), // F: Magenta
+        juce::Colour (0xFFFF4081), // G: Pink
+        juce::Colour (0xFFFF8A80), // H: Salmon
     };
 
     for (int i = 0; i < numPads; ++i)
