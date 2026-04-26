@@ -314,8 +314,8 @@ private:
     static constexpr int kJumpGroupGap   = 8;
     static constexpr int kJumpTotalW     = kJumpTransportW + kJumpGroupGap + kJumpBeatW; // 394
 
-    // GRID: BPM(60)+SAVE(48 overlap)+sep+gap(10)+SET+DEL(2x48)+gap(8)+nudges(194)=416
-    static constexpr int kGridContentW  = 416;
+    // GRID: BPM(60)+sep+gap(10)+SET+DEL(2x48)+gap(8)+nudges(194)=378
+    static constexpr int kGridContentW  = 378;
 
     // Return the starting X for content centred inside the given panel inner area.
     static int jumpContentX (juce::Rectangle<int> inner) noexcept
@@ -386,11 +386,8 @@ private:
         juce::Rectangle<int> bpmLabelRect (x, btnY, 60, 23);
         g.drawText ("BPM", bpmLabelRect, juce::Justification::centredLeft);
 
-        drawSquareButton (g, x + 58, btnY, btnW, btnH, "SAVE", false, false, false,
-                  enabled && hoveredGridButton == 0);
-
         // Separator line
-        int sepX = x + 108;
+        int sepX = x + 70;
         g.setColour (juce::Colour (0xFF2D2D2D));
         g.drawVerticalLine (sepX, static_cast<float> (btnY), static_cast<float> (btnY + btnH));
 
@@ -402,13 +399,13 @@ private:
         // Nudge buttons: << < > >>
         int nx = bx + 2 * (btnW - 2) + 8;
         drawSquareButton (g, nx,                 btnY, btnW, btnH, "<<", false, false, false,
-                          enabled && hoveredGridButton == 1);
+                          enabled && hoveredGridButton == 0);
         drawSquareButton (g, nx +   (btnW - 2),  btnY, btnW, btnH, "<",  false, false, false,
-                          enabled && hoveredGridButton == 2);
+                          enabled && hoveredGridButton == 1);
         drawSquareButton (g, nx + 2*(btnW - 2),  btnY, btnW, btnH, ">",  false, false, false,
-                          enabled && hoveredGridButton == 3);
+                          enabled && hoveredGridButton == 2);
         drawSquareButton (g, nx + 3*(btnW - 2),  btnY, btnW, btnH, ">>", false, false, false,
-                          enabled && hoveredGridButton == 4);
+                          enabled && hoveredGridButton == 3);
     }
 
     /// Draw a Figma-style square button (border-2, no border-radius)
@@ -485,11 +482,10 @@ private:
         int btnY     = centreY - btnH / 2;
         // Use the same centred starting X as paintGridEditor.
         int x        = gridContentX (panelArea);
-        int sepX     = x + 108;
+        int sepX     = x + 70;
         int bx       = sepX + 10;
         int nx       = bx + 2 * (btnW - 2) + 8;
 
-        juce::Rectangle<int> saveRect (x + 58, btnY, btnW, btnH);
         juce::Rectangle<int> setRect (bx,           btnY, btnW, btnH);
         juce::Rectangle<int> delRect (bx + btnW - 2, btnY, btnW, btnH);
         juce::Rectangle<int> nudgeLL (nx,                 btnY, btnW, btnH);
@@ -497,13 +493,12 @@ private:
         juce::Rectangle<int> nudgeR  (nx + 2*(btnW-2),   btnY, btnW, btnH);
         juce::Rectangle<int> nudgeRR (nx + 3*(btnW-2),   btnY, btnW, btnH);
 
-        if (saveRect.contains (mx, my)) { commitBpmEdit(); }
-        else if (setRect.contains (mx, my))  { if (onGridSet)   onGridSet(); }
-        else if (delRect.contains (mx, my)) { if (onGridDelete) onGridDelete(); }
-        else if (nudgeLL.contains (mx, my)) { if (onGridNudge) onGridNudge (-2); }
-        else if (nudgeL.contains  (mx, my)) { if (onGridNudge) onGridNudge (-1); }
-        else if (nudgeR.contains  (mx, my)) { if (onGridNudge) onGridNudge (+1); }
-        else if (nudgeRR.contains (mx, my)) { if (onGridNudge) onGridNudge (+2); }
+        if (setRect.contains (mx, my))       { if (onGridSet)   onGridSet(); }
+        else if (delRect.contains (mx, my))  { if (onGridDelete) onGridDelete(); }
+        else if (nudgeLL.contains (mx, my))  { if (onGridNudge) onGridNudge (-2); }
+        else if (nudgeL.contains  (mx, my))  { if (onGridNudge) onGridNudge (-1); }
+        else if (nudgeR.contains  (mx, my))  { if (onGridNudge) onGridNudge (+1); }
+        else if (nudgeRR.contains (mx, my))  { if (onGridNudge) onGridNudge (+2); }
     }
 
     // -----------------------------------------------------------------------
@@ -580,20 +575,18 @@ private:
         int btnY = centreY - btnH / 2;
         int x = gridContentX (panelArea);
 
-        juce::Rectangle<int> saveRect (x + 58, btnY, btnW, btnH);
-        int bx = x + 118;
+        int bx = x + 80;
         int nx = bx + 2 * (btnW - 2) + 8;
 
-        juce::Rectangle<int> nudgeLL (nx,                 btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeL  (nx + (btnW - 2),    btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeR  (nx + 2 * (btnW - 2),btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeRR (nx + 3 * (btnW - 2),btnY, btnW, btnH);
+        juce::Rectangle<int> nudgeLL (nx,                  btnY, btnW, btnH);
+        juce::Rectangle<int> nudgeL  (nx + (btnW - 2),     btnY, btnW, btnH);
+        juce::Rectangle<int> nudgeR  (nx + 2 * (btnW - 2), btnY, btnW, btnH);
+        juce::Rectangle<int> nudgeRR (nx + 3 * (btnW - 2), btnY, btnW, btnH);
 
-        if (saveRect.contains (mx, my)) return 0;
-        if (nudgeLL.contains (mx, my)) return 1;
-        if (nudgeL.contains (mx, my)) return 2;
-        if (nudgeR.contains (mx, my)) return 3;
-        if (nudgeRR.contains (mx, my)) return 4;
+        if (nudgeLL.contains (mx, my)) return 0;
+        if (nudgeL.contains (mx, my))  return 1;
+        if (nudgeR.contains (mx, my))  return 2;
+        if (nudgeRR.contains (mx, my)) return 3;
         return -1;
     }
 
