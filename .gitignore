@@ -62,3 +62,6 @@ waf-*
 
 # Logs
 *.log
+
+# Misc
+songs/*
