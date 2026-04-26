@@ -4,6 +4,202 @@
 #include <juce_cryptography/juce_cryptography.h>
 
 // ============================================================================
+// FLAC binary parsing helpers (file-local)
+// JUCE's FlacAudioFormat reader populates only STREAMINFO (sample rate, channels,
+// bits), not Vorbis Comment or PICTURE metadata blocks.  We parse them here.
+// ============================================================================
+
+namespace
+{
+
+inline uint32_t readLE32 (const uint8_t* p) noexcept
+{
+    return  static_cast<uint32_t> (p[0])
+         | (static_cast<uint32_t> (p[1]) <<  8)
+         | (static_cast<uint32_t> (p[2]) << 16)
+         | (static_cast<uint32_t> (p[3]) << 24);
+}
+
+inline uint32_t readBE32 (const uint8_t* p) noexcept
+{
+    return (static_cast<uint32_t> (p[0]) << 24)
+         | (static_cast<uint32_t> (p[1]) << 16)
+         | (static_cast<uint32_t> (p[2]) <<  8)
+         |  static_cast<uint32_t> (p[3]);
+}
+
+/// Iterates FLAC metadata blocks up to and including the first VORBIS_COMMENT
+/// block (type 4) and returns its key=value pairs as a case-insensitive
+/// StringPairArray with lowercase keys.
+juce::StringPairArray extractFlacVorbisComments (const juce::File& file)
+{
+    juce::StringPairArray result (false); // case-insensitive
+
+    juce::FileInputStream stream (file);
+    if (stream.failedToOpen())
+        return result;
+
+    // FLAC magic: "fLaC"
+    char magic[4];
+    if (stream.read (magic, 4) != 4
+        || magic[0] != 'f' || magic[1] != 'L'
+        || magic[2] != 'a' || magic[3] != 'C')
+        return result;
+
+    bool lastBlock = false;
+    while (! lastBlock && ! stream.isExhausted())
+    {
+        char hdr[4];
+        if (stream.read (hdr, 4) != 4)
+            break;
+
+        const auto* h  = reinterpret_cast<const uint8_t*> (hdr);
+        lastBlock      = (h[0] & 0x80) != 0;
+        int blockType  =  h[0] & 0x7F;
+        uint32_t blockLen = (static_cast<uint32_t> (h[1]) << 16)
+                          | (static_cast<uint32_t> (h[2]) <<  8)
+                          |  static_cast<uint32_t> (h[3]);
+
+        if (blockType == 4) // VORBIS_COMMENT
+        {
+            if (blockLen > 4u * 1024u * 1024u)
+                break; // sanity: skip impossibly large blocks
+
+            juce::MemoryBlock body;
+            body.setSize (blockLen);
+            if (static_cast<uint32_t> (stream.read (body.getData(),
+                                                     static_cast<int> (blockLen))) != blockLen)
+                break;
+
+            const auto* d = static_cast<const uint8_t*> (body.getData());
+            uint32_t pos  = 0;
+
+            // Skip vendor string
+            if (pos + 4 > blockLen) break;
+            uint32_t vendorLen = readLE32 (d + pos);
+            pos += 4;
+            if (pos + vendorLen > blockLen) break;
+            pos += vendorLen;
+
+            // Comment list
+            if (pos + 4 > blockLen) break;
+            uint32_t count = readLE32 (d + pos);
+            pos += 4;
+
+            for (uint32_t i = 0; i < count && pos + 4 <= blockLen; ++i)
+            {
+                uint32_t cLen = readLE32 (d + pos);
+                pos += 4;
+                if (pos + cLen > blockLen) break;
+
+                juce::String comment (reinterpret_cast<const char*> (d + pos),
+                                      static_cast<size_t> (cLen));
+                pos += cLen;
+
+                int eq = comment.indexOfChar ('=');
+                if (eq > 0)
+                    result.set (comment.substring (0, eq).toLowerCase(),
+                                comment.substring (eq + 1));
+            }
+
+            break; // found what we need — stop iterating blocks
+        }
+        else
+        {
+            stream.skipNextBytes (static_cast<int64_t> (blockLen));
+        }
+    }
+
+    return result;
+}
+
+/// Iterates FLAC metadata blocks and returns the first valid image found in a
+/// PICTURE block (type 6).
+juce::Image extractFlacPicture (const juce::File& file)
+{
+    juce::FileInputStream stream (file);
+    if (stream.failedToOpen())
+        return {};
+
+    char magic[4];
+    if (stream.read (magic, 4) != 4
+        || magic[0] != 'f' || magic[1] != 'L'
+        || magic[2] != 'a' || magic[3] != 'C')
+        return {};
+
+    bool lastBlock = false;
+    while (! lastBlock && ! stream.isExhausted())
+    {
+        char hdr[4];
+        if (stream.read (hdr, 4) != 4)
+            break;
+
+        const auto* h  = reinterpret_cast<const uint8_t*> (hdr);
+        lastBlock      = (h[0] & 0x80) != 0;
+        int blockType  =  h[0] & 0x7F;
+        uint32_t blockLen = (static_cast<uint32_t> (h[1]) << 16)
+                          | (static_cast<uint32_t> (h[2]) <<  8)
+                          |  static_cast<uint32_t> (h[3]);
+
+        if (blockType == 6 && blockLen >= 32) // PICTURE
+        {
+            if (blockLen > 30u * 1024u * 1024u)
+            {
+                stream.skipNextBytes (static_cast<int64_t> (blockLen));
+                continue;
+            }
+
+            juce::MemoryBlock body;
+            body.setSize (blockLen);
+            if (static_cast<uint32_t> (stream.read (body.getData(),
+                                                     static_cast<int> (blockLen))) != blockLen)
+                break;
+
+            const auto* d = static_cast<const uint8_t*> (body.getData());
+            uint32_t pos  = 0;
+
+            // Picture type (4 bytes, BE)
+            if (pos + 4 > blockLen) continue;
+            pos += 4;
+
+            // MIME type (4-byte BE length + string)
+            if (pos + 4 > blockLen) continue;
+            uint32_t mimeLen = readBE32 (d + pos); pos += 4;
+            if (pos + mimeLen > blockLen) continue;
+            pos += mimeLen;
+
+            // Description (4-byte BE length + string)
+            if (pos + 4 > blockLen) continue;
+            uint32_t descLen = readBE32 (d + pos); pos += 4;
+            if (pos + descLen > blockLen) continue;
+            pos += descLen;
+
+            // Width, height, color depth, color count (4 × 4 bytes)
+            if (pos + 16 > blockLen) continue;
+            pos += 16;
+
+            // Image data (4-byte BE length + raw bytes)
+            if (pos + 4 > blockLen) continue;
+            uint32_t imageLen = readBE32 (d + pos); pos += 4;
+            if (imageLen == 0 || pos + imageLen > blockLen) continue;
+
+            auto img = juce::ImageFileFormat::loadFrom (d + pos,
+                                                        static_cast<size_t> (imageLen));
+            if (img.isValid())
+                return img;
+        }
+        else
+        {
+            stream.skipNextBytes (static_cast<int64_t> (blockLen));
+        }
+    }
+
+    return {};
+}
+
+} // anonymous namespace
+
+// ============================================================================
 // LoadJob — ThreadPoolJob that decodes a single audio file
 // ============================================================================
 
@@ -42,21 +238,36 @@ public:
         TrackMetadata meta;
         meta.filePath     = sourceFile.getFullPathName();
         meta.contentHash  = contentHash;
-        meta.title        = reader->metadataValues.getValue ("title",  sourceFile.getFileNameWithoutExtension());
-        meta.artist       = reader->metadataValues.getValue ("artist", "");
-        meta.album        = reader->metadataValues.getValue ("album",  "");
 
-        // Extract embedded key tag (ID3 TKEY, Vorbis INITIALKEY/KEY)
-        auto keyTag = reader->metadataValues.getValue ("TKEY", "");
-        if (keyTag.isEmpty())
-            keyTag = reader->metadataValues.getValue ("INITIALKEY", "");
-        if (keyTag.isEmpty())
-            keyTag = reader->metadataValues.getValue ("KEY", "");
-        if (keyTag.isEmpty())
-            keyTag = reader->metadataValues.getValue ("initialkey", "");
-        if (keyTag.isEmpty())
-            keyTag = reader->metadataValues.getValue ("key", "");
-        meta.initialKeyString = keyTag;
+        // JUCE's FlacAudioFormat reader only populates STREAMINFO fields
+        // (sampleRate, numChannels, bitsPerSample) — it does NOT read Vorbis
+        // Comment tags into metadataValues.  Parse the binary blocks directly.
+        auto fileExt = sourceFile.getFileExtension().toLowerCase();
+        if (fileExt == ".flac")
+        {
+            auto vc       = extractFlacVorbisComments (sourceFile);
+            meta.title    = vc.getValue ("title",  sourceFile.getFileNameWithoutExtension());
+            meta.artist   = vc.getValue ("artist", "");
+            meta.album    = vc.getValue ("album",  "");
+
+            auto keyTag   = vc.getValue ("initialkey", "");
+            if (keyTag.isEmpty()) keyTag = vc.getValue ("key", "");
+            meta.initialKeyString = keyTag;
+        }
+        else
+        {
+            meta.title  = reader->metadataValues.getValue ("title",  sourceFile.getFileNameWithoutExtension());
+            meta.artist = reader->metadataValues.getValue ("artist", "");
+            meta.album  = reader->metadataValues.getValue ("album",  "");
+
+            // Extract embedded key tag (ID3 TKEY, Vorbis INITIALKEY/KEY)
+            auto keyTag = reader->metadataValues.getValue ("TKEY",       "");
+            if (keyTag.isEmpty()) keyTag = reader->metadataValues.getValue ("INITIALKEY", "");
+            if (keyTag.isEmpty()) keyTag = reader->metadataValues.getValue ("KEY",        "");
+            if (keyTag.isEmpty()) keyTag = reader->metadataValues.getValue ("initialkey", "");
+            if (keyTag.isEmpty()) keyTag = reader->metadataValues.getValue ("key",        "");
+            meta.initialKeyString = keyTag;
+        }
         meta.sampleRate   = reader->sampleRate;
         meta.bitDepth     = static_cast<int> (reader->bitsPerSample);
         meta.totalSamples = reader->lengthInSamples;
@@ -400,10 +611,13 @@ juce::String AudioFileLoader::computeContentHash (const juce::File& file)
 
 juce::Image AudioFileLoader::extractAlbumArt (const juce::File& file)
 {
-    // Try to parse ID3v2 APIC frame for MP3 files
     auto ext = file.getFileExtension().toLowerCase();
+
+    if (ext == ".flac")
+        return extractFlacPicture (file);
+
     if (ext != ".mp3")
-        return {}; // Only MP3 album art extraction is supported for now
+        return {};
 
     juce::FileInputStream stream (file);
     if (stream.failedToOpen())

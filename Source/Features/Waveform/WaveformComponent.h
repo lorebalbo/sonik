@@ -80,6 +80,19 @@ public:
         detail.setBounds (bounds);
     }
 
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        const auto b = getLocalBounds();
+
+        g.setColour (juce::Colour (0xFF2D2D2D));
+
+        // Outer border — 2px, matching the empty-state border
+        g.drawRect (b, 2);
+
+        // Separator between overview and detail waveform — 1px horizontal line
+        g.fillRect (0, overviewHeight, b.getWidth(), 1);
+    }
+
 private:
     void timerCallback() override
     {
