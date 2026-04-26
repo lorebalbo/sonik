@@ -41,6 +41,10 @@ You must strictly adhere to these patterns to ensure a scalable, "vibe-coded" ar
 - **Full Delegation:** Do not ask the user to write C++ boilerplate. You write the code.
 - **Provide Complete Solutions:** Always output the full, copy-pasteable context. Never leave broken code expecting the user to fill in the blanks.
 - **Explain "Why":** Keep explanations high-level and conceptual (e.g., "We use a Ring Buffer here to prevent audio dropouts").
+- **Manual Testing & Validation Loop:** Every time you implement a new feature, modify logic, or fix a bug, you MUST conclude your response with a structured "Manual Test Plan".
+  - Provide a numbered list of exact, step-by-step actions the user must perform in the UI to test the changes.
+  - For every step, explicitly state the **Expected Outcome** (e.g., "Expected: The waveform should update without audio dropouts").
+  - Stop and ask the user for validation: "Please execute these tests and let me know the results. I will wait for your confirmation before moving to the next task." Do NOT assume the task is complete until the user confirms the tests passed.
 
 ## Dev Environment & Automation Scripts
 
