@@ -120,7 +120,7 @@ Source/Features/Sync/
 
 ## 1.4. PRD Roadmap
 
-- [ ] PRD-0026: Master Clock Core (MasterClockSnapshot, SeqLock publisher, Auto-Master state machine, ValueTree sync identifiers)
-- [ ] PRD-0027: Tempo Sync Engine (slave processBlock reads master BPM, adjusts speedMultiplier, BPM normalization, MASTER/SYNC buttons)
-- [ ] PRD-0028: Continuous Phase Lock (per-processBlock phase delta, micro-tempo correction ramp, stretcher latency offset compensation)
-- [ ] PRD-0029: Sync UI — Phase Meter and Master BPM Display (PhaseMeterComponent, master BPM readout, phase offset atomic publication)
+- [x] PRD-0026: Master Clock Core (MasterClockSnapshot, SeqLock publisher, Auto-Master state machine, ValueTree sync identifiers)
+- [x] PRD-0027: Tempo Sync Engine (slave processBlock reads master BPM, adjusts speedMultiplier, BPM normalization, MASTER/SYNC buttons)
+- [x] PRD-0028: Continuous Phase Lock (per-processBlock phase delta, micro-tempo correction ramp, stretcher latency offset compensation)
+- [x] PRD-0029: Sync UI — Phase Meter and Master BPM Display (PhaseMeterComponent, master BPM readout, phase offset atomic publication)
