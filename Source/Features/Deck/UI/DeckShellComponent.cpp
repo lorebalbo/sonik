@@ -129,6 +129,7 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     controllerWidget->onGridSet    = [this] { handleGridSet(); };
     controllerWidget->onGridDelete = [this] { handleGridDelete(); };
     controllerWidget->onGridNudge  = [this] (int d) { handleGridNudge (d); };
+    controllerWidget->onBpmSave    = [this] (double bpm) { handleBpmSave (bpm); };
     controllerWidget->getBpmString = [this]() -> juce::String
     {
         auto beatTree = deckTree.getChildWithName (IDs::BeatGrid);
@@ -251,19 +252,148 @@ void DeckShellComponent::handleGridNudge (int delta)
     auto beatTree = deckTree.getChildWithName (IDs::BeatGrid);
     if (! beatTree.isValid()) return;
 
-    int64_t anchor = static_cast<int64_t> (
-        beatTree.getProperty (IDs::anchorSample, 0));
-    int64_t interval = static_cast<int64_t> (
-        beatTree.getProperty (IDs::beatIntervalSamples, 0));
-
-    if (interval > 0)
+    // Use the track's analysis sample rate for a tempo-independent ms offset.
+    auto bgData = beatGridManager.getBeatGridData (deckId);
+    double sr = 44100.0;
+    if (bgData != nullptr)
     {
-        int64_t nudgeAmount = (std::abs (delta) > 1) ? interval : interval / 8;
-        if (delta < 0) nudgeAmount = -nudgeAmount;
-        beatTree.setProperty (IDs::anchorSample,
-                              juce::jmax<int64_t> (0, anchor + nudgeAmount), nullptr);
-        beatTree.setProperty (IDs::manuallyAdjusted, true, nullptr);
+        sr = bgData->analysisSampleRate;
     }
+    else
+    {
+        auto meta = deckTree.getChildWithName (IDs::TrackMetadata);
+        sr = static_cast<double> (meta.getProperty (IDs::sampleRate, 44100.0));
+    }
+
+    int64_t anchor   = static_cast<int64_t> (
+        static_cast<double> (beatTree.getProperty (IDs::anchorSample, 0)));
+    int64_t interval = static_cast<int64_t> (
+        static_cast<double> (beatTree.getProperty (IDs::beatIntervalSamples, 0)));
+
+    if (interval <= 0) return;
+
+    // fine (|delta|==1) → ±10 ms,  coarse (|delta|==2) → ±50 ms
+    bool    isFine        = (std::abs (delta) == 1);
+    int64_t offsetSamples = isFine
+        ? static_cast<int64_t> (std::round (sr * 0.010))
+        : static_cast<int64_t> (std::round (sr * 0.050));
+
+    if (delta < 0) offsetSamples = -offsetSamples;
+
+    // Wrap anchorSample into [0, beatIntervalSamples)
+    int64_t newAnchor = ((anchor + offsetSamples) % interval + interval) % interval;
+
+    // Update ValueTree (message thread)
+    beatTree.setProperty (IDs::anchorSample,     static_cast<double> (newAnchor), nullptr);
+    beatTree.setProperty (IDs::manuallyAdjusted, true,                            nullptr);
+
+    // Propagate to in-memory BeatGridData so engines see the change immediately
+    if (bgData != nullptr)
+    {
+        bgData->anchorSample     = newAnchor;
+        bgData->manuallyAdjusted = true;
+    }
+
+    // Refresh the waveform beatgrid overlay
+    if (waveformComponent != nullptr && bgData != nullptr)
+        waveformComponent->setBeatGridData (bgData);
+
+    // Persist new anchor to SQLite
+    persistBeatGridToDb();
+}
+
+void DeckShellComponent::handleBpmSave (double newBpm)
+{
+    // Validate range
+    if (newBpm < 20.0 || newBpm > 300.0) return;
+
+    auto beatTree = deckTree.getChildWithName (IDs::BeatGrid);
+    if (! beatTree.isValid()) return;
+
+    // Determine the analysis sample rate (preserved in BeatGridData)
+    auto bgData = beatGridManager.getBeatGridData (deckId);
+    double sr = 44100.0;
+    if (bgData != nullptr)
+        sr = bgData->analysisSampleRate;
+    else
+    {
+        auto meta = deckTree.getChildWithName (IDs::TrackMetadata);
+        sr = static_cast<double> (meta.getProperty (IDs::sampleRate, 44100.0));
+    }
+
+    double newInterval = sr * 60.0 / newBpm;
+
+    // Update ValueTree (message thread — mandatory per AGENTS.md)
+    beatTree.setProperty (IDs::bpm,                 newBpm,      nullptr);
+    beatTree.setProperty (IDs::beatIntervalSamples, newInterval, nullptr);
+    beatTree.setProperty (IDs::manuallyAdjusted,    true,        nullptr);
+
+    // Propagate to in-memory BeatGridData so all beat-aware engines see the change
+    if (bgData != nullptr)
+    {
+        bgData->bpm                 = newBpm;
+        bgData->beatIntervalSamples = newInterval;
+        bgData->manuallyAdjusted    = true;
+    }
+
+    // Re-render waveform beatgrid overlay immediately
+    if (waveformComponent != nullptr && bgData != nullptr)
+        waveformComponent->setBeatGridData (bgData);
+
+    // Persist to SQLite
+    persistBeatGridToDb();
+}
+
+void DeckShellComponent::persistBeatGridToDb()
+{
+    auto meta        = deckTree.getChildWithName (IDs::TrackMetadata);
+    auto filePath    = meta.getProperty (IDs::filePath,    "").toString();
+    auto contentHash = meta.getProperty (IDs::contentHash, "").toString();
+    if (filePath.isEmpty() || contentHash.isEmpty()) return;
+
+    // Build beatgrid JSON from in-memory data when available; fall back to ValueTree
+    juce::String beatgridJson;
+    auto bgData = beatGridManager.getBeatGridData (deckId);
+    if (bgData != nullptr)
+    {
+        beatgridJson = bgData->toJson();
+    }
+    else
+    {
+        auto beatTree = deckTree.getChildWithName (IDs::BeatGrid);
+        if (beatTree.isValid())
+        {
+            double sr = static_cast<double> (meta.getProperty (IDs::sampleRate, 44100.0));
+            auto   obj = std::make_unique<juce::DynamicObject>();
+            obj->setProperty ("bpm",                static_cast<double> (beatTree.getProperty (IDs::bpm, 0.0)));
+            obj->setProperty ("anchorSample",       static_cast<double> (beatTree.getProperty (IDs::anchorSample, 0)));
+            obj->setProperty ("beatIntervalSamples",static_cast<double> (beatTree.getProperty (IDs::beatIntervalSamples, 0.0)));
+            obj->setProperty ("confidence",         static_cast<double> (beatTree.getProperty (IDs::confidence, 0.0)));
+            obj->setProperty ("manuallyAdjusted",   static_cast<bool>   (beatTree.getProperty (IDs::manuallyAdjusted, false)));
+            obj->setProperty ("sampleRate",         sr);
+            beatgridJson = juce::JSON::toString (juce::var (obj.release()));
+        }
+    }
+    if (beatgridJson.isEmpty()) return;
+
+    auto& db = deckStateManager.getDatabase();
+
+    // Load existing record to preserve cue points and key-detection data
+    auto existing     = db.loadTrackData (filePath, contentHash);
+    juce::String cuePointsJson;
+    int   keyIndex  = -1;
+    float keyConf   = 0.0f;
+    bool  keyManual = false;
+    if (existing.has_value())
+    {
+        cuePointsJson = existing->cuePointsJson;
+        keyIndex      = existing->keyIndex;
+        keyConf       = existing->keyConfidence;
+        keyManual     = existing->keyManuallyAdjusted;
+    }
+
+    db.saveTrackData (filePath, contentHash, cuePointsJson, beatgridJson,
+                      keyIndex, keyConf, keyManual);
 }
 
 // --- Paint ---

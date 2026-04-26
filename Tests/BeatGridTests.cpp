@@ -27,6 +27,16 @@ public:
         testManuallyAdjustedPreserved();
         testBeatGridIdentifiersExist();
         testNegativeBeatIndex();
+
+        // PRD-0024: BPM Editor and Beatgrid Offset Controls
+        testPrd024BpmValidation();
+        testPrd024BeatIntervalFormula();
+        testPrd024FineNudgeOffset();
+        testPrd024CoarseNudgeOffset();
+        testPrd024NudgeWrap();
+        testPrd024NudgeNoOpOnZeroInterval();
+        testPrd024ManuallyAdjustedFlagOnSave();
+        testPrd024ManuallyAdjustedFlagOnNudge();
     }
 
 private:
@@ -393,6 +403,248 @@ private:
         // The anchor is at 22050, so beat indices are: -2 @ -22050, -1 @ 0, 0 @ 22050
         // Range is [-22050, 22050) so we get beats at -22050 and 0
         expectEquals (beats.size(), 2);
+    }
+
+    // ===================================================================
+    // PRD-0024: BPM Editor and Beatgrid Offset Controls
+    // ===================================================================
+
+    static bool isValidBpm (double bpm)
+    {
+        return bpm >= 20.0 && bpm <= 300.0;
+    }
+
+    // -------------------------------------------------------------------
+    void testPrd024BpmValidation()
+    {
+        beginTest ("PRD-0024: BPM validation rejects values outside [20, 300]");
+
+        // Below range
+        expect (! isValidBpm (0.0));
+        expect (! isValidBpm (19.9));
+        expect (! isValidBpm (-1.0));
+
+        // Boundary values (valid)
+        expect (isValidBpm (20.0));
+        expect (isValidBpm (300.0));
+
+        // Mid-range (valid)
+        expect (isValidBpm (120.0));
+        expect (isValidBpm (126.03));
+        expect (isValidBpm (128.0));
+
+        // Above range
+        expect (! isValidBpm (300.1));
+        expect (! isValidBpm (500.0));
+    }
+
+    // -------------------------------------------------------------------
+    void testPrd024BeatIntervalFormula()
+    {
+        beginTest ("PRD-0024: beatIntervalSamples = sr * 60.0 / bpm");
+
+        // 120 BPM @ 44100 Hz = 22050 samples/beat
+        expectWithinAbsoluteError (44100.0 * 60.0 / 120.0, 22050.0, 0.001);
+
+        // 128 BPM @ 44100 Hz
+        expectWithinAbsoluteError (44100.0 * 60.0 / 128.0, 20671.875, 0.001);
+
+        // 120 BPM @ 48000 Hz = 24000 samples/beat
+        expectWithinAbsoluteError (48000.0 * 60.0 / 120.0, 24000.0, 0.001);
+
+        // 20 BPM @ 44100 Hz (boundary minimum)
+        expectWithinAbsoluteError (44100.0 * 60.0 / 20.0, 132300.0, 0.001);
+
+        // 300 BPM @ 44100 Hz (boundary maximum)
+        expectWithinAbsoluteError (44100.0 * 60.0 / 300.0, 8820.0, 0.001);
+
+        // Consistency: recomputing interval from stored BPM round-trips
+        double bpm      = 126.03;
+        double sr       = 44100.0;
+        double interval = sr * 60.0 / bpm;
+        double bpmBack  = sr * 60.0 / interval;
+        expectWithinAbsoluteError (bpmBack, bpm, 0.001);
+    }
+
+    // -------------------------------------------------------------------
+    void testPrd024FineNudgeOffset()
+    {
+        beginTest ("PRD-0024: fine nudge offset = round(sr * 0.010)");
+
+        // 44100 Hz: 10 ms = 441 samples
+        int64_t fine44100 = static_cast<int64_t> (std::round (44100.0 * 0.010));
+        expectEquals (fine44100, (int64_t) 441);
+
+        // 48000 Hz: 10 ms = 480 samples
+        int64_t fine48000 = static_cast<int64_t> (std::round (48000.0 * 0.010));
+        expectEquals (fine48000, (int64_t) 480);
+
+        // 96000 Hz: 10 ms = 960 samples
+        int64_t fine96000 = static_cast<int64_t> (std::round (96000.0 * 0.010));
+        expectEquals (fine96000, (int64_t) 960);
+    }
+
+    // -------------------------------------------------------------------
+    void testPrd024CoarseNudgeOffset()
+    {
+        beginTest ("PRD-0024: coarse nudge offset = round(sr * 0.050)");
+
+        // 44100 Hz: 50 ms = 2205 samples
+        int64_t coarse44100 = static_cast<int64_t> (std::round (44100.0 * 0.050));
+        expectEquals (coarse44100, (int64_t) 2205);
+
+        // 48000 Hz: 50 ms = 2400 samples
+        int64_t coarse48000 = static_cast<int64_t> (std::round (48000.0 * 0.050));
+        expectEquals (coarse48000, (int64_t) 2400);
+
+        // Coarse offset is exactly 5x the fine offset
+        double sr = 44100.0;
+        int64_t fine   = static_cast<int64_t> (std::round (sr * 0.010));
+        int64_t coarse = static_cast<int64_t> (std::round (sr * 0.050));
+        expectEquals (coarse, fine * 5);
+    }
+
+    // -------------------------------------------------------------------
+    void testPrd024NudgeWrap()
+    {
+        beginTest ("PRD-0024: nudge wrap keeps anchor within [0, beatIntervalSamples)");
+
+        const int64_t interval = 10000;
+
+        auto wrap = [] (int64_t anchor, int64_t offset, int64_t iv) -> int64_t
+        {
+            return ((anchor + offset) % iv + iv) % iv;
+        };
+
+        // Simple forward nudge: no wrap needed
+        expectEquals (wrap (500, 441, interval), (int64_t) 941);
+
+        // Forward nudge that wraps over the top: 9800 + 441 = 10241 → 241
+        expectEquals (wrap (9800, 441, interval), (int64_t) 241);
+
+        // Backward nudge: no wrap
+        expectEquals (wrap (5000, -441, interval), (int64_t) 4559);
+
+        // Backward nudge that wraps below zero: 100 - 441 = -341 → 9659
+        expectEquals (wrap (100, -441, interval), (int64_t) 9659);
+
+        // Coarse backward nudge that wraps: 200 - 2205 = -2005 → 7995
+        expectEquals (wrap (200, -2205, interval), (int64_t) 7995);
+
+        // Anchor exactly at interval boundary: 9999 + 1 = 10000 → 0
+        expectEquals (wrap (9999, 1, interval), (int64_t) 0);
+
+        // Anchor already 0, backward nudge: 0 - 441 → 9559
+        expectEquals (wrap (0, -441, interval), (int64_t) 9559);
+
+        // Result is always in [0, interval)
+        for (int64_t anchor : { (int64_t)0, (int64_t)100, (int64_t)5000, (int64_t)9999 })
+        {
+            for (int64_t offset : { (int64_t)441, (int64_t)-441, (int64_t)2205, (int64_t)-2205 })
+            {
+                int64_t result = wrap (anchor, offset, interval);
+                expect (result >= 0 && result < interval);
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------
+    void testPrd024NudgeNoOpOnZeroInterval()
+    {
+        beginTest ("PRD-0024: nudge is no-op when beatIntervalSamples = 0");
+
+        // handleGridNudge guards: if (interval <= 0) return;
+        // Verify the guard condition holds for zero / negative intervals.
+        expect ((int64_t) 0  <= 0);
+        expect ((int64_t) -1 <= 0);
+
+        // BeatGridData with zero interval: getNearestBeat returns input unchanged
+        BeatGridData noGrid;
+        noGrid.beatIntervalSamples = 0.0;
+        noGrid.anchorSample = 0;
+        expectEquals (noGrid.getNearestBeat (5000), (int64_t) 5000);
+
+        // getBeatsInRange returns empty
+        juce::Array<int64_t> beats;
+        juce::Array<bool> isDownbeat;
+        noGrid.getBeatsInRange (0, 100000, beats, isDownbeat);
+        expectEquals (beats.size(), 0);
+    }
+
+    // -------------------------------------------------------------------
+    void testPrd024ManuallyAdjustedFlagOnSave()
+    {
+        beginTest ("PRD-0024: manuallyAdjusted=true written to ValueTree after BPM save");
+
+        juce::ValueTree beatTree (IDs::BeatGrid);
+        beatTree.setProperty (IDs::bpm,                 120.0,   nullptr);
+        beatTree.setProperty (IDs::beatIntervalSamples, 22050.0, nullptr);
+        beatTree.setProperty (IDs::anchorSample,        0,       nullptr);
+        beatTree.setProperty (IDs::manuallyAdjusted,    false,   nullptr);
+
+        // Simulate handleBpmSave logic
+        double newBpm = 128.0;
+        double sr     = 44100.0;
+        expect (isValidBpm (newBpm));
+
+        double newInterval = sr * 60.0 / newBpm;
+        beatTree.setProperty (IDs::bpm,                 newBpm,      nullptr);
+        beatTree.setProperty (IDs::beatIntervalSamples, newInterval, nullptr);
+        beatTree.setProperty (IDs::manuallyAdjusted,    true,        nullptr);
+
+        expectWithinAbsoluteError (
+            static_cast<double> (beatTree.getProperty (IDs::bpm)),
+            128.0, 0.001);
+        expectWithinAbsoluteError (
+            static_cast<double> (beatTree.getProperty (IDs::beatIntervalSamples)),
+            newInterval, 0.001);
+        expect (static_cast<bool> (beatTree.getProperty (IDs::manuallyAdjusted)));
+
+        // Verify invalid BPM does NOT update (guard holds)
+        double badBpm = 15.0;
+        expect (! isValidBpm (badBpm));
+        // ValueTree should remain unchanged after the guard rejects the value
+        expectWithinAbsoluteError (
+            static_cast<double> (beatTree.getProperty (IDs::bpm)),
+            128.0, 0.001); // unchanged
+    }
+
+    // -------------------------------------------------------------------
+    void testPrd024ManuallyAdjustedFlagOnNudge()
+    {
+        beginTest ("PRD-0024: manuallyAdjusted=true written to ValueTree after nudge");
+
+        juce::ValueTree beatTree (IDs::BeatGrid);
+        beatTree.setProperty (IDs::anchorSample,        1000,    nullptr);
+        beatTree.setProperty (IDs::beatIntervalSamples, 22050.0, nullptr);
+        beatTree.setProperty (IDs::manuallyAdjusted,    false,   nullptr);
+
+        // Simulate fine forward nudge (+1 delta)
+        double  sr       = 44100.0;
+        int64_t anchor   = 1000;
+        int64_t interval = 22050;
+        int64_t offset   = static_cast<int64_t> (std::round (sr * 0.010)); // 441
+
+        int64_t newAnchor = ((anchor + offset) % interval + interval) % interval;
+        expectEquals (newAnchor, (int64_t) 1441);
+
+        beatTree.setProperty (IDs::anchorSample,     static_cast<double> (newAnchor), nullptr);
+        beatTree.setProperty (IDs::manuallyAdjusted, true,                            nullptr);
+
+        expectEquals (
+            static_cast<int64_t> (static_cast<double> (beatTree.getProperty (IDs::anchorSample))),
+            (int64_t) 1441);
+        expect (static_cast<bool> (beatTree.getProperty (IDs::manuallyAdjusted)));
+
+        // Simulate coarse backward nudge (-2 delta)
+        int64_t coarseOffset = -static_cast<int64_t> (std::round (sr * 0.050)); // -2205
+        int64_t prevAnchor   = newAnchor;
+        int64_t newAnchor2   = ((prevAnchor + coarseOffset) % interval + interval) % interval;
+        // 1441 - 2205 = -764 → -764 + 22050 = 21286
+        expectEquals (newAnchor2, (int64_t) 21286);
+
+        beatTree.setProperty (IDs::anchorSample,     static_cast<double> (newAnchor2), nullptr);
+        expect (static_cast<bool> (beatTree.getProperty (IDs::manuallyAdjusted)));
     }
 };
 

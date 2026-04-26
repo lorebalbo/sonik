@@ -25,6 +25,21 @@ class ControllerWidget final : public juce::Component,
                                 private juce::ValueTree::Listener
 {
 public:
+    class BpmInputFilter final : public juce::TextEditor::InputFilter
+    {
+    public:
+        juce::String filterNewText (juce::TextEditor&, const juce::String& newInput) override
+        {
+            juce::String accepted;
+            for (auto c : newInput)
+            {
+                if ((c >= '0' && c <= '9') || c == '.')
+                    accepted << c;
+            }
+            return accepted;
+        }
+    };
+
     // -----------------------------------------------------------------------
     // Constructor — takes non-owning pointers to the three main subcomponents
     // -----------------------------------------------------------------------
@@ -42,6 +57,33 @@ public:
         if (loopControl  != nullptr) addAndMakeVisible (*loopControl);
         if (hotCuePads   != nullptr) addAndMakeVisible (*hotCuePads);
         if (beatJumpCtrl != nullptr) addAndMakeVisible (*beatJumpCtrl);
+
+        bpmEditor = std::make_unique<juce::TextEditor>();
+        bpmEditor->setMultiLine (false);
+        bpmEditor->setReturnKeyStartsNewLine (false);
+        bpmEditor->setScrollbarsShown (false);
+        bpmEditor->setFont (juce::FontOptions (
+            juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+        bpmEditor->setColour (juce::TextEditor::backgroundColourId,
+                              juce::Colour (0xFFF9F9F9));
+        bpmEditor->setColour (juce::TextEditor::textColourId,
+                              juce::Colour (0xFF2D2D2D));
+        bpmEditor->setColour (juce::TextEditor::outlineColourId,
+                              juce::Colours::transparentBlack);
+        bpmEditor->setColour (juce::TextEditor::focusedOutlineColourId,
+                              juce::Colours::transparentBlack);
+        bpmEditor->setColour (juce::TextEditor::highlightColourId,
+                              juce::Colour (0xFF2D2D2D));
+        bpmEditor->setColour (juce::TextEditor::highlightedTextColourId,
+                              juce::Colour (0xFFF9F9F9));
+        bpmEditor->setJustification (juce::Justification::centred);
+        bpmEditor->setBorder ({ 2, 4, 2, 4 });
+        bpmEditorFilter = std::make_unique<BpmInputFilter>();
+        bpmEditor->setInputFilter (bpmEditorFilter.get(), false);
+        bpmEditor->onReturnKey = [this]() { commitBpmEdit(); };
+        bpmEditor->onEscapeKey = [this]() { revertBpmEdit(); };
+        bpmEditor->onFocusLost = [this]() { revertBpmEdit(); };
+        addChildComponent (*bpmEditor);
 
         tree.addListener (this);
         updateTabVisibility();
@@ -66,6 +108,8 @@ public:
 
     // Returns current BPM string for GRID tab display
     std::function<juce::String()> getBpmString;
+
+    std::function<void (double)> onBpmSave;
 
     // -----------------------------------------------------------------------
     // Component overrides
@@ -140,6 +184,57 @@ public:
                                      kJumpBeatW,
                                      panelArea.getHeight());
         }
+
+        if (bpmEditor != nullptr)
+        {
+            const int btnH = 46;
+            int centreY = panelArea.getCentreY();
+            int btnY = centreY - btnH / 2;
+            int x = gridContentX (panelArea);
+            bpmEditor->setBounds (x, btnY + 23, 60, 23);
+        }
+    }
+
+    void mouseMove (const juce::MouseEvent& e) override
+    {
+        if (activeTab != "grid" || ! isGridEnabled())
+        {
+            if (hoveredGridButton != -1)
+            {
+                hoveredGridButton = -1;
+                repaint();
+                setMouseCursor (juce::MouseCursor::NormalCursor);
+            }
+            return;
+        }
+
+        int newHover = getGridButtonAt (e.x, e.y);
+        if (newHover != hoveredGridButton)
+        {
+            hoveredGridButton = newHover;
+            repaint();
+            setMouseCursor (newHover >= 0 ? juce::MouseCursor::PointingHandCursor
+                                          : juce::MouseCursor::NormalCursor);
+        }
+    }
+
+    void mouseExit (const juce::MouseEvent&) override
+    {
+        if (hoveredGridButton != -1)
+        {
+            hoveredGridButton = -1;
+            repaint();
+            setMouseCursor (juce::MouseCursor::NormalCursor);
+        }
+    }
+
+    void paintOverChildren (juce::Graphics& g) override
+    {
+        if (activeTab == "grid" && bpmEditor != nullptr && bpmEditor->isVisible())
+        {
+            g.setColour (juce::Colour (0xFF2D2D2D));
+            g.drawRect (bpmEditor->getBounds(), 2);
+        }
     }
 
     void mouseDown (const juce::MouseEvent& e) override
@@ -174,7 +269,7 @@ public:
         }
 
         // GRID tab button clicks
-        if (activeTab == "grid")
+        if (activeTab == "grid" && isGridEnabled())
         {
             handleGridEditorClick (e.x, e.y);
         }
@@ -219,8 +314,8 @@ private:
     static constexpr int kJumpGroupGap   = 8;
     static constexpr int kJumpTotalW     = kJumpTransportW + kJumpGroupGap + kJumpBeatW; // 394
 
-    // GRID: BPM(70) + sep+gap(10) + SET+DEL(2×48) + gap(8) + <<+<+>+>>(3×48+50) = 378
-    static constexpr int kGridContentW  = 378;
+    // GRID: BPM(60)+SAVE(48 overlap)+sep+gap(10)+SET+DEL(2x48)+gap(8)+nudges(194)=416
+    static constexpr int kGridContentW  = 416;
 
     // Return the starting X for content centred inside the given panel inner area.
     static int jumpContentX (juce::Rectangle<int> inner) noexcept
@@ -240,6 +335,17 @@ private:
         if (loopControl  != nullptr) loopControl->setVisible  (activeTab == "loop");
         if (hotCuePads   != nullptr) hotCuePads->setVisible   (activeTab == "cue");
         if (beatJumpCtrl != nullptr) beatJumpCtrl->setVisible (activeTab == "jump");
+
+        if (bpmEditor != nullptr)
+        {
+            const bool showEditor = (activeTab == "grid");
+            bpmEditor->setVisible (showEditor);
+            if (showEditor)
+            {
+                bpmEditor->setReadOnly (! isGridEnabled());
+                updateBpmEditorText();
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -271,9 +377,8 @@ private:
         // Centre the entire GRID content block horizontally inside the area.
         int x       = gridContentX (area);
 
-        // BPM display
+        const bool enabled = isGridEnabled();
 
-        // BPM label + value box
         auto monoFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
         g.setFont (monoFont);
         g.setColour (juce::Colour (0xFF2D2D2D));
@@ -281,16 +386,11 @@ private:
         juce::Rectangle<int> bpmLabelRect (x, btnY, 60, 23);
         g.drawText ("BPM", bpmLabelRect, juce::Justification::centredLeft);
 
-        juce::String bpmText = getBpmString ? getBpmString() : "--";
-        juce::Rectangle<int> bpmValueRect (x, btnY + 23, 60, 23);
-        g.fillRect (bpmValueRect);  // background
-        g.setColour (juce::Colour (0xFF2D2D2D));
-        g.drawRect (bpmValueRect, 2);
-        g.setColour (juce::Colour (0xFF2D2D2D));
-        g.drawText (bpmText, bpmValueRect, juce::Justification::centred);
+        drawSquareButton (g, x + 58, btnY, btnW, btnH, "SAVE", false, false, false,
+                  enabled && hoveredGridButton == 0);
 
         // Separator line
-        int sepX = x + 70;
+        int sepX = x + 108;
         g.setColour (juce::Colour (0xFF2D2D2D));
         g.drawVerticalLine (sepX, static_cast<float> (btnY), static_cast<float> (btnY + btnH));
 
@@ -301,23 +401,32 @@ private:
 
         // Nudge buttons: << < > >>
         int nx = bx + 2 * (btnW - 2) + 8;
-        drawSquareButton (g, nx,                 btnY, btnW, btnH, "<<", false, false);
-        drawSquareButton (g, nx +   (btnW - 2),  btnY, btnW, btnH, "<",  false, false);
-        drawSquareButton (g, nx + 2*(btnW - 2),  btnY, btnW, btnH, ">",  false, false);
-        drawSquareButton (g, nx + 3*(btnW - 2),  btnY, btnW, btnH, ">>", false, false);
+        drawSquareButton (g, nx,                 btnY, btnW, btnH, "<<", false, false, false,
+                          enabled && hoveredGridButton == 1);
+        drawSquareButton (g, nx +   (btnW - 2),  btnY, btnW, btnH, "<",  false, false, false,
+                          enabled && hoveredGridButton == 2);
+        drawSquareButton (g, nx + 2*(btnW - 2),  btnY, btnW, btnH, ">",  false, false, false,
+                          enabled && hoveredGridButton == 3);
+        drawSquareButton (g, nx + 3*(btnW - 2),  btnY, btnW, btnH, ">>", false, false, false,
+                          enabled && hoveredGridButton == 4);
     }
 
     /// Draw a Figma-style square button (border-2, no border-radius)
     static void drawSquareButton (juce::Graphics& g, int x, int y, int w, int h,
                                   const char* label, bool active, bool /*disabled*/,
-                                  bool stopIcon = false)
+                                  bool stopIcon = false, bool hovered = false)
     {
         juce::Rectangle<int> r (x, y, w, h);
 
-        g.setColour (active ? juce::Colour (0xFF2D2D2D) : juce::Colour (0xFFF9F9F9));
+        juce::Colour fill = active ? juce::Colour (0xFF2D2D2D)
+                                   : (hovered ? juce::Colour (0xFFE2E2E2)
+                                              : juce::Colour (0xFFF9F9F9));
+        g.setColour (fill);
         g.fillRect (r);
         g.setColour (juce::Colour (0xFF2D2D2D));
         g.drawRect (r, 2);
+
+        juce::Colour fg = active ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF2D2D2D);
 
         if (stopIcon)
         {
@@ -326,12 +435,12 @@ private:
             juce::Rectangle<int> icon (r.getCentreX() - iconSize / 2,
                                        r.getCentreY() - iconSize / 2,
                                        iconSize, iconSize);
-            g.setColour (active ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF2D2D2D));
+            g.setColour (fg);
             g.fillRect (icon);
         }
         else if (label != nullptr)
         {
-            g.setColour (active ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF2D2D2D));
+            g.setColour (fg);
             g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
             g.drawText (juce::String::fromUTF8 (label), r, juce::Justification::centred);
         }
@@ -376,10 +485,11 @@ private:
         int btnY     = centreY - btnH / 2;
         // Use the same centred starting X as paintGridEditor.
         int x        = gridContentX (panelArea);
-        int sepX     = x + 70;
+        int sepX     = x + 108;
         int bx       = sepX + 10;
         int nx       = bx + 2 * (btnW - 2) + 8;
 
+        juce::Rectangle<int> saveRect (x + 58, btnY, btnW, btnH);
         juce::Rectangle<int> setRect (bx,           btnY, btnW, btnH);
         juce::Rectangle<int> delRect (bx + btnW - 2, btnY, btnW, btnH);
         juce::Rectangle<int> nudgeLL (nx,                 btnY, btnW, btnH);
@@ -387,7 +497,8 @@ private:
         juce::Rectangle<int> nudgeR  (nx + 2*(btnW-2),   btnY, btnW, btnH);
         juce::Rectangle<int> nudgeRR (nx + 3*(btnW-2),   btnY, btnW, btnH);
 
-        if (setRect.contains (mx, my))  { if (onGridSet)   onGridSet(); }
+        if (saveRect.contains (mx, my)) { commitBpmEdit(); }
+        else if (setRect.contains (mx, my))  { if (onGridSet)   onGridSet(); }
         else if (delRect.contains (mx, my)) { if (onGridDelete) onGridDelete(); }
         else if (nudgeLL.contains (mx, my)) { if (onGridNudge) onGridNudge (-2); }
         else if (nudgeL.contains  (mx, my)) { if (onGridNudge) onGridNudge (-1); }
@@ -418,6 +529,23 @@ private:
                 });
             }
         }
+
+        if (changedTree.hasType (IDs::BeatGrid) && changedTree.getParent() == tree)
+        {
+            if (property == IDs::bpm || property == IDs::analysisStatus
+                || property == IDs::manuallyAdjusted)
+            {
+                juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
+                {
+                    if (safeThis != nullptr)
+                    {
+                        safeThis->updateBpmEditorText();
+                        if (safeThis->bpmEditor != nullptr)
+                            safeThis->bpmEditor->setReadOnly (! safeThis->isGridEnabled());
+                    }
+                });
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -426,9 +554,124 @@ private:
     juce::ValueTree tree;
     juce::String    activeTab { "loop" };
 
+    std::unique_ptr<juce::TextEditor> bpmEditor;
+    std::unique_ptr<BpmInputFilter> bpmEditorFilter;
+    int hoveredGridButton = -1;
+
     LoopControlComponent* loopControl  = nullptr;
     HotCuePadComponent*   hotCuePads   = nullptr;
     BeatJumpComponent*    beatJumpCtrl = nullptr;
+
+    bool isGridEnabled() const
+    {
+        auto bg = tree.getChildWithName (IDs::BeatGrid);
+        if (! bg.isValid())
+            return false;
+
+        return static_cast<double> (bg.getProperty (IDs::bpm, 0.0)) > 0.0;
+    }
+
+    int getGridButtonAt (int mx, int my) const
+    {
+        auto panelArea = getPanelBounds().reduced (10);
+        const int btnW = 50;
+        const int btnH = 46;
+        int centreY = panelArea.getCentreY();
+        int btnY = centreY - btnH / 2;
+        int x = gridContentX (panelArea);
+
+        juce::Rectangle<int> saveRect (x + 58, btnY, btnW, btnH);
+        int bx = x + 118;
+        int nx = bx + 2 * (btnW - 2) + 8;
+
+        juce::Rectangle<int> nudgeLL (nx,                 btnY, btnW, btnH);
+        juce::Rectangle<int> nudgeL  (nx + (btnW - 2),    btnY, btnW, btnH);
+        juce::Rectangle<int> nudgeR  (nx + 2 * (btnW - 2),btnY, btnW, btnH);
+        juce::Rectangle<int> nudgeRR (nx + 3 * (btnW - 2),btnY, btnW, btnH);
+
+        if (saveRect.contains (mx, my)) return 0;
+        if (nudgeLL.contains (mx, my)) return 1;
+        if (nudgeL.contains (mx, my)) return 2;
+        if (nudgeR.contains (mx, my)) return 3;
+        if (nudgeRR.contains (mx, my)) return 4;
+        return -1;
+    }
+
+    void updateBpmEditorText()
+    {
+        if (bpmEditor == nullptr)
+            return;
+
+        auto bg = tree.getChildWithName (IDs::BeatGrid);
+        juce::String text { "--" };
+        if (bg.isValid())
+        {
+            const double bpm = static_cast<double> (bg.getProperty (IDs::bpm, 0.0));
+            if (bpm > 0.0)
+                text = juce::String (bpm, 2);
+        }
+
+        bpmEditor->setText (text, false);
+    }
+
+    void commitBpmEdit()
+    {
+        if (bpmEditor == nullptr || ! isGridEnabled())
+            return;
+
+        auto text = bpmEditor->getText().trim();
+        bool sawDot = false;
+        int decimals = 0;
+        bool valid = text.isNotEmpty();
+
+        for (int i = 0; i < text.length() && valid; ++i)
+        {
+            auto c = text[i];
+            if (c >= '0' && c <= '9')
+            {
+                if (sawDot)
+                    ++decimals;
+                continue;
+            }
+
+            if (c == '.' && ! sawDot)
+            {
+                sawDot = true;
+                continue;
+            }
+
+            valid = false;
+        }
+
+        if (! valid || decimals > 2)
+        {
+            revertBpmEdit();
+            return;
+        }
+
+        const double bpm = text.getDoubleValue();
+        if (bpm >= 20.0 && bpm <= 300.0)
+        {
+            if (onBpmSave)
+                onBpmSave (bpm);
+            bpmEditor->setText (juce::String (bpm, 2), false);
+        }
+        else
+        {
+            revertBpmEdit();
+        }
+
+        bpmEditor->giveAwayKeyboardFocus();
+    }
+
+    void revertBpmEdit()
+    {
+        if (bpmEditor == nullptr)
+            return;
+
+        updateBpmEditorText();
+        bpmEditor->giveAwayKeyboardFocus();
+    }
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ControllerWidget)
 };

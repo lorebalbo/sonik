@@ -83,6 +83,10 @@ private:
     void handleGridSet();
     void handleGridDelete();
     void handleGridNudge (int delta);
+    void handleBpmSave   (double newBpm);
+
+    /// Persist the current in-memory beatgrid to SQLite, preserving other fields.
+    void persistBeatGridToDb();
 
     DeckStateManager&      deckStateManager;
     AudioEngine&           audioEngine;

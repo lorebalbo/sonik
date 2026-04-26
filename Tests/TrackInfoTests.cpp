@@ -312,10 +312,12 @@ private:
         DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, beatGridMgr, *ctx.stemMgr, deckId);
         shell.setBounds (0, 0, 400, 300);
 
-        // Before loading: remove button + pitch fader + gain knob + key lock button + quantize button + slip button + stem separate button + stem voc toggle + stem inst toggle + hot cue pads + loop controls + beat jump
+        // Before loading: trackInfo + stemSeparateButton + stemVocToggle + stemInstToggle
+        //                 + keyLockButton + keyStepperComponent + pitchFaderComponent
+        //                 + syncButton + quantizeButton + slipButton + controllerWidget = 11
         int initialChildren = shell.getNumChildComponents();
-        expectEquals (initialChildren, 12,
-                      "Before track load, DeckShellComponent should have remove button, pitch fader, gain knob, key lock button, quantize button, slip button, stem buttons, hot cue pads, loop controls, and beat jump");
+        expectEquals (initialChildren, 11,
+                      "Before track load, DeckShellComponent should have trackInfo, stem buttons, key lock, key stepper, pitch fader, sync, quantize, slip, and controller widget");
 
         // Load a track
         auto meta = makeSampleMetadata ("Lifecycle Track");
