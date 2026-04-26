@@ -87,6 +87,9 @@ struct DeckAudioSource
     int stretcherLatency = 0;
 
     // Key lock crossfade state (audio thread only)
+    // Longer ramp than FADE_RAMP_LENGTH so the vinyl↔stretched transition
+    // (which may involve a pitch shift) is masked.  46 ms at 44100 Hz.
+    static constexpr int KEY_LOCK_FADE_LENGTH = 2048;
     int  keyLockFadeSamplesRemaining = 0;
     bool keyLockFadingIn  = false;  // transitioning TO stretched
     bool keyLockFadingOut = false;  // transitioning FROM stretched
@@ -108,6 +111,14 @@ struct DeckAudioSource
     float stretchInR[MAX_STRETCH_BLOCK]  = {};
     float stretchOutL[MAX_STRETCH_BLOCK] = {};
     float stretchOutR[MAX_STRETCH_BLOCK] = {};
+
+    // Smoothed time ratio for the stretcher (audio thread only).
+    // Updated each block toward 1/speedMultiplier at a limited rate so
+    // setTimeRatio() never sees abrupt jumps — prevents crackling during
+    // pitch-fader movement when key lock is active.
+    // Max delta of 0.003/block ≈ ±0.5/sec → ~2% pitch change in ~40 ms.
+    double smoothedTimeRatio = 1.0;
+    static constexpr double STRETCH_RATIO_MAX_DELTA = 0.003;
 
     // --- Stem buffers (PRD-0021) ---
     static constexpr int NUM_STEMS = 4;

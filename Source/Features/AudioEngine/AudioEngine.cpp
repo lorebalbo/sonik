@@ -287,6 +287,7 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
             src.keyLockFadeSamplesRemaining = 0;
             src.keyLockFadingIn = false;
             src.keyLockFadingOut = false;
+            src.smoothedTimeRatio = 1.0;
 
             // PRD-0022: Stem stretchers will be created when stems become active + key lock
             destroyStemStretchers(deckId);
@@ -936,7 +937,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         if (keyLockOn != source->wasKeyLockEnabled)
         {
             source->wasKeyLockEnabled = keyLockOn;
-            source->keyLockFadeSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+            source->keyLockFadeSamplesRemaining = DeckAudioSource::KEY_LOCK_FADE_LENGTH;
             source->keyLockFadingIn  = keyLockOn;   // TO stretched
             source->keyLockFadingOut = ! keyLockOn;  // FROM stretched
         }
@@ -950,12 +951,22 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         int stretchedAvail = 0;
         if (stretcher != nullptr && speed > 0.01f)
         {
-            // Read source samples at speed into scratch buffers.
-            // Offset by stretcherLatency so the stretcher output (which is
-            // delayed by L samples internally) is temporally aligned with
-            // the vinyl path at playheadAccumulator.
+            // Smoothly ramp the time ratio toward the target so that
+            // setTimeRatio() never sees an abrupt jump — this prevents the
+            // R3 engine's pipeline from destabilising (crackling) when the
+            // pitch fader is moved while key lock is active.
+            double targetTimeRatio = 1.0 / static_cast<double> (speed);
+            double& sRatio = source->smoothedTimeRatio;
+            double delta = targetTimeRatio - sRatio;
+            double maxD  = DeckAudioSource::STRETCH_RATIO_MAX_DELTA;
+            if (delta > maxD)       sRatio += maxD;
+            else if (delta < -maxD) sRatio -= maxD;
+            else                    sRatio  = targetTimeRatio;
+
+            // Feed enough source samples for the smoothed ratio to produce
+            // exactly numSamples of output.
             int sourceSamples = std::min (
-                static_cast<int> (std::ceil (static_cast<double> (numSamples) * static_cast<double> (speed))),
+                static_cast<int> (std::ceil (static_cast<double> (numSamples) / sRatio)),
                 DeckAudioSource::MAX_STRETCH_BLOCK);
 
             double readPos = source->playheadAccumulator
@@ -985,9 +996,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             const float* inPtrs[2] = { source->stretchInL, source->stretchInR };
             float* outPtrs[2] = { source->stretchOutL, source->stretchOutR };
 
-            double timeRatio = 1.0 / static_cast<double> (speed);
             stretchedAvail = stretcher->process (
-                inPtrs, sourceSamples, outPtrs, numSamples, timeRatio);
+                inPtrs, sourceSamples, outPtrs, numSamples, sRatio);
         }
 
         // --- Stem state (PRD-0021) ---
@@ -1262,9 +1272,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             if (source->keyLockFadeSamplesRemaining > 0)
             {
                 // Crossfade between vinyl and stretched paths during key lock toggle
-                float p = static_cast<float> (DeckAudioSource::FADE_RAMP_LENGTH
+                float p = static_cast<float> (DeckAudioSource::KEY_LOCK_FADE_LENGTH
                     - source->keyLockFadeSamplesRemaining)
-                    / static_cast<float> (DeckAudioSource::FADE_RAMP_LENGTH);
+                    / static_cast<float> (DeckAudioSource::KEY_LOCK_FADE_LENGTH);
                 --source->keyLockFadeSamplesRemaining;
 
                 if (source->keyLockFadingIn) // transitioning TO stretched

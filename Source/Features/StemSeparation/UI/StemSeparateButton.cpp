@@ -1,6 +1,7 @@
 #include "StemSeparateButton.h"
 #include "../StemSeparationManager.h"
 #include "../../AudioEngine/AudioEngine.h"
+#include <cmath>
 
 // Design-system palette
 static const juce::Colour kLight  { 0xFFF9F9F9 };
@@ -9,6 +10,24 @@ static const juce::Colour kGreen  { 0xFF0AD691 };
 static const juce::Colour kRed    { 0xFFFF3C3B };
 
 static constexpr double kMinDurationForStems = 5.0;
+
+// ---------------------------------------------------------------------------
+const juce::StringArray& StemSeparateButton::phaseLabels() noexcept
+{
+    static const juce::StringArray labels {
+        "ANALYZING AUDIO",
+        "LOADING MODEL",
+        "COMPUTING SPECTROGRAM",
+        "SEPARATING STEMS",
+        "PROCESSING VOCALS",
+        "PROCESSING INSTRUMENTS",
+        "REFINING SEPARATION",
+        "APPLYING CORRECTIONS",
+        "MIXING LAYERS",
+        "FINALIZING"
+    };
+    return labels;
+}
 
 // ---------------------------------------------------------------------------
 StemSeparateButton::StemSeparateButton (juce::ValueTree deckTree,
@@ -32,8 +51,55 @@ StemSeparateButton::StemSeparateButton (juce::ValueTree deckTree,
 
 StemSeparateButton::~StemSeparateButton()
 {
+    stopTimer();
     stemsNode.removeListener (this);
     tree.removeListener (this);
+}
+
+// ---------------------------------------------------------------------------
+void StemSeparateButton::timerCallback()
+{
+    if (currentStatus != "separating")
+    {
+        stopTimer();
+        return;
+    }
+
+    double elapsedSec = (juce::Time::getMillisecondCounterHiRes() - separationStartMs) / 1000.0;
+
+    // Fake progress schedule — races to 85 % quickly, then almost stalls.
+    // Real progress (currentProgress) takes over whenever it exceeds the fake.
+    //   0 – 3 s  : 0  → 20 %  (fast initial feedback)
+    //   3 – 20 s : 20 → 55 %  (medium: "model is running")
+    //  20 – 60 s : 55 → 78 %  (slowing down)
+    //  60 s+     : 78 → 85 %  (almost stopped — waiting for completion)
+    float fakeTarget;
+    if (elapsedSec < 3.0)
+        fakeTarget = static_cast<float> (elapsedSec / 3.0 * 0.20);
+    else if (elapsedSec < 20.0)
+        fakeTarget = 0.20f + static_cast<float> ((elapsedSec - 3.0) / 17.0 * 0.35f);
+    else if (elapsedSec < 60.0)
+        fakeTarget = 0.55f + static_cast<float> ((elapsedSec - 20.0) / 40.0 * 0.23f);
+    else
+        fakeTarget = 0.78f + static_cast<float> (std::min ((elapsedSec - 60.0) / 180.0, 1.0) * 0.07f);
+
+    // Real progress dominates when it overtakes the fake curve.
+    float displayTarget = std::max (fakeTarget, currentProgress);
+
+    // Smoothly animate toward the target (ease-in)
+    animatedProgress += (displayTarget - animatedProgress) * 0.12f;
+
+    // Never show 100 % until the real process has finished
+    if (currentProgress < 0.99f)
+        animatedProgress = std::min (animatedProgress, 0.97f);
+
+    // Advance phase label every 8 seconds, clamp to the last one so
+    // labels never loop — they are shown once each and then stay put.
+    static constexpr double kLabelDurationSeconds = 8.0;
+    int rawIndex = static_cast<int> (elapsedSec / kLabelDurationSeconds);
+    currentLabelIndex = juce::jmin (rawIndex, phaseLabels().size() - 1);
+
+    repaint();
 }
 
 // ---------------------------------------------------------------------------
@@ -41,6 +107,21 @@ void StemSeparateButton::refreshState()
 {
     currentStatus   = stemsNode.getProperty (IDs::status, "none").toString();
     currentProgress = static_cast<float> (stemsNode.getProperty (IDs::progress, 0.0f));
+
+    // Start / stop the animation timer
+    if (currentStatus == "separating" && ! isTimerRunning())
+    {
+        animatedProgress  = 0.0f;
+        currentLabelIndex = 0;
+        separationStartMs = juce::Time::getMillisecondCounterHiRes();
+        startTimerHz (15);  // 15 fps is enough for smooth progress
+    }
+    else if (currentStatus != "separating" && isTimerRunning())
+    {
+        stopTimer();
+        if (currentStatus == "ready" || currentStatus == "loading_cached")
+            animatedProgress = 1.0f;
+    }
 
     isEmpty = tree.getProperty (IDs::playbackStatus).toString() == "empty";
 
@@ -102,7 +183,7 @@ void StemSeparateButton::paint (juce::Graphics& g)
     {
         bg   = kDark;
         fg   = kLight;
-        text = juce::String (juce::roundToInt (currentProgress * 100.0f)) + "%";
+        text = "";  // drawn specially below
     }
     else if (currentStatus == "queued")
     {
@@ -126,6 +207,36 @@ void StemSeparateButton::paint (juce::Graphics& g)
 
     g.setColour (disabled ? kDark.withAlpha (0.3f) : kDark);
     g.drawRect (bounds, 2);
+
+    // ── Animated progress bar (separating only) ──────────────────────────
+    if (currentStatus == "separating")
+    {
+        // Slightly lighter fill shows completed portion within dark background
+        g.setColour (juce::Colour (0xFF505050));
+        auto fillBounds = bounds.toFloat();
+        fillBounds = fillBounds.withWidth (animatedProgress * fillBounds.getWidth());
+        g.fillRect (fillBounds);
+
+        // Border
+        g.setColour (kDark);
+        g.drawRect (bounds, 2);
+
+        // Phase label (top line, smaller)
+        const auto& labels = phaseLabels();
+        juce::String label = labels[currentLabelIndex];
+        auto topHalf   = bounds.withHeight (bounds.getHeight() / 2);
+        auto bottomHalf = bounds.withTrimmedTop (bounds.getHeight() / 2);
+
+        g.setColour (fg);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.5f, juce::Font::plain));
+        g.drawText (label, topHalf.reduced (3, 0), juce::Justification::centredLeft, false);
+
+        // Percentage (bottom line, larger)
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.5f, juce::Font::bold));
+        g.drawText (juce::String (juce::roundToInt (animatedProgress * 100)) + " %",
+                    bottomHalf.reduced (3, 0), juce::Justification::centredLeft, false);
+        return;
+    }
 
     // ── Label ─────────────────────────────────────────────────────────────
     g.setColour (fg);

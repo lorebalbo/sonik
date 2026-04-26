@@ -238,50 +238,53 @@ private:
         for (auto t : ticks)
             tickSamples.push_back (static_cast<double> (t) * sr);
 
-        // Find optimal anchor: test all phases within one beat period,
-        // minimise total squared distance from each tick to its nearest grid line.
-        double bestAnchor = tickSamples.front();
-        double bestError  = std::numeric_limits<double>::max();
-
-        constexpr int phaseSteps = 200;
-        double phaseInc = beatIntervalSamples / static_cast<double> (phaseSteps);
-
-        for (int p = 0; p < phaseSteps; ++p)
+        // ================================================================
+        // Step 5: Compute fixed grid anchor via circular statistics.
+        //
+        // Each detected tick is mapped to a phase angle on the unit circle
+        // (angle = (tick mod beatInterval) / beatInterval * 2π).  The
+        // circular mean of those angles gives the exact optimal anchor —
+        // no discrete search, no quantisation error.
+        // ================================================================
+        double bestAnchor = 0.0;
         {
-            double candidateAnchor = phaseInc * static_cast<double> (p);
-            double totalError = 0.0;
+            const double twoPi = juce::MathConstants<double>::twoPi;
+            double sinSum = 0.0, cosSum = 0.0;
 
-            for (auto tickSample : tickSamples)
+            for (auto tick : tickSamples)
             {
-                // Distance from tick to nearest grid line
-                double offset = tickSample - candidateAnchor;
-                double beatFrac = offset / beatIntervalSamples;
-                double nearest  = std::round (beatFrac) * beatIntervalSamples + candidateAnchor;
-                double err      = tickSample - nearest;
-                totalError += err * err;
+                double phase = std::fmod (tick, beatIntervalSamples);
+                if (phase < 0.0)
+                    phase += beatIntervalSamples;
+                double angle = phase / beatIntervalSamples * twoPi;
+                sinSum += std::sin (angle);
+                cosSum += std::cos (angle);
             }
 
-            if (totalError < bestError)
-            {
-                bestError  = totalError;
-                bestAnchor = candidateAnchor;
-            }
+            double meanAngle = std::atan2 (sinSum, cosSum);
+            if (meanAngle < 0.0)
+                meanAngle += twoPi;
+            bestAnchor = meanAngle / twoPi * beatIntervalSamples;
         }
-
-        // Normalise anchor to [0, beatInterval)
-        while (bestAnchor < 0.0)
-            bestAnchor += beatIntervalSamples;
-        while (bestAnchor >= beatIntervalSamples)
-            bestAnchor -= beatIntervalSamples;
 
         // ================================================================
         // Step 6: Confidence mapping
         //
+        // Compute RMS grid alignment error to measure quality.
         // Essentia's multifeature confidence is in [0, 5.32].
         // Map to [0, 1] with a saturation at ~4.0 (strong detection).
         // Also incorporate grid alignment quality.
         // ================================================================
-        double rmsGridError = std::sqrt (bestError / static_cast<double> (tickSamples.size()));
+        double sumSqErr = 0.0;
+        for (auto tick : tickSamples)
+        {
+            double offset   = tick - bestAnchor;
+            double beatFrac = offset / beatIntervalSamples;
+            double nearest  = std::round (beatFrac) * beatIntervalSamples + bestAnchor;
+            double err      = tick - nearest;
+            sumSqErr += err * err;
+        }
+        double rmsGridError = std::sqrt (sumSqErr / static_cast<double> (tickSamples.size()));
         double gridQuality  = juce::jlimit (0.0, 1.0, 1.0 - rmsGridError / beatIntervalSamples);
 
         float conf = juce::jlimit (0.0f, 1.0f,
