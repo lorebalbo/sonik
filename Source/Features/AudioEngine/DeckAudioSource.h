@@ -6,6 +6,7 @@
 #include "../Deck/AudioThreadState.h"
 
 class TimeStretcher;
+class MasterClockPublisher; // PRD-0026: forward-declared to avoid pulling in Sync headers here
 
 // Transport commands sent from UI thread to audio thread (PRD-0004)
 enum class TransportCommand : int
@@ -164,4 +165,10 @@ struct DeckAudioSource
 
     // CPU degradation flag: when true, per-stem stretching fell back to single stretcher
     std::atomic<bool> stemStretchDegraded { false };
+
+    // --- Master Clock (PRD-0026) ---
+    // Set by AudioEngine::setMasterClockPublisher() on the message thread before audio starts.
+    // Audio thread calls masterClockPublisher.load(acquire) then publisher->read() to get clock.
+    // The pointer itself is atomic; the SeqLock inside MasterClockPublisher makes read() lock-free.
+    std::atomic<MasterClockPublisher*> masterClockPublisher { nullptr };
 };

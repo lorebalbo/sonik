@@ -10,6 +10,8 @@
 #include <array>
 #include <atomic>
 
+class MasterClockPublisher; // PRD-0026
+
 class AudioEngine final : public juce::AudioIODeviceCallback,
                            public juce::ChangeListener,
                            private juce::Timer
@@ -83,6 +85,10 @@ public:
 
     /// Returns the current device sample rate.
     double getSampleRate() const { return currentSampleRate.load (std::memory_order_relaxed); }
+
+    /// Wire the master clock publisher into all deck slots (PRD-0026).
+    /// Call from the message thread. The pointer is stored atomically in each DeckAudioSource.
+    void setMasterClockPublisher (MasterClockPublisher* publisher);
 
     float getCpuLoad() const     { return cpuMonitor.loadPercent.load (std::memory_order_relaxed); }
     bool  getCpuOverload() const { return cpuMonitor.overloadWarning.load (std::memory_order_relaxed); }

@@ -11,6 +11,8 @@
 #include "Features/Deck/UI/MainContentComponent.h"
 #include "Features/StemSeparation/ModelManager.h"
 #include "Features/StemSeparation/StemSeparationManager.h"
+#include "Features/Sync/MasterClockPublisher.h"
+#include "Features/Sync/MasterClockManager.h"
 #include <memory>
 
 class MainWindow final : public juce::DocumentWindow
@@ -56,6 +58,8 @@ public:
 private:
     std::unique_ptr<TrackDatabase>    trackDatabase;
     std::unique_ptr<DeckStateManager> deckStateManager;
+    std::unique_ptr<MasterClockPublisher> masterClockPublisher;  // PRD-0026
+    std::unique_ptr<MasterClockManager>   masterClockManager;    // PRD-0026
     std::unique_ptr<AudioEngine>      audioEngine;
     std::unique_ptr<AudioFileLoader>  audioFileLoader;
     std::unique_ptr<WaveformManager>  waveformManager;

@@ -5,8 +5,9 @@ DeckStateManager::DeckStateManager (TrackDatabase& database)
     : db (database),
       rootState (IDs::SonikState)
 {
-    rootState.setProperty (IDs::activeDeckId, "A", nullptr);
-    rootState.setProperty (IDs::deckCount, 0, nullptr);
+    rootState.setProperty (IDs::activeDeckId,    "A", nullptr);
+    rootState.setProperty (IDs::deckCount,       0,   nullptr);
+    rootState.setProperty (IDs::masterDeckIndex, -1,  nullptr);  // PRD-0026: no master initially
 
     auto decksNode = juce::ValueTree (IDs::Decks);
     rootState.addChild (decksNode, -1, nullptr);
@@ -292,6 +293,10 @@ juce::ValueTree DeckStateManager::createDeckTree (const juce::String& deckId) co
     deck.setProperty (IDs::id,               deckId,   nullptr);
     deck.setProperty (IDs::playbackStatus,   "empty",  nullptr);
     deck.setProperty (IDs::isMasterTempo,    false,    nullptr);
+
+    // Master Clock state (PRD-0026) — deck-level, persists across track loads
+    deck.setProperty (IDs::isMaster,         false,    nullptr);
+    deck.setProperty (IDs::isSynced,         false,    nullptr);
 
     // Deck-level state (persists across track loads)
     deck.setProperty (IDs::gain,             1.0f,     nullptr);

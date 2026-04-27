@@ -96,6 +96,11 @@ DECLARE_ID (keyShift)
 // Sync mode (UI — deck BPM sync with master)
 DECLARE_ID (syncEnabled)
 
+// Master Clock (PRD-0026)
+DECLARE_ID (isMaster)         // per-deck bool: this deck is the master clock source
+DECLARE_ID (isSynced)         // per-deck bool: this deck is synced to the master clock
+DECLARE_ID (masterDeckIndex)  // root-level int: Decks-array index of current master, -1 = dormant
+
 // Active controller tab: "loop" | "cue" | "jump" | "grid"
 DECLARE_ID (controllerTab)
 

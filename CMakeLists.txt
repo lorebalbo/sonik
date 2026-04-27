@@ -178,6 +178,11 @@ target_sources(Sonik PRIVATE
     Source/Features/StemSeparation/UI/StemSeparateButton.cpp
     Source/Features/StemSeparation/UI/StemToggleComponent.h
     Source/Features/StemSeparation/UI/StemToggleComponent.cpp
+    Source/Features/Sync/MasterClockSnapshot.h
+    Source/Features/Sync/MasterClockPublisher.h
+    Source/Features/Sync/MasterClockPublisher.cpp
+    Source/Features/Sync/MasterClockManager.h
+    Source/Features/Sync/MasterClockManager.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -240,6 +245,7 @@ add_executable(SonikTests
     Tests/StemSeparationTests.cpp
     Tests/StemPlaybackTests.cpp
     Tests/StemStretchTests.cpp
+    Tests/MasterClockTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -274,6 +280,8 @@ add_executable(SonikTests
     Source/Features/StemSeparation/StemSeparationManager.cpp
     Source/Features/StemSeparation/UI/StemSeparateButton.cpp
     Source/Features/StemSeparation/UI/StemToggleComponent.cpp
+    Source/Features/Sync/MasterClockPublisher.cpp
+    Source/Features/Sync/MasterClockManager.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

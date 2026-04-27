@@ -1,5 +1,6 @@
 #include "AudioEngine.h"
 #include "../Quantize/QuantizeService.h"
+#include "../Sync/MasterClockPublisher.h"
 #include <cmath>
 #include <algorithm>
 
@@ -94,6 +95,16 @@ void AudioEngine::stop()
     deviceManager.removeChangeListener (this);
     deviceManager.removeAudioCallback (this);
     deviceManager.closeAudioDevice();
+}
+
+// ---------------------------------------------------------------------------
+// Master Clock wiring (PRD-0026, message thread)
+// ---------------------------------------------------------------------------
+
+void AudioEngine::setMasterClockPublisher (MasterClockPublisher* publisher)
+{
+    for (auto& src : deckSources)
+        src.masterClockPublisher.store (publisher, std::memory_order_release);
 }
 
 // ---------------------------------------------------------------------------

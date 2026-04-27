@@ -16,8 +16,17 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     while (deckStateManager->getDeckCount() < 2)
         deckStateManager->addDeck();
 
+    // Create the master clock publisher and manager (PRD-0026).
+    // Manager must be created after decks exist so its initial listener state is correct.
+    masterClockPublisher = std::make_unique<MasterClockPublisher>();
+    masterClockManager   = std::make_unique<MasterClockManager> (
+        deckStateManager->getStateTree(), *masterClockPublisher);
+
     // Create and start the audio engine
     audioEngine = std::make_unique<AudioEngine> (deckStateManager->getStateTree());
+
+    // Inject the master clock publisher into every deck slot (PRD-0026).
+    audioEngine->setMasterClockPublisher (masterClockPublisher.get());
 
     auto decksNode = deckStateManager->getStateTree().getChildWithName (IDs::Decks);
     for (int i = 0; i < decksNode.getNumChildren(); ++i)
@@ -101,6 +110,11 @@ void SonikApplication::shutdown()
 
     // Stop audio engine BEFORE destroying DeckStateManager
     audioEngine.reset();
+
+    // Master clock manager must be destroyed before deckStateManager
+    // (it holds a ValueTree reference and listens to rootState).
+    masterClockManager.reset();
+    masterClockPublisher.reset();
 
     deckStateManager.reset();
     trackDatabase.reset();

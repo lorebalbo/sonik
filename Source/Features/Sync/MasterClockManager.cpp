@@ -1,0 +1,250 @@
+#include "MasterClockManager.h"
+
+// ---------------------------------------------------------------------------
+// Construction / Destruction
+// ---------------------------------------------------------------------------
+
+MasterClockManager::MasterClockManager (juce::ValueTree rootState, MasterClockPublisher& publisher)
+    : rootState_ (rootState), publisher_ (publisher)
+{
+    rootState_.addListener (this);
+
+    // Publish an initial dormant snapshot so the publisher always holds valid data.
+    publishDormant();
+}
+
+MasterClockManager::~MasterClockManager()
+{
+    rootState_.removeListener (this);
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+void MasterClockManager::setMaster (int deckIndex)
+{
+    auto deckTree = getDeckTreeAt (deckIndex);
+    if (! deckTree.isValid())
+        return;
+
+    const int currentMaster = static_cast<int> (rootState_.getProperty (IDs::masterDeckIndex, -1));
+
+    // No-op: already the master AND currently playing.
+    if (currentMaster == deckIndex)
+    {
+        if (getPlaybackStatus (deckTree) == "playing")
+            return;
+
+        // Already master but not playing: republish current state (no structural change needed).
+        publishFromDeck (deckIndex);
+        return;
+    }
+
+    // Demote current master.
+    if (currentMaster >= 0)
+    {
+        auto currentTree = getDeckTreeAt (currentMaster);
+        if (currentTree.isValid())
+            currentTree.setProperty (IDs::isMaster, false, nullptr);
+    }
+
+    // SYNC+MASTER interaction: clear isSynced on the new master before promoting it.
+    deckTree.setProperty (IDs::isSynced, false, nullptr);
+
+    // Promote the new master.
+    rootState_.setProperty (IDs::masterDeckIndex, deckIndex, nullptr);
+    deckTree.setProperty (IDs::isMaster, true, nullptr);
+
+    publishFromDeck (deckIndex);
+}
+
+int MasterClockManager::getMasterDeckIndex() const
+{
+    return static_cast<int> (rootState_.getProperty (IDs::masterDeckIndex, -1));
+}
+
+// ---------------------------------------------------------------------------
+// ValueTree::Listener
+// ---------------------------------------------------------------------------
+
+void MasterClockManager::valueTreePropertyChanged (juce::ValueTree& tree,
+                                                    const juce::Identifier& property)
+{
+    // --- Deck-level property changes ---
+    if (tree.getType() == IDs::Deck)
+    {
+        if (property == IDs::playbackStatus)
+        {
+            const int deckIndex    = getDeckIndex (tree);
+            if (deckIndex < 0) return;
+
+            const juce::String status = getPlaybackStatus (tree);
+            const int currentMaster   = static_cast<int> (rootState_.getProperty (IDs::masterDeckIndex, -1));
+
+            if (currentMaster == deckIndex)
+            {
+                // ---- Master deck changed status ----
+
+                if (status == "playing")
+                {
+                    // Resume from paused (or initial play): publish isPlaying=true.
+                    // BPM and phase origin are unchanged from last publish.
+                    auto beatGrid = tree.getChildWithName (IDs::BeatGrid);
+                    MasterClockSnapshot snap;
+                    snap.masterBPM              = lastMasterBPM_;
+                    snap.masterPhaseOriginSample = beatGrid.isValid()
+                        ? static_cast<int64_t> (beatGrid.getProperty (IDs::anchorSample, static_cast<int64_t> (0)))
+                        : 0;
+                    snap.masterIsPlaying = true;
+                    publisher_.publish (snap);
+                }
+                else if (status == "paused")
+                {
+                    // Paused: publish isPlaying=false, retain BPM and phase origin.
+                    auto beatGrid = tree.getChildWithName (IDs::BeatGrid);
+                    MasterClockSnapshot snap;
+                    snap.masterBPM              = lastMasterBPM_;
+                    snap.masterPhaseOriginSample = beatGrid.isValid()
+                        ? static_cast<int64_t> (beatGrid.getProperty (IDs::anchorSample, static_cast<int64_t> (0)))
+                        : 0;
+                    snap.masterIsPlaying = false;
+                    publisher_.publish (snap);
+                }
+                else if (status == "stopped" || status == "empty")
+                {
+                    // Master stopped or ejected: demote it, find a replacement.
+                    tree.setProperty (IDs::isMaster, false, nullptr);
+                    rootState_.setProperty (IDs::masterDeckIndex, -1, nullptr);
+
+                    const int nextMaster = findLowestPlayingDeckIndex();
+                    if (nextMaster >= 0)
+                        promoteDeck (nextMaster);
+                    else
+                        publishDormant();
+                }
+            }
+            else if (currentMaster < 0)
+            {
+                // ---- No master assigned: auto-promote on first activity ----
+                if (status == "stopped" || status == "playing")
+                    promoteDeck (deckIndex);
+            }
+            // If currentMaster is some other deck, changes to this deck are ignored here.
+        }
+        // Other Deck-level properties (isMaster, isSynced, gain, etc.) are intentionally ignored
+        // to avoid feedback loops from our own mutations.
+    }
+
+    // --- BeatGrid sub-tree changes on the master deck ---
+    else if (tree.getType() == IDs::BeatGrid)
+    {
+        if (property == IDs::bpm || property == IDs::anchorSample)
+        {
+            const int currentMaster = static_cast<int> (rootState_.getProperty (IDs::masterDeckIndex, -1));
+            if (currentMaster >= 0)
+            {
+                auto masterDeckTree = getDeckTreeAt (currentMaster);
+                if (masterDeckTree.isValid() &&
+                    masterDeckTree.getChildWithName (IDs::BeatGrid) == tree)
+                {
+                    publishFromDeck (currentMaster);
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+juce::ValueTree MasterClockManager::getDeckTreeAt (int index) const
+{
+    auto decks = rootState_.getChildWithName (IDs::Decks);
+    if (index < 0 || index >= decks.getNumChildren())
+        return {};
+    return decks.getChild (index);
+}
+
+int MasterClockManager::getDeckIndex (const juce::ValueTree& deckTree) const
+{
+    auto decks = rootState_.getChildWithName (IDs::Decks);
+    for (int i = 0; i < decks.getNumChildren(); ++i)
+        if (decks.getChild (i) == deckTree)
+            return i;
+    return -1;
+}
+
+void MasterClockManager::promoteDeck (int deckIndex)
+{
+    auto deckTree = getDeckTreeAt (deckIndex);
+    if (! deckTree.isValid())
+        return;
+
+    rootState_.setProperty (IDs::masterDeckIndex, deckIndex, nullptr);
+    deckTree.setProperty   (IDs::isMaster, true, nullptr);
+    publishFromDeck (deckIndex);
+}
+
+void MasterClockManager::demoteCurrentMaster()
+{
+    const int current = static_cast<int> (rootState_.getProperty (IDs::masterDeckIndex, -1));
+    if (current < 0) return;
+
+    auto deckTree = getDeckTreeAt (current);
+    if (deckTree.isValid())
+        deckTree.setProperty (IDs::isMaster, false, nullptr);
+
+    rootState_.setProperty (IDs::masterDeckIndex, -1, nullptr);
+}
+
+void MasterClockManager::publishFromDeck (int deckIndex)
+{
+    auto deckTree = getDeckTreeAt (deckIndex);
+    if (! deckTree.isValid())
+        return;
+
+    auto beatGrid = deckTree.getChildWithName (IDs::BeatGrid);
+    const double  bpm    = beatGrid.isValid()
+        ? static_cast<double> (beatGrid.getProperty (IDs::bpm, 0.0))
+        : 0.0;
+    const int64_t anchor = beatGrid.isValid()
+        ? static_cast<int64_t> (beatGrid.getProperty (IDs::anchorSample, static_cast<int64_t> (0)))
+        : 0;
+
+    lastMasterBPM_ = bpm;
+
+    MasterClockSnapshot snap;
+    snap.masterBPM               = bpm;
+    snap.masterPhaseOriginSample  = anchor;
+    snap.masterIsPlaying          = (getPlaybackStatus (deckTree) == "playing");
+    publisher_.publish (snap);
+}
+
+void MasterClockManager::publishDormant()
+{
+    // Keep last BPM, but signal that nobody is playing and reset phase origin.
+    MasterClockSnapshot snap;
+    snap.masterBPM               = lastMasterBPM_;
+    snap.masterPhaseOriginSample  = 0;
+    snap.masterIsPlaying          = false;
+    publisher_.publish (snap);
+}
+
+juce::String MasterClockManager::getPlaybackStatus (const juce::ValueTree& deckTree)
+{
+    return deckTree.getProperty (IDs::playbackStatus, "empty").toString();
+}
+
+int MasterClockManager::findLowestPlayingDeckIndex() const
+{
+    auto decks = rootState_.getChildWithName (IDs::Decks);
+    for (int i = 0; i < decks.getNumChildren(); ++i)
+    {
+        auto deck = decks.getChild (i);
+        if (getPlaybackStatus (deck) == "playing")
+            return i;
+    }
+    return -1;
+}
