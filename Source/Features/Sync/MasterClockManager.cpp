@@ -220,6 +220,9 @@ void MasterClockManager::publishFromDeck (int deckIndex)
     snap.masterPhaseOriginSample  = anchor;
     snap.masterIsPlaying          = (getPlaybackStatus (deckTree) == "playing");
     publisher_.publish (snap);
+    // Expose the master slot index so AudioEngine can write the master's playhead
+    // each audio block for use by PhaseLockEngine (phase formula fix).
+    publisher_.masterSlotIndex.store (deckIndex, std::memory_order_relaxed);
 }
 
 void MasterClockManager::publishDormant()
@@ -230,6 +233,7 @@ void MasterClockManager::publishDormant()
     snap.masterPhaseOriginSample  = 0;
     snap.masterIsPlaying          = false;
     publisher_.publish (snap);
+    publisher_.masterSlotIndex.store (-1, std::memory_order_relaxed);
 }
 
 juce::String MasterClockManager::getPlaybackStatus (const juce::ValueTree& deckTree)

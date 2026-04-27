@@ -128,6 +128,10 @@ private:
     // Per-deck phase lock engines (PRD-0028, owned here, set in setMasterClockPublisher)
     std::array<std::unique_ptr<PhaseLockEngine>, 4> deckPhaseLockEngines;
 
+    // Cached master clock publisher pointer (set in setMasterClockPublisher, audio-thread read).
+    // Audio thread uses this each block to write the master deck's playhead for PhaseLockEngine.
+    MasterClockPublisher* cachedClockPublisher_ = nullptr;
+
     // CPU load monitoring
     struct CpuLoadMonitor
     {

@@ -45,4 +45,8 @@ public:
 
 private:
     MasterClockPublisher& publisher_;
+    /// Tracks the previous isSynced state to detect the false→true transition.
+    /// Only set true once all guards pass so the snap is deferred until the
+    /// deck is actually playing and the master clock is running.
+    bool prevIsSyncedInEngine_ = false;
 };

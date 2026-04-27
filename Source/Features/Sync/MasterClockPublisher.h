@@ -36,4 +36,19 @@ private:
 
     // Unprotected buffer written field-by-field; correctness guaranteed by the sequence counter.
     MasterClockSnapshot buffer_ {};
+
+public:
+    // ---------------------------------------------------------------------------
+    // Audio-thread helpers (separate from the SeqLock — written by audio thread)
+    // ---------------------------------------------------------------------------
+
+    /// Index (0–3) of the deck slot that is currently the master.
+    /// Written by MasterClockManager (message thread) whenever the master changes.
+    /// Read by AudioEngine (audio thread) to locate the master deck's playhead.
+    std::atomic<int> masterSlotIndex { -1 };
+
+    /// Current playhead position of the master deck (samples from start of its file).
+    /// Written by AudioEngine (audio thread) once per callback, before PhaseLockEngine runs.
+    /// Read by PhaseLockEngine to compute accurate inter-track phase.
+    std::atomic<int64_t> masterPlayheadSample { 0 };
 };

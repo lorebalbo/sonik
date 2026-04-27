@@ -21,6 +21,7 @@ public:
         testNoOpWhenSlaveBpmZero();
         testNoOpWhenSlipEnabled();
         testPhaseZeroNoCorrection();
+        testBeatSnapOnEngagement();
         testPhaseAheadSlowsDown();
         testPhaseBehindSpeesUp();
         testUnwrappedPhaseWraps();
@@ -308,6 +309,12 @@ private:
 
         PhaseLockEngine engine (pub);
 
+        // Prime: consume the beat-snap on first engagement (adjusts playhead to ~0),
+        // then restore the test phase so the P-controller runs for real.
+        engine.process (source, fx.state, sr);
+        source.playheadAccumulator  = effectivePos;
+        source.correctionMultiplier = 1.0;
+
         // Run enough blocks to move correctionMultiplier away from 1.0
         for (int i = 0; i < 10; ++i)
             engine.process (source, fx.state, sr);
@@ -344,6 +351,11 @@ private:
 
         PhaseLockEngine engine (pub);
 
+        // Prime: consume the beat-snap, then restore test position.
+        engine.process (source, fx.state, sr);
+        source.playheadAccumulator  = effectivePos;
+        source.correctionMultiplier = 1.0;
+
         for (int i = 0; i < 10; ++i)
             engine.process (source, fx.state, sr);
 
@@ -377,6 +389,11 @@ private:
         source.correctionMultiplier = 1.0;
 
         PhaseLockEngine engine (pub);
+
+        // Prime: consume the beat-snap, then restore test position.
+        engine.process (source, fx.state, sr);
+        source.playheadAccumulator  = effectivePos;
+        source.correctionMultiplier = 1.0;
 
         for (int i = 0; i < 10; ++i)
             engine.process (source, fx.state, sr);
@@ -449,7 +466,13 @@ private:
 
         PhaseLockEngine engine (pub);
 
-        // One block — should have moved only one step
+        // Prime: consume the beat-snap (first block), then restore test position
+        // so the P-controller runs exactly one step on the next call.
+        engine.process (source, fx.state, sr);
+        source.playheadAccumulator  = effectivePos;
+        source.correctionMultiplier = 1.0;
+
+        // One P-controller block — must move exactly one step
         engine.process (source, fx.state, sr);
 
         constexpr double expectedStep =
@@ -482,7 +505,12 @@ private:
 
         PhaseLockEngine engine (pub);
 
-        // Run a few blocks to start the ramp
+        // Prime: consume the beat-snap, then restore test position.
+        engine.process (source, fx.state, sr);
+        source.playheadAccumulator  = 0.3 * beatInterval;
+        source.correctionMultiplier = 1.0;
+
+        // Run a few P-controller blocks to start the ramp
         for (int i = 0; i < 5; ++i)
             engine.process (source, fx.state, sr);
 
@@ -522,6 +550,13 @@ private:
         source.correctionMultiplier = 0.998; // slightly off — should ramp back to 1.0
 
         PhaseLockEngine engine (pub);
+
+        // Prime: consume the beat-snap (adjusts by ~0.01 beats), then restore
+        // test position so the P-controller dead-band ramp can be measured.
+        engine.process (source, fx.state, sr);
+        source.playheadAccumulator  = effectivePos;
+        source.correctionMultiplier = 0.998;
+
         engine.process (source, fx.state, sr);
 
         // Within threshold: targetCorrection = 1.0 → ramp toward 1.0
@@ -554,13 +589,66 @@ private:
 
         PhaseLockEngine engine (pub);
 
-        // Must not crash; 0.5 stays as +0.5 → slow down
+        // Prime: consume the beat-snap (adjusts playhead by -0.5 beats).
+        engine.process (source, fx.state, sr);
+        // Restore phase=0.5 so the P-controller sees it on the next call.
+        source.playheadAccumulator  = effectivePos;
+        source.correctionMultiplier = 1.0;
+
+        // P-controller block: phase=0.5 must not crash and must trigger slowdown.
         engine.process (source, fx.state, sr);
 
         expectWithinAbsoluteError (source.phaseOffset.load(), 0.5f, 0.001f,
                                    "phase exactly 0.5 must be treated as +0.5");
         expect (source.correctionMultiplier < 1.0,
                 "0.5 beat phase must trigger slowdown");
+    }
+
+    void testBeatSnapOnEngagement()
+    {
+        beginTest ("PhaseLockEngine - beat snap on engagement: playhead snaps to master beat grid");
+
+        constexpr double sr           = 44100.0;
+        constexpr double bpm          = 128.0;
+        const double beatInterval     = sr * 60.0 / bpm;  // 20671.875 samples
+
+        // Slave is 0.3 beats ahead: after the snap the accumulator must decrease
+        // by 0.3 * beatInterval so it lands on the master beat boundary at 0.
+        const double initialPos  = 0.3 * beatInterval;
+        const double expectedPos = 0.0;
+
+        MasterClockPublisher pub;
+        pub.publish (makePlaying (bpm, 0));
+
+        TestFixture fx;
+        fx.setBpm (bpm);
+        fx.setSpeedMultiplier (1.0f);
+
+        DeckAudioSource source;
+        source.playheadAccumulator  = initialPos;
+        source.stretcherLatency     = 0;
+        source.correctionMultiplier = 1.0;
+
+        PhaseLockEngine engine (pub);  // prevIsSyncedInEngine_ = false → justEngaged
+
+        // First call: snap must fire
+        engine.process (source, fx.state, sr);
+
+        expectWithinAbsoluteError (source.playheadAccumulator, expectedPos, 1.0,
+                                   "playheadAccumulator must snap to beat boundary on engagement");
+        expect (source.correctionMultiplier == 1.0,
+                "correctionMultiplier must be 1.0 immediately after snap");
+        expectWithinAbsoluteError (source.phaseOffset.load(), 0.0f, 0.001f,
+                                   "phaseOffset must be 0 immediately after snap");
+
+        // Second call: snap must NOT fire again (prevIsSyncedInEngine_ = true);
+        // artificially restore phase so the P-controller engages.
+        source.playheadAccumulator  = initialPos;
+        source.correctionMultiplier = 1.0;
+        engine.process (source, fx.state, sr);
+
+        expect (source.correctionMultiplier < 1.0,
+                "P-controller must engage on second block (no repeat snap)");
     }
 };
 

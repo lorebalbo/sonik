@@ -105,6 +105,8 @@ void AudioEngine::stop()
 
 void AudioEngine::setMasterClockPublisher (MasterClockPublisher* publisher)
 {
+    cachedClockPublisher_ = publisher;  // cache for audio-thread master-playhead write
+
     for (auto& src : deckSources)
         src.masterClockPublisher.store (publisher, std::memory_order_release);
 
@@ -563,6 +565,25 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
 
     auto* outL = outputChannelData[0];
     auto* outR = outputChannelData[1];
+
+    // PRD-0028 phase fix: publish the master deck's current playhead position
+    // so PhaseLockEngine can compute phase relative to the master's beat grid.
+    // Runs BEFORE the per-deck loop, using each deck's playheadAccumulator from
+    // the end of the previous block (1-block lag, ~10 ms — imperceptible for sync).
+    if (cachedClockPublisher_ != nullptr)
+    {
+        const int masterSlot =
+            cachedClockPublisher_->masterSlotIndex.load (std::memory_order_relaxed);
+        if (masterSlot >= 0 && masterSlot < 4)
+        {
+            auto* masterSrc =
+                deckSlots[static_cast<size_t> (masterSlot)].load (std::memory_order_acquire);
+            if (masterSrc != nullptr)
+                cachedClockPublisher_->masterPlayheadSample.store (
+                    static_cast<int64_t> (masterSrc->playheadAccumulator),
+                    std::memory_order_relaxed);
+        }
+    }
 
     // Mix each registered deck into the output.
     for (size_t slot = 0; slot < 4; ++slot)

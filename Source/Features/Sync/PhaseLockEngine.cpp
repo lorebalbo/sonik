@@ -2,6 +2,7 @@
 #include "MasterClockPublisher.h"
 #include "../AudioEngine/DeckAudioSource.h"
 #include "../Deck/AudioThreadState.h"
+#include "../TimeStretch/TimeStretcher.h"
 #include <cmath>
 
 void PhaseLockEngine::process (DeckAudioSource& source,
@@ -17,8 +18,14 @@ void PhaseLockEngine::process (DeckAudioSource& source,
     {
         source.correctionMultiplier = 1.0;
         source.phaseOffset.store (0.0f, std::memory_order_relaxed);
+        prevIsSyncedInEngine_ = false;
         return;
     }
+
+    // Detect the first block after SYNC engagement.  prevIsSyncedInEngine_ is
+    // only committed true when all guards pass, so the snap is deferred to the
+    // first block where the deck is playing and the master clock is running.
+    const bool justEngaged = ! prevIsSyncedInEngine_;
 
     // Read snapshot once (SeqLock, lock-free)
     const auto snapshot = publisher_.read();
@@ -62,7 +69,7 @@ void PhaseLockEngine::process (DeckAudioSource& source,
     }
 
     // ------------------------------------------------------------------
-    // 2. Phase calculation
+    // 2. Phase calculation (corrected coordinate system)
     // ------------------------------------------------------------------
     // Account for stretcher latency: the audible output lags by this many
     // samples behind the internal accumulator.
@@ -71,18 +78,72 @@ void PhaseLockEngine::process (DeckAudioSource& source,
 
     const double beatInterval = (sampleRate * 60.0) / slaveBPM;
 
-    // fmod can return negative values when the dividend is negative —
-    // normalise to [0.0, 1.0) explicitly.
-    double rawOffset = std::fmod (
-        effectivePlayhead - static_cast<double> (snapshot.masterPhaseOriginSample),
-        beatInterval);
-    if (rawOffset < 0.0)
-        rawOffset += beatInterval;
+    // Each track has its own beat grid:  beats at anchor + n * beatInterval.
+    // After SyncEngine, slaveBPM == masterBPM, so both beat intervals are equal.
+    //
+    // masterPhase = fmod(masterPlayhead − masterAnchor, beatInterval) / beatInterval
+    // slavePhase  = fmod(slavePlayhead  − slaveAnchor,  beatInterval) / beatInterval
+    // phaseError  = slavePhase − masterPhase  (slave's offset from master, in beats)
+    //
+    // Using the master's CURRENT playhead (not the static anchor) ensures the formula
+    // is correct even after SYNC is toggled off and the two tracks drift apart.
+
+    // Helper: fmod normalised to [0, b) regardless of sign of a
+    const auto safeFmod = [] (double a, double b) noexcept -> double
+    {
+        double r = std::fmod (a, b);
+        if (r < 0.0) r += b;
+        return r;
+    };
+
+    const double masterPlayhead  = static_cast<double> (
+        publisher_.masterPlayheadSample.load (std::memory_order_relaxed));
+    const double masterAnchor    = static_cast<double> (snapshot.masterPhaseOriginSample);
+    const double slaveAnchor     = static_cast<double> (
+        state.beatgridAnchor.load (std::memory_order_relaxed));
+
+    const double masterPhaseOffset = safeFmod (masterPlayhead - masterAnchor, beatInterval);
+    const double slavePhaseOffset  = safeFmod (effectivePlayhead - slaveAnchor, beatInterval);
+
+    double rawOffset = slavePhaseOffset - masterPhaseOffset;
+    if (rawOffset < 0.0) rawOffset += beatInterval;
     double phaseOffsetBeats = rawOffset / beatInterval; // [0.0, 1.0)
 
     // Wrap to [-0.5, +0.5].  Exactly 0.5 stays as +0.5 (strict > to match spec).
     if (phaseOffsetBeats > 0.5)
         phaseOffsetBeats -= 1.0;
+
+    // ------------------------------------------------------------------
+    // 2b. Beat snap on initial SYNC engagement
+    // ------------------------------------------------------------------
+    // On the first block where all guards pass after isSynced transitions
+    // false → true, immediately adjust the playhead so the slave's beat
+    // grid aligns with the master's.  The ±0.5% P-controller then handles
+    // micro-drift correction from the next block onward.
+    if (justEngaged)
+    {
+        const double snapDelta = phaseOffsetBeats * beatInterval;
+        source.playheadAccumulator       -= snapDelta;
+        source.shadowPlayheadAccumulator -= snapDelta;  // keep slip-mode shadow consistent
+
+        // Clamp: do not rewind past the start of the track.
+        if (source.playheadAccumulator < 0.0)
+            source.playheadAccumulator += beatInterval;
+        if (source.shadowPlayheadAccumulator < 0.0)
+            source.shadowPlayheadAccumulator += beatInterval;
+
+        // Flush the stretcher's internal delay buffer so stale pre-snap audio
+        // does not drain out and cause an immediate phase regression.
+        if (auto* ts = source.timeStretcher.load (std::memory_order_acquire))
+            ts->reset();
+
+        source.correctionMultiplier = 1.0;
+        source.phaseOffset.store (0.0f, std::memory_order_relaxed);
+        prevIsSyncedInEngine_ = true;
+        return;
+    }
+
+    prevIsSyncedInEngine_ = true;  // mark for subsequent P-controller blocks
 
     // Publish for UI (PRD-0029 phase meter)
     source.phaseOffset.store (static_cast<float> (phaseOffsetBeats),
