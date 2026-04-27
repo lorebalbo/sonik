@@ -68,27 +68,30 @@ void PhaseLockEngine::process (DeckAudioSource& source,
         return;
     }
 
+    // Guard: master BPM must be valid before using it as a divisor below.
+    if (snapshot.masterBPM <= 0.0 || ! std::isfinite (snapshot.masterBPM))
+    {
+        source.correctionMultiplier = 1.0;
+        source.phaseOffset.store (0.0f, std::memory_order_relaxed);
+        return;
+    }
+
     // ------------------------------------------------------------------
-    // 2. Phase calculation (corrected coordinate system)
+    // 2. Phase calculation — native beat intervals for each track
     // ------------------------------------------------------------------
-    // Account for stretcher latency: the audible output lags by this many
-    // samples behind the internal accumulator.
-    const double effectivePlayhead =
-        source.playheadAccumulator - static_cast<double> (source.stretcherLatency);
-
-    const double beatInterval = (sampleRate * 60.0) / slaveBPM;
-
-    // Each track has its own beat grid:  beats at anchor + n * beatInterval.
-    // After SyncEngine, slaveBPM == masterBPM, so both beat intervals are equal.
+    // Each track has its own beat grid with its own native BPM and anchor.
+    // After SyncEngine sets speedMul = masterBPM / deckBPM, the slave plays
+    // at masterBPM in real time, but its FILE beat positions are still spaced
+    // at nativeSlaveBeatInterval = sampleRate * 60 / deckBPM.
     //
-    // masterPhase = fmod(masterPlayhead − masterAnchor, beatInterval) / beatInterval
-    // slavePhase  = fmod(slavePlayhead  − slaveAnchor,  beatInterval) / beatInterval
-    // phaseError  = slavePhase − masterPhase  (slave's offset from master, in beats)
+    // The correct formula computes each track's beat FRACTION in its own
+    // coordinate system (0.0 = on the beat, 0.5 = halfway through), then
+    // differences them.  Using masterBeatInterval as the slave's modulus
+    // produces a phase error proportional to (masterBPM − deckBPM)/masterBPM,
+    // up to ~6% of a beat at a 8-BPM spread — enough for an audible residual
+    // that the slow P-controller (±0.5%) takes 5–30 s to close.
     //
-    // Using the master's CURRENT playhead (not the static anchor) ensures the formula
-    // is correct even after SYNC is toggled off and the two tracks drift apart.
-
-    // Helper: fmod normalised to [0, b) regardless of sign of a
+    // fmod normalised to [0, b)
     const auto safeFmod = [] (double a, double b) noexcept -> double
     {
         double r = std::fmod (a, b);
@@ -96,22 +99,37 @@ void PhaseLockEngine::process (DeckAudioSource& source,
         return r;
     };
 
-    const double masterPlayhead  = static_cast<double> (
+    // Account for stretcher latency: the audible output lags by this many
+    // samples behind the internal accumulator.
+    const double effectivePlayhead =
+        source.playheadAccumulator - static_cast<double> (source.stretcherLatency);
+
+    // Master beat interval: derived from the master's native BPM.
+    const double masterBeatInterval = (sampleRate * 60.0) / snapshot.masterBPM;
+
+    // Slave beat interval: derived from the slave's NATIVE deckBPM (before speedMul).
+    // This represents how the slave's OWN beat grid is laid out in its audio file.
+    const double nativeSlaveBeatInterval = (sampleRate * 60.0) / deckBPM;
+
+    const double masterPlayhead = static_cast<double> (
         publisher_.masterPlayheadSample.load (std::memory_order_relaxed));
-    const double masterAnchor    = static_cast<double> (snapshot.masterPhaseOriginSample);
-    const double slaveAnchor     = static_cast<double> (
+    const double masterAnchor   = static_cast<double> (snapshot.masterPhaseOriginSample);
+    const double slaveAnchor    = static_cast<double> (
         state.beatgridAnchor.load (std::memory_order_relaxed));
 
-    const double masterPhaseOffset = safeFmod (masterPlayhead - masterAnchor, beatInterval);
-    const double slavePhaseOffset  = safeFmod (effectivePlayhead - slaveAnchor, beatInterval);
+    // Beat fractions: each in [0.0, 1.0) within its own track's grid.
+    const double masterBeatFraction =
+        safeFmod (masterPlayhead - masterAnchor, masterBeatInterval) / masterBeatInterval;
+    const double slaveBeatFraction =
+        safeFmod (effectivePlayhead - slaveAnchor, nativeSlaveBeatInterval) / nativeSlaveBeatInterval;
 
-    double rawOffset = slavePhaseOffset - masterPhaseOffset;
-    if (rawOffset < 0.0) rawOffset += beatInterval;
-    double phaseOffsetBeats = rawOffset / beatInterval; // [0.0, 1.0)
-
-    // Wrap to [-0.5, +0.5].  Exactly 0.5 stays as +0.5 (strict > to match spec).
-    if (phaseOffsetBeats > 0.5)
-        phaseOffsetBeats -= 1.0;
+    // Phase error in fractional beats, wrapped to [-0.5, +0.5].
+    // +0.5 = slave is a half-beat ahead → slow down.
+    // −0.5 = slave is a half-beat behind → speed up.
+    // Exactly ±0.5 stays as-is (both cases are valid snap directions).
+    double phaseOffsetBeats = slaveBeatFraction - masterBeatFraction;
+    if (phaseOffsetBeats > 0.5)       phaseOffsetBeats -= 1.0;
+    else if (phaseOffsetBeats < -0.5) phaseOffsetBeats += 1.0;
 
     // ------------------------------------------------------------------
     // 2b. Beat snap on initial SYNC engagement
@@ -122,15 +140,19 @@ void PhaseLockEngine::process (DeckAudioSource& source,
     // micro-drift correction from the next block onward.
     if (justEngaged)
     {
-        const double snapDelta = phaseOffsetBeats * beatInterval;
+        // snapDelta is in the slave's FILE sample space — use nativeSlaveBeatInterval,
+        // NOT masterBeatInterval.  Using the master's interval introduces an error
+        // proportional to (masterBPM − deckBPM)/masterBPM, leaving a residual phase
+        // offset that the slow P-controller (±0.5%) would take 5–30 s to close.
+        const double snapDelta = phaseOffsetBeats * nativeSlaveBeatInterval;
         source.playheadAccumulator       -= snapDelta;
         source.shadowPlayheadAccumulator -= snapDelta;  // keep slip-mode shadow consistent
 
         // Clamp: do not rewind past the start of the track.
         if (source.playheadAccumulator < 0.0)
-            source.playheadAccumulator += beatInterval;
+            source.playheadAccumulator += nativeSlaveBeatInterval;
         if (source.shadowPlayheadAccumulator < 0.0)
-            source.shadowPlayheadAccumulator += beatInterval;
+            source.shadowPlayheadAccumulator += nativeSlaveBeatInterval;
 
         // Flush the stretcher's internal delay buffer so stale pre-snap audio
         // does not drain out and cause an immediate phase regression.

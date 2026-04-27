@@ -22,6 +22,7 @@ public:
         testNoOpWhenSlipEnabled();
         testPhaseZeroNoCorrection();
         testBeatSnapOnEngagement();
+        testBeatSnapDifferentBpms();
         testPhaseAheadSlowsDown();
         testPhaseBehindSpeesUp();
         testUnwrappedPhaseWraps();
@@ -649,6 +650,80 @@ private:
 
         expect (source.correctionMultiplier < 1.0,
                 "P-controller must engage on second block (no repeat snap)");
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression test: snap must use each track's NATIVE beat interval.
+    //
+    // Historical bug: the formula used masterBeatInterval as the modulus for
+    // the slave's fmod, producing a post-snap residual error proportional to
+    // (masterBPM − deckBPM)/masterBPM.  At a typical 8-BPM spread (120 vs 128)
+    // the residual was ~0.06 beats — enough for the P-controller to take
+    // ~5 seconds to close, causing the grid to sound off immediately after SYNC.
+    // -----------------------------------------------------------------------
+    void testBeatSnapDifferentBpms()
+    {
+        beginTest ("PhaseLockEngine - beat snap with different BPMs: slave aligns exactly to master beat fraction");
+
+        constexpr double sr         = 44100.0;
+        constexpr double masterBpm  = 128.0;
+        constexpr double deckBpm    = 120.0;     // slave's native BPM
+        const double speedMul       = masterBpm / deckBpm;  // SyncEngine output
+
+        const double masterBeatInterval = sr * 60.0 / masterBpm;  // 20671.875
+        const double nativeSlaveBI      = sr * 60.0 / deckBpm;    // 22050.0
+
+        // Choose positions so both tracks are mid-beat (non-trivial phase).
+        // masterPlayhead = 20000  →  masterBeatFraction = 20000/20671.875 = 0.96752
+        // slavePlayhead  = 15000  →  slaveBeatFraction  = 15000/22050.0   = 0.68027
+        //
+        // With the CORRECT formula:  phaseError = 0.68027 − 0.96752 = −0.28725
+        //   snapDelta = −0.28725 × 22050 = −6331.9  →  newPos = 21331.9
+        //   expected slaveBeatFraction after snap = 21331.9/22050 ≈ 0.96742 ≈ masterBeatFraction ✓
+        //
+        // With the OLD (buggy) formula (using masterBeatInterval for both):
+        //   snapDelta = phaseError × 20671.875  →  newPos ≈ 20000
+        //   slaveBeatFraction = 20000/22050 = 0.9070 ≠ 0.9675   (residual ≈ −0.06 beats)
+
+        constexpr double masterPlayheadPos = 20000.0;
+        constexpr double slaveInitialPos   = 15000.0;
+
+        MasterClockPublisher pub;
+        pub.publish (makePlaying (masterBpm, /*anchor=*/ 0));
+        pub.masterPlayheadSample.store (static_cast<int64_t> (masterPlayheadPos),
+                                        std::memory_order_relaxed);
+
+        TestFixture fx;
+        fx.setBpm (deckBpm);
+        fx.setSpeedMultiplier (static_cast<float> (speedMul));
+
+        DeckAudioSource source;
+        source.playheadAccumulator  = slaveInitialPos;
+        source.stretcherLatency     = 0;
+        source.correctionMultiplier = 1.0;
+
+        PhaseLockEngine engine (pub);
+
+        // Snap fires on first call (justEngaged = true)
+        engine.process (source, fx.state, sr);
+
+        // Compute expected post-snap slave beat fraction
+        const double expectedMasterFraction = masterPlayheadPos / masterBeatInterval;     // 0.96752
+        const double postSnapSlaveFraction  = std::fmod (source.playheadAccumulator,
+                                                         nativeSlaveBI) / nativeSlaveBI;
+
+        expectWithinAbsoluteError (postSnapSlaveFraction,
+                                   expectedMasterFraction,
+                                   0.001,  // within 0.1% of a beat
+                                   "slave beat fraction must match master beat fraction after snap");
+
+        // correctionMultiplier must be 1.0 right after snap
+        expect (source.correctionMultiplier == 1.0,
+                "correctionMultiplier must be 1.0 immediately after snap");
+
+        // phaseOffset published to UI must be ~0
+        expectWithinAbsoluteError (source.phaseOffset.load(), 0.0f, 0.001f,
+                                   "phaseOffset must be ~0 immediately after snap");
     }
 };
 
