@@ -175,4 +175,13 @@ struct DeckAudioSource
     // --- Sync Engine state (PRD-0027, audio thread only) ---
     // Tracks whether the deck was synced last block, used to detect synced→unsynced transition.
     bool prevIsSynced = false;
+
+    // --- Phase Lock Engine state (PRD-0028) ---
+    // correctionMultiplier is audio-thread-only (never std::atomic): only read/written inside
+    // audioDeviceIOCallbackWithContext.  Applied multiplicatively to speedMultiplier each block.
+    double correctionMultiplier = 1.0;
+
+    // phaseOffset is published from the audio thread for the phase meter UI (PRD-0029).
+    // Written each block by PhaseLockEngine, read asynchronously by the message thread.
+    std::atomic<float> phaseOffset { 0.0f };
 };

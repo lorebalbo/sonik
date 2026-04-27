@@ -12,6 +12,7 @@
 
 class MasterClockPublisher; // PRD-0026
 class SyncEngine;           // PRD-0027
+class PhaseLockEngine;      // PRD-0028
 
 class AudioEngine final : public juce::AudioIODeviceCallback,
                            public juce::ChangeListener,
@@ -123,6 +124,9 @@ private:
 
     // Per-deck sync engines (PRD-0027, owned here, set in setMasterClockPublisher)
     std::array<std::unique_ptr<SyncEngine>, 4>    deckSyncEngines;
+
+    // Per-deck phase lock engines (PRD-0028, owned here, set in setMasterClockPublisher)
+    std::array<std::unique_ptr<PhaseLockEngine>, 4> deckPhaseLockEngines;
 
     // CPU load monitoring
     struct CpuLoadMonitor

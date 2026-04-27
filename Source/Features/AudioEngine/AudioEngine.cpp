@@ -2,6 +2,7 @@
 #include "../Quantize/QuantizeService.h"
 #include "../Sync/MasterClockPublisher.h"
 #include "../Sync/SyncEngine.h"
+#include "../Sync/PhaseLockEngine.h"
 #include <cmath>
 #include <algorithm>
 
@@ -110,6 +111,10 @@ void AudioEngine::setMasterClockPublisher (MasterClockPublisher* publisher)
     // Create or destroy per-deck sync engines (PRD-0027)
     for (int i = 0; i < 4; ++i)
         deckSyncEngines[static_cast<size_t> (i)] = publisher ? std::make_unique<SyncEngine> (*publisher) : nullptr;
+
+    // Create or destroy per-deck phase lock engines (PRD-0028)
+    for (int i = 0; i < 4; ++i)
+        deckPhaseLockEngines[static_cast<size_t> (i)] = publisher ? std::make_unique<PhaseLockEngine> (*publisher) : nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -889,9 +894,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             source->prevIsSynced = curIsSynced;
 }
 
-        // 4. Read speed
+        // 3d. Phase lock engine (PRD-0028) — refines correctionMultiplier after SyncEngine
+        {
+            auto* ple = deckPhaseLockEngines[slot].get();
+            if (ple != nullptr)
+                ple->process (*source, *audioState,
+                              currentSampleRate.load (std::memory_order_relaxed));
+        }
+
+        // 4. Read speed (PRD-0028: correctionMultiplier applied multiplicatively)
         float speed = juce::jmax (0.0f,
-            audioState->speedMultiplier.load (std::memory_order_relaxed));
+            static_cast<float> (
+                static_cast<double> (audioState->speedMultiplier.load (std::memory_order_relaxed))
+                * source->correctionMultiplier));
 
         // Quick path: not playing and no active fade → silence
         if (status != PlaybackStatusCode::playing
