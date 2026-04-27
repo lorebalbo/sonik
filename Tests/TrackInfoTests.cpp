@@ -13,6 +13,8 @@
 #include "Features/BeatGrid/BeatGridManager.h"
 #include "Features/StemSeparation/StemSeparationManager.h"
 #include "Features/StemSeparation/ModelManager.h"
+#include "Features/Sync/MasterClockPublisher.h"
+#include "Features/Sync/MasterClockManager.h"
 
 class TrackInfoTests : public juce::UnitTest
 {
@@ -81,6 +83,8 @@ private:
         std::unique_ptr<AudioFileLoader> loader;
         std::unique_ptr<ModelManager> modelMgr;
         std::unique_ptr<StemSeparationManager> stemMgr;
+        std::unique_ptr<MasterClockPublisher> clockPublisher;
+        std::unique_ptr<MasterClockManager>   clockManager;
 
         TestContext()
         {
@@ -92,10 +96,14 @@ private:
             modelMgr = std::make_unique<ModelManager> (mgr->getStateTree());
             stemMgr  = std::make_unique<StemSeparationManager> (
                 *mgr, *db, *modelMgr, *engine);
+            clockPublisher = std::make_unique<MasterClockPublisher>();
+            clockManager   = std::make_unique<MasterClockManager> (mgr->getStateTree(), *clockPublisher);
         }
 
         ~TestContext()
         {
+            clockManager.reset();
+            clockPublisher.reset();
             stemMgr.reset();
             modelMgr.reset();
             loader.reset();
@@ -309,15 +317,16 @@ private:
         WaveformManager waveformMgr (*ctx.mgr, *ctx.db, *ctx.engine);
         BeatGridManager beatGridMgr (*ctx.mgr, *ctx.db, *ctx.engine);
 
-        DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, beatGridMgr, *ctx.stemMgr, deckId);
+        DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, beatGridMgr, *ctx.stemMgr, *ctx.clockManager, deckId);
         shell.setBounds (0, 0, 400, 300);
 
         // Before loading: trackInfo + stemSeparateButton + stemVocToggle + stemInstToggle
         //                 + keyLockButton + keyStepperComponent + pitchFaderComponent
-        //                 + syncButton + quantizeButton + slipButton + controllerWidget = 11
+        //                 + masterButton + syncButton + quantizeButton + slipButton
+        //                 + controllerWidget = 12
         int initialChildren = shell.getNumChildComponents();
-        expectEquals (initialChildren, 11,
-                      "Before track load, DeckShellComponent should have trackInfo, stem buttons, key lock, key stepper, pitch fader, sync, quantize, slip, and controller widget");
+        expectEquals (initialChildren, 12,
+                      "Before track load, DeckShellComponent should have trackInfo, stem buttons, key lock, key stepper, pitch fader, master, sync, quantize, slip, and controller widget");
 
         // Load a track
         auto meta = makeSampleMetadata ("Lifecycle Track");

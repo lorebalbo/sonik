@@ -13,6 +13,9 @@
 #include "KeyLockButton.h"
 #include "KeyStepperComponent.h"
 #include "SyncButtonComponent.h"
+#include "../../Sync/UI/SyncButton.h"
+#include "../../Sync/UI/MasterButton.h"
+#include "../../Sync/MasterClockManager.h"
 #include "ControllerWidget.h"
 #include "../../Cue/HotCueManager.h"
 #include "../../Cue/HotCuePadComponent.h"
@@ -40,6 +43,7 @@ public:
                         WaveformManager& waveformMgr,
                         BeatGridManager& beatGridMgr,
                         StemSeparationManager& stemMgr,
+                        MasterClockManager& clockMgr,
                         const juce::String& deckId);
     ~DeckShellComponent() override;
 
@@ -94,6 +98,7 @@ private:
     WaveformManager&       waveformManager;
     BeatGridManager&       beatGridManager;
     StemSeparationManager& stemSeparationManager;
+    MasterClockManager&    masterClockManager;
     juce::String           deckId;
     juce::ValueTree        deckTree;
     juce::ValueTree        rootState;
@@ -117,7 +122,8 @@ private:
     std::unique_ptr<PitchFaderComponent>  pitchFaderComponent;
 
     // Control row (below waveform)
-    std::unique_ptr<SyncButtonComponent>     syncButton;
+    std::unique_ptr<MasterButton>            masterButton;
+    std::unique_ptr<SyncButton>              syncButton;
     std::unique_ptr<QuantizeButtonComponent> quantizeButton;
     std::unique_ptr<SlipButtonComponent>     slipButton;
 

@@ -6,6 +6,7 @@
 #include "../../AudioEngine/AudioFileLoader.h"
 #include "../../Waveform/WaveformManager.h"
 #include "../../BeatGrid/BeatGridManager.h"
+#include "../../Sync/MasterClockManager.h"
 #include "GlobalToolbar.h"
 #include "DeckLayoutManager.h"
 
@@ -20,12 +21,13 @@ public:
                           AudioFileLoader& loader,
                           WaveformManager& waveformMgr,
                           BeatGridManager& beatGridMgr,
-                          StemSeparationManager& stemMgr)
+                          StemSeparationManager& stemMgr,
+                          MasterClockManager& clockMgr)
         : deckStateManager (deckState),
           audioEngine (engine),
           rootState (deckState.getStateTree()),
           toolbar (deckState),
-          layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr)
+          layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr, clockMgr)
     {
         setOpaque (true);
         setWantsKeyboardFocus (true);
@@ -90,10 +92,18 @@ public:
                 auto st = static_cast<PlaybackStatusCode> (
                     state->playbackStatus.load (std::memory_order_relaxed));
                 if (st == PlaybackStatusCode::playing)
+                {
                     audioEngine.sendTransportCommand (activeDeck, TransportCommand::Pause);
+                    // Keep ValueTree in sync so MasterClockManager is notified (PRD-0027)
+                    deckStateManager.setPlaybackStatus (activeDeck, "paused");
+                }
                 else if (st == PlaybackStatusCode::stopped
                          || st == PlaybackStatusCode::paused)
+                {
                     audioEngine.sendTransportCommand (activeDeck, TransportCommand::Play);
+                    // Keep ValueTree in sync so MasterClockManager is notified (PRD-0027)
+                    deckStateManager.setPlaybackStatus (activeDeck, "playing");
+                }
             }
             return true;
         }
@@ -102,6 +112,15 @@ public:
         if (key.getTextCharacter() == 's' || key.getTextCharacter() == 'S')
         {
             auto activeDeck = deckStateManager.getActiveDeckId();
+            auto* state = deckStateManager.getAudioState (activeDeck);
+            if (state != nullptr)
+            {
+                auto st = static_cast<PlaybackStatusCode> (
+                    state->playbackStatus.load (std::memory_order_relaxed));
+                if (st == PlaybackStatusCode::playing || st == PlaybackStatusCode::paused)
+                    // Keep ValueTree in sync so MasterClockManager is notified (PRD-0027)
+                    deckStateManager.setPlaybackStatus (activeDeck, "stopped");
+            }
             audioEngine.sendTransportCommand (activeDeck, TransportCommand::Stop);
             return true;
         }

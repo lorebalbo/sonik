@@ -49,6 +49,11 @@ struct DeckAudioState
     std::atomic<bool>     stemDrumsMuted  { false };
     std::atomic<bool>     stemBassMuted   { false };
     std::atomic<bool>     stemOtherMuted  { false };
+
+    // Sync engine state (PRD-0027) – audio thread reads, message thread writes
+    std::atomic<bool>   isSynced            { false };
+    std::atomic<double> deckBPM             { 0.0 };   // from BeatGrid::bpm
+    std::atomic<float>  pitchFaderMultiplier { 1.0f }; // mirrors speedMultiplier from pitch fader
 };
 
 // Syncs ValueTree property changes to DeckAudioState atomics on the message thread.
@@ -75,8 +80,11 @@ private:
     {
         state.gain.store (static_cast<float> (tree.getProperty (IDs::gain, 1.0f)),
                           std::memory_order_relaxed);
-        state.speedMultiplier.store (static_cast<float> (tree.getProperty (IDs::speedMultiplier, 1.0f)),
-                                    std::memory_order_relaxed);
+        {
+            float faderMul = static_cast<float> (tree.getProperty (IDs::speedMultiplier, 1.0f));
+            state.speedMultiplier.store (faderMul, std::memory_order_relaxed);
+            state.pitchFaderMultiplier.store (faderMul, std::memory_order_relaxed);
+        }
         state.playbackStatus.store (statusStringToCode (tree.getProperty (IDs::playbackStatus, "empty")),
                                    std::memory_order_relaxed);
         state.quantizeEnabled.store (static_cast<bool> (tree.getProperty (IDs::quantizeEnabled, false)),
@@ -114,7 +122,7 @@ private:
                 std::memory_order_relaxed);
         }
 
-        // Sync beatgrid parameters (PRD-0013)
+        // Sync beatgrid parameters (PRD-0013) + deckBPM for SyncEngine (PRD-0027)
         auto beatGrid = tree.getChildWithName (IDs::BeatGrid);
         if (beatGrid.isValid())
         {
@@ -124,7 +132,15 @@ private:
             state.beatgridInterval.store (
                 static_cast<double> (beatGrid.getProperty (IDs::beatIntervalSamples, 0.0)),
                 std::memory_order_relaxed);
+            state.deckBPM.store (
+                static_cast<double> (beatGrid.getProperty (IDs::bpm, 0.0)),
+                std::memory_order_relaxed);
         }
+
+        // Sync sync-engine state (PRD-0027)
+        state.isSynced.store (
+            static_cast<bool> (tree.getProperty (IDs::isSynced, false)),
+            std::memory_order_relaxed);
         if (cuePoints.isValid())
         {
             for (int i = 0; i < cuePoints.getNumChildren() && i < 8; ++i)
@@ -167,7 +183,13 @@ private:
             if (property == IDs::gain)
                 state.gain.store (static_cast<float> (changedTree[property]), std::memory_order_relaxed);
             else if (property == IDs::speedMultiplier)
-                state.speedMultiplier.store (static_cast<float> (changedTree[property]), std::memory_order_relaxed);
+            {
+                float faderMul = static_cast<float> (changedTree[property]);
+                state.speedMultiplier.store (faderMul, std::memory_order_relaxed);
+                state.pitchFaderMultiplier.store (faderMul, std::memory_order_relaxed);
+            }
+            else if (property == IDs::isSynced)
+                state.isSynced.store (static_cast<bool> (changedTree[property]), std::memory_order_relaxed);
             else if (property == IDs::playbackStatus)
                 state.playbackStatus.store (statusStringToCode (changedTree[property]), std::memory_order_relaxed);
             else if (property == IDs::quantizeEnabled)
@@ -197,7 +219,7 @@ private:
                 state.hotCuePositions[idx].store (pos, std::memory_order_relaxed);
             }
         }
-        // BeatGrid parameters changed (PRD-0013)
+        // BeatGrid parameters changed (PRD-0013) + deckBPM (PRD-0027)
         else if (changedTree.hasType (IDs::BeatGrid))
         {
             if (property == IDs::anchorSample)
@@ -206,6 +228,9 @@ private:
             else if (property == IDs::beatIntervalSamples)
                 state.beatgridInterval.store (static_cast<double> (changedTree[property]),
                                               std::memory_order_relaxed);
+            else if (property == IDs::bpm)
+                state.deckBPM.store (static_cast<double> (changedTree[property]),
+                                     std::memory_order_relaxed);
         }
         // Loop state changed (PRD-0014)
         else if (changedTree.hasType (IDs::Loop))

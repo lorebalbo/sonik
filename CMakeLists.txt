@@ -183,6 +183,12 @@ target_sources(Sonik PRIVATE
     Source/Features/Sync/MasterClockPublisher.cpp
     Source/Features/Sync/MasterClockManager.h
     Source/Features/Sync/MasterClockManager.cpp
+    Source/Features/Sync/SyncEngine.h
+    Source/Features/Sync/SyncEngine.cpp
+    Source/Features/Sync/UI/SyncButton.h
+    Source/Features/Sync/UI/SyncButton.cpp
+    Source/Features/Sync/UI/MasterButton.h
+    Source/Features/Sync/UI/MasterButton.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -246,6 +252,7 @@ add_executable(SonikTests
     Tests/StemPlaybackTests.cpp
     Tests/StemStretchTests.cpp
     Tests/MasterClockTests.cpp
+    Tests/SyncEngineTests.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
@@ -282,6 +289,9 @@ add_executable(SonikTests
     Source/Features/StemSeparation/UI/StemToggleComponent.cpp
     Source/Features/Sync/MasterClockPublisher.cpp
     Source/Features/Sync/MasterClockManager.cpp
+    Source/Features/Sync/SyncEngine.cpp
+    Source/Features/Sync/UI/SyncButton.cpp
+    Source/Features/Sync/UI/MasterButton.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

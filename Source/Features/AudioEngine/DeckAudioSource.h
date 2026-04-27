@@ -171,4 +171,8 @@ struct DeckAudioSource
     // Audio thread calls masterClockPublisher.load(acquire) then publisher->read() to get clock.
     // The pointer itself is atomic; the SeqLock inside MasterClockPublisher makes read() lock-free.
     std::atomic<MasterClockPublisher*> masterClockPublisher { nullptr };
+
+    // --- Sync Engine state (PRD-0027, audio thread only) ---
+    // Tracks whether the deck was synced last block, used to detect synced→unsynced transition.
+    bool prevIsSynced = false;
 };

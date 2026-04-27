@@ -6,6 +6,7 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
                                         WaveformManager& waveformMgr,
                                         BeatGridManager& beatGridMgr,
                                         StemSeparationManager& stemMgr,
+                                        MasterClockManager& clockMgr,
                                         const juce::String& id)
     : deckStateManager (deckState),
       audioEngine (engine),
@@ -13,6 +14,7 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
       waveformManager (waveformMgr),
       beatGridManager (beatGridMgr),
       stemSeparationManager (stemMgr),
+      masterClockManager (clockMgr),
       deckId (id),
       deckTree (deckState.getDeckState (id)),
       rootState (deckState.getStateTree())
@@ -64,7 +66,13 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     // -----------------------------------------------------------------------
     // Control row
     // -----------------------------------------------------------------------
-    syncButton = std::make_unique<SyncButtonComponent> (deckTree);
+    // Compute deck index (A=0, B=1, C=2, D=3) for MasterButton
+    const int deckIdx = (deckId == "A") ? 0 : (deckId == "B") ? 1 : (deckId == "C") ? 2 : 3;
+
+    masterButton = std::make_unique<MasterButton> (deckTree, masterClockManager, deckIdx);
+    addAndMakeVisible (*masterButton);
+
+    syncButton = std::make_unique<SyncButton> (deckTree);
     addAndMakeVisible (*syncButton);
 
     quantizeButton = std::make_unique<QuantizeButtonComponent> (deckTree);
@@ -528,16 +536,21 @@ void DeckShellComponent::resized()
 
     bounds.removeFromTop (kGap);
 
-    // --- Row 4: Control row (SYNC / QUANT / SLIP) — same width as waveform ---
+    // --- Row 4: Control row (MASTER / SYNC / QUANT / SLIP) ---
     auto controlRow = bounds.removeFromTop (kControlRowH);
     controlRow = controlRow.withWidth (panelW);
     {
-        // Divide the full panelW equally across 3 buttons with 2 gaps of 10px.
-        const int ctrlGap = 10;
-        const int availW  = controlRow.getWidth() - 2 * ctrlGap;
-        const int syncW_  = availW / 3;
-        const int quantW_ = availW / 3;
-        const int slipW_  = availW - syncW_ - quantW_; // absorbs rounding
+        // Four buttons with three gaps of 10 px
+        const int ctrlGap  = 10;
+        const int availW   = controlRow.getWidth() - 3 * ctrlGap;
+        const int masterW_ = availW / 4;
+        const int syncW_   = availW / 4;
+        const int quantW_  = availW / 4;
+        const int slipW_   = availW - masterW_ - syncW_ - quantW_;
+
+        if (masterButton != nullptr)
+            masterButton->setBounds (controlRow.removeFromLeft (masterW_));
+        controlRow.removeFromLeft (ctrlGap);
 
         if (syncButton != nullptr)
             syncButton->setBounds (controlRow.removeFromLeft (syncW_));

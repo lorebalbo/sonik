@@ -83,7 +83,7 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
         });
 
     mainWindow = std::make_unique<MainWindow> (
-        *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager, *beatGridManager, *stemSeparationManager);
+        *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager, *beatGridManager, *stemSeparationManager, *masterClockManager);
 }
 
 void SonikApplication::shutdown()

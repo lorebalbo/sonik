@@ -11,6 +11,7 @@
 #include <atomic>
 
 class MasterClockPublisher; // PRD-0026
+class SyncEngine;           // PRD-0027
 
 class AudioEngine final : public juce::AudioIODeviceCallback,
                            public juce::ChangeListener,
@@ -119,6 +120,9 @@ private:
     // Fixed-size deck source slots (lock-free, audio-thread safe)
     std::array<DeckAudioSource, 4>                deckSources;
     std::array<std::atomic<DeckAudioSource*>, 4>  deckSlots;
+
+    // Per-deck sync engines (PRD-0027, owned here, set in setMasterClockPublisher)
+    std::array<std::unique_ptr<SyncEngine>, 4>    deckSyncEngines;
 
     // CPU load monitoring
     struct CpuLoadMonitor

@@ -1,6 +1,7 @@
 #include "AudioEngine.h"
 #include "../Quantize/QuantizeService.h"
 #include "../Sync/MasterClockPublisher.h"
+#include "../Sync/SyncEngine.h"
 #include <cmath>
 #include <algorithm>
 
@@ -105,6 +106,10 @@ void AudioEngine::setMasterClockPublisher (MasterClockPublisher* publisher)
 {
     for (auto& src : deckSources)
         src.masterClockPublisher.store (publisher, std::memory_order_release);
+
+    // Create or destroy per-deck sync engines (PRD-0027)
+    for (int i = 0; i < 4; ++i)
+        deckSyncEngines[static_cast<size_t> (i)] = publisher ? std::make_unique<SyncEngine> (*publisher) : nullptr;
 }
 
 // ---------------------------------------------------------------------------
@@ -865,6 +870,24 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         // When slip is disabled, clear displacement state
         if (! slipEnabled)
             source->slipDisplacedLocal = false;
+
+        // 3c. Sync engine (PRD-0027) — runs before speed is read
+        {
+            const bool curIsSynced = audioState->isSynced.load (std::memory_order_relaxed);
+            if (curIsSynced)
+            {
+                auto* se = deckSyncEngines[slot].get();
+                if (se != nullptr)
+                    se->process (*audioState);
+            }
+            else if (source->prevIsSynced)
+            {
+                // Transition synced→unsynced: snap speedMultiplier to pitch fader value
+                const float faderMul = audioState->pitchFaderMultiplier.load (std::memory_order_relaxed);
+                audioState->speedMultiplier.store (faderMul, std::memory_order_relaxed);
+            }
+            source->prevIsSynced = curIsSynced;
+}
 
         // 4. Read speed
         float speed = juce::jmax (0.0f,
