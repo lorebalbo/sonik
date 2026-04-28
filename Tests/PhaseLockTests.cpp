@@ -22,10 +22,13 @@ public:
         testNoOpWhenSlipEnabled();
         testPhaseZeroNoCorrection();
         testBeatSnapOnEngagement();
+        testPauseResumeWithSyncReengagesSnap();
         testBeatSnapDifferentBpms();
         testPhaseAheadSlowsDown();
         testPhaseBehindSpeesUp();
         testUnwrappedPhaseWraps();
+        testMasterPitchUsesNativeMasterGrid();
+        testStretcherLatencyIgnoredWhenKeyLockOff();
         testStretcherLatencyApplied();
         testRampIsGradual();
         testSyncDisengagedSnapsToOne();
@@ -131,6 +134,11 @@ private:
             deckTree.setProperty (IDs::slipEnabled, slip, nullptr);
         }
 
+        void setKeyLock (bool enabled)
+        {
+            deckTree.setProperty (IDs::keyLockEnabled, enabled, nullptr);
+        }
+
         void setSpeedMultiplier (float mul)
         {
             deckTree.setProperty (IDs::speedMultiplier, mul, nullptr);
@@ -141,6 +149,7 @@ private:
     {
         MasterClockSnapshot s;
         s.masterBPM               = bpm;
+        s.masterNativeBPM         = bpm;
         s.masterIsPlaying         = true;
         s.masterPhaseOriginSample = origin;
         return s;
@@ -181,6 +190,7 @@ private:
         MasterClockPublisher pub;
         MasterClockSnapshot snap;
         snap.masterBPM       = 128.0;
+        snap.masterNativeBPM = 128.0;
         snap.masterIsPlaying = false;
         pub.publish (snap);
 
@@ -407,7 +417,7 @@ private:
 
     void testStretcherLatencyApplied()
     {
-        beginTest ("PhaseLockEngine - stretcherLatency=1024: effectivePlayhead = accumulator - 1024");
+        beginTest ("PhaseLockEngine - key lock on: stretcherLatency=1024 is compensated in phase");
 
         // If we place the accumulator exactly on-beat (accounting for latency),
         // the effective playhead should still be on-beat → phase ≈ 0.
@@ -426,6 +436,7 @@ private:
         TestFixture fx;
         fx.setBpm (bpm);
         fx.setSpeedMultiplier (1.0f);
+        fx.setKeyLock (true);
 
         DeckAudioSource source;
         source.playheadAccumulator  = accumulator;
@@ -433,6 +444,11 @@ private:
         source.correctionMultiplier = 1.0;
 
         PhaseLockEngine engine (pub);
+
+        // Prime one block to consume initial engagement snap logic.
+        engine.process (source, fx.state, sr);
+        source.playheadAccumulator  = accumulator;
+        source.correctionMultiplier = 1.0;
         engine.process (source, fx.state, sr);
 
         // effectivePlayhead = accumulator - latency = beatInterval → phase = 0
@@ -440,6 +456,91 @@ private:
                                    "with latency compensation phase must be ~0");
         expect (source.correctionMultiplier == 1.0,
                 "correctionMultiplier must be 1.0 at zero phase");
+    }
+
+    void testMasterPitchUsesNativeMasterGrid()
+    {
+        beginTest ("PhaseLockEngine - master pitch change uses native master grid for phase");
+
+        constexpr double sr = 44100.0;
+        constexpr double masterNativeBpm = 120.0;
+        constexpr double masterEffectiveBpm = 144.0; // +20% pitch on master
+        constexpr double slaveNativeBpm = 128.0;
+        const double slaveSpeedMul = masterEffectiveBpm / slaveNativeBpm; // SyncEngine target
+
+        const double masterNativeBeatInterval = sr * 60.0 / masterNativeBpm;
+        const double slaveNativeBeatInterval  = sr * 60.0 / slaveNativeBpm;
+
+        // Both decks are truly aligned at 0.4 beats in their own native grids.
+        const double alignedFraction = 0.4;
+        const double masterPlayhead = alignedFraction * masterNativeBeatInterval;
+        const double slavePlayhead = alignedFraction * slaveNativeBeatInterval;
+
+        MasterClockPublisher pub;
+        MasterClockSnapshot snap;
+        snap.masterBPM = masterEffectiveBpm;
+        snap.masterNativeBPM = masterNativeBpm;
+        snap.masterIsPlaying = true;
+        snap.masterPhaseOriginSample = 0;
+        pub.publish (snap);
+        pub.masterPlayheadSample.store (static_cast<int64_t> (masterPlayhead), std::memory_order_relaxed);
+
+        TestFixture fx;
+        fx.setBpm (slaveNativeBpm);
+        fx.setSpeedMultiplier (static_cast<float> (slaveSpeedMul));
+
+        DeckAudioSource source;
+        source.playheadAccumulator = slavePlayhead;
+        source.shadowPlayheadAccumulator = slavePlayhead;
+        source.stretcherLatency = 0;
+        source.correctionMultiplier = 1.0;
+
+        PhaseLockEngine engine (pub);
+        engine.process (source, fx.state, sr); // just-engaged block performs snap
+
+        const double postSnapFraction =
+            std::fmod (source.playheadAccumulator, slaveNativeBeatInterval) / slaveNativeBeatInterval;
+
+        expectWithinAbsoluteError (postSnapFraction, alignedFraction, 0.01,
+                                   "already-aligned slave must stay aligned when master is pitched");
+        expectWithinAbsoluteError (source.phaseOffset.load(), 0.0f, 0.001f,
+                                   "phaseOffset must be 0 after engagement when both decks are aligned");
+    }
+
+    void testStretcherLatencyIgnoredWhenKeyLockOff()
+    {
+        beginTest ("PhaseLockEngine - key lock off: stretcherLatency must NOT bias phase");
+
+        constexpr double sr    = 44100.0;
+        constexpr double bpm   = 128.0;
+        const double beatInterval = sr * 60.0 / bpm;
+        constexpr int latency = 1024;
+
+        MasterClockPublisher pub;
+        pub.publish (makePlaying (bpm, 0));
+
+        TestFixture fx;
+        fx.setBpm (bpm);
+        fx.setSpeedMultiplier (1.0f);
+        fx.setKeyLock (false);
+
+        DeckAudioSource source;
+        source.playheadAccumulator  = 0.3 * beatInterval;
+        source.stretcherLatency     = latency;
+        source.correctionMultiplier = 1.0;
+
+        PhaseLockEngine engine (pub);
+
+        // Prime first block to consume initial engagement snap.
+        engine.process (source, fx.state, sr);
+
+        // Re-apply test position and evaluate one steady-state block.
+        source.playheadAccumulator  = 0.3 * beatInterval;
+        source.correctionMultiplier = 1.0;
+        engine.process (source, fx.state, sr);
+
+        expectWithinAbsoluteError (source.phaseOffset.load(), 0.3f, 0.01f,
+                                   "phase must reflect raw playhead when key lock is off");
     }
 
     void testRampIsGradual()
@@ -650,6 +751,59 @@ private:
 
         expect (source.correctionMultiplier < 1.0,
                 "P-controller must engage on second block (no repeat snap)");
+    }
+
+    void testPauseResumeWithSyncReengagesSnap()
+    {
+        beginTest ("PhaseLockEngine - synced deck pause/resume re-engages snap to current master phase");
+
+        constexpr double sr  = 44100.0;
+        constexpr double bpm = 128.0;
+        const double beatInterval = sr * 60.0 / bpm;
+        constexpr double masterFractionAfterPause = 0.4;
+
+        MasterClockPublisher pub;
+        pub.publish (makePlaying (bpm, 0));
+        pub.masterPlayheadSample.store (0, std::memory_order_relaxed);
+
+        TestFixture fx;
+        fx.setBpm (bpm);
+        fx.setSpeedMultiplier (1.0f);
+
+        DeckAudioSource source;
+        source.playheadAccumulator  = 0.0;
+        source.stretcherLatency     = 0;
+        source.correctionMultiplier = 1.0;
+
+        PhaseLockEngine engine (pub);
+
+        // Initial engagement snap at master phase 0.0
+        engine.process (source, fx.state, sr);
+
+        // Pause slave deck while keeping SYNC latched.
+        fx.setPlaying (false);
+        engine.process (source, fx.state, sr);
+
+        // Master progresses while slave is paused.
+        pub.masterPlayheadSample.store (
+            static_cast<int64_t> (masterFractionAfterPause * beatInterval),
+            std::memory_order_relaxed);
+
+        // Resume slave deck: first playing block must perform a fresh snap.
+        fx.setPlaying (true);
+        source.correctionMultiplier = 1.0;
+        source.playheadAccumulator  = 0.0;
+        engine.process (source, fx.state, sr);
+
+        const double postSnapFraction =
+            std::fmod (source.playheadAccumulator, beatInterval) / beatInterval;
+
+        expectWithinAbsoluteError (source.phaseOffset.load(), 0.0f, 0.001f,
+                                   "phaseOffset must reset to 0 immediately after resume snap");
+        expectWithinAbsoluteError (source.correctionMultiplier, 1.0, 1e-12,
+                                   "correctionMultiplier must be 1.0 immediately after resume snap");
+        expectWithinAbsoluteError (postSnapFraction, masterFractionAfterPause, 0.01,
+                                   "resumed slave must snap to current master beat fraction");
     }
 
     // -----------------------------------------------------------------------

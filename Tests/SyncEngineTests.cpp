@@ -56,6 +56,7 @@ private:
     {
         MasterClockSnapshot snap;
         snap.masterBPM               = bpm;
+        snap.masterNativeBPM         = bpm;
         snap.masterIsPlaying         = isPlaying;
         snap.masterPhaseOriginSample = phase;
         return snap;

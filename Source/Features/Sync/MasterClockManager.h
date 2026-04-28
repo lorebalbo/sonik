@@ -68,6 +68,16 @@ private:
     /// Return "playing", "paused", "stopped", or "empty" for a deck tree.
     static juce::String getPlaybackStatus (const juce::ValueTree& deckTree);
 
+    /// Compute effective master BPM from beat-grid BPM and deck speed multiplier.
+    /// For an unsynced master deck, speedMultiplier mirrors the pitch-fader value.
+    static double getDeckEffectiveBpm (const juce::ValueTree& deckTree);
+
+    /// Read native beat-grid BPM (source-domain BPM before pitch/sync speed scaling).
+    static double getDeckNativeBpm (const juce::ValueTree& deckTree);
+
+    /// Convert deck ID (A/B/C/D) to fixed audio slot index (0/1/2/3).
+    static int deckIdToSlot (const juce::String& deckId);
+
     /// Find the lowest-index deck that is currently "playing". Returns -1 if none.
     int findLowestPlayingDeckIndex() const;
 
@@ -76,4 +86,5 @@ private:
 
     /// Most-recently-published BPM; retained when entering dormant state.
     double lastMasterBPM_ = 0.0;
+    double lastMasterNativeBPM_ = 0.0;
 };

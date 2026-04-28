@@ -10,6 +10,7 @@ void MasterClockPublisher::publish (const MasterClockSnapshot& snapshot)
 
     // Step 3: write fields one by one (plain stores, guarded by the fences).
     buffer_.masterBPM               = snapshot.masterBPM;
+    buffer_.masterNativeBPM         = snapshot.masterNativeBPM;
     buffer_.masterPhaseOriginSample  = snapshot.masterPhaseOriginSample;
     buffer_.masterIsPlaying          = snapshot.masterIsPlaying;
 
@@ -36,6 +37,7 @@ MasterClockSnapshot MasterClockPublisher::read() const
 
         // Step 3: copy fields.
         snapshot.masterBPM               = buffer_.masterBPM;
+        snapshot.masterNativeBPM         = buffer_.masterNativeBPM;
         snapshot.masterPhaseOriginSample  = buffer_.masterPhaseOriginSample;
         snapshot.masterIsPlaying          = buffer_.masterIsPlaying;
 

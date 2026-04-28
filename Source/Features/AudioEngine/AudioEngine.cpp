@@ -579,9 +579,24 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             auto* masterSrc =
                 deckSlots[static_cast<size_t> (masterSlot)].load (std::memory_order_acquire);
             if (masterSrc != nullptr)
+            {
+                double masterPlayhead = masterSrc->playheadAccumulator;
+
+                // Keep master phase reference in audible-time coordinates.
+                // When key lock is active, the audible output is delayed by
+                // stretcher latency relative to playheadAccumulator.
+                if (masterSrc->audioState != nullptr
+                    && masterSrc->audioState->keyLockEnabled.load (std::memory_order_relaxed))
+                {
+                    masterPlayhead -= static_cast<double> (masterSrc->stretcherLatency);
+                    if (masterPlayhead < 0.0)
+                        masterPlayhead = 0.0;
+                }
+
                 cachedClockPublisher_->masterPlayheadSample.store (
-                    static_cast<int64_t> (masterSrc->playheadAccumulator),
+                    static_cast<int64_t> (masterPlayhead),
                     std::memory_order_relaxed);
+            }
         }
     }
 
@@ -906,14 +921,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 if (se != nullptr)
                     se->process (*audioState);
             }
-            else if (source->prevIsSynced)
-            {
-                // Transition synced→unsynced: snap speedMultiplier to pitch fader value
-                const float faderMul = audioState->pitchFaderMultiplier.load (std::memory_order_relaxed);
-                audioState->speedMultiplier.store (faderMul, std::memory_order_relaxed);
-            }
+
+            // SYNC-off behavior: keep the current speedMultiplier latched.
+            // This preserves the exact tempo reached while synced.
             source->prevIsSynced = curIsSynced;
-}
+        }
 
         // 3d. Phase lock engine (PRD-0028) — refines correctionMultiplier after SyncEngine
         {

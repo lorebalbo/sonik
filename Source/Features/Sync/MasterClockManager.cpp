@@ -1,4 +1,5 @@
 #include "MasterClockManager.h"
+#include <cmath>
 
 // ---------------------------------------------------------------------------
 // Construction / Destruction
@@ -88,28 +89,13 @@ void MasterClockManager::valueTreePropertyChanged (juce::ValueTree& tree,
 
                 if (status == "playing")
                 {
-                    // Resume from paused (or initial play): publish isPlaying=true.
-                    // BPM and phase origin are unchanged from last publish.
-                    auto beatGrid = tree.getChildWithName (IDs::BeatGrid);
-                    MasterClockSnapshot snap;
-                    snap.masterBPM              = lastMasterBPM_;
-                    snap.masterPhaseOriginSample = beatGrid.isValid()
-                        ? static_cast<int64_t> (beatGrid.getProperty (IDs::anchorSample, static_cast<int64_t> (0)))
-                        : 0;
-                    snap.masterIsPlaying = true;
-                    publisher_.publish (snap);
+                    // Resume from paused (or initial play): publish latest master clock state.
+                    publishFromDeck (deckIndex);
                 }
                 else if (status == "paused")
                 {
-                    // Paused: publish isPlaying=false, retain BPM and phase origin.
-                    auto beatGrid = tree.getChildWithName (IDs::BeatGrid);
-                    MasterClockSnapshot snap;
-                    snap.masterBPM              = lastMasterBPM_;
-                    snap.masterPhaseOriginSample = beatGrid.isValid()
-                        ? static_cast<int64_t> (beatGrid.getProperty (IDs::anchorSample, static_cast<int64_t> (0)))
-                        : 0;
-                    snap.masterIsPlaying = false;
-                    publisher_.publish (snap);
+                    // Paused: publish latest BPM/anchor with isPlaying=false.
+                    publishFromDeck (deckIndex);
                 }
                 else if (status == "stopped" || status == "empty")
                 {
@@ -131,6 +117,14 @@ void MasterClockManager::valueTreePropertyChanged (juce::ValueTree& tree,
                     promoteDeck (deckIndex);
             }
             // If currentMaster is some other deck, changes to this deck are ignored here.
+        }
+        else if (property == IDs::speedMultiplier)
+        {
+            // Pitch-fader changes on the master must immediately update master clock BPM.
+            const int deckIndex = getDeckIndex (tree);
+            const int currentMaster = static_cast<int> (rootState_.getProperty (IDs::masterDeckIndex, -1));
+            if (deckIndex >= 0 && deckIndex == currentMaster)
+                publishFromDeck (deckIndex);
         }
         // Other Deck-level properties (isMaster, isSynced, gain, etc.) are intentionally ignored
         // to avoid feedback loops from our own mutations.
@@ -182,6 +176,8 @@ void MasterClockManager::promoteDeck (int deckIndex)
     if (! deckTree.isValid())
         return;
 
+    // Master deck must not stay in SYNC mode after auto-promotion.
+    deckTree.setProperty   (IDs::isSynced, false, nullptr);
     rootState_.setProperty (IDs::masterDeckIndex, deckIndex, nullptr);
     deckTree.setProperty   (IDs::isMaster, true, nullptr);
     publishFromDeck (deckIndex);
@@ -206,23 +202,26 @@ void MasterClockManager::publishFromDeck (int deckIndex)
         return;
 
     auto beatGrid = deckTree.getChildWithName (IDs::BeatGrid);
-    const double  bpm    = beatGrid.isValid()
-        ? static_cast<double> (beatGrid.getProperty (IDs::bpm, 0.0))
-        : 0.0;
+    const double  bpm    = getDeckEffectiveBpm (deckTree);
+    const double  nativeBpm = getDeckNativeBpm (deckTree);
     const int64_t anchor = beatGrid.isValid()
         ? static_cast<int64_t> (beatGrid.getProperty (IDs::anchorSample, static_cast<int64_t> (0)))
         : 0;
 
     lastMasterBPM_ = bpm;
+    lastMasterNativeBPM_ = nativeBpm;
 
     MasterClockSnapshot snap;
     snap.masterBPM               = bpm;
+    snap.masterNativeBPM         = nativeBpm;
     snap.masterPhaseOriginSample  = anchor;
     snap.masterIsPlaying          = (getPlaybackStatus (deckTree) == "playing");
     publisher_.publish (snap);
+
     // Expose the master slot index so AudioEngine can write the master's playhead
     // each audio block for use by PhaseLockEngine (phase formula fix).
-    publisher_.masterSlotIndex.store (deckIndex, std::memory_order_relaxed);
+    const auto deckId = deckTree.getProperty (IDs::id, "").toString();
+    publisher_.masterSlotIndex.store (deckIdToSlot (deckId), std::memory_order_relaxed);
 }
 
 void MasterClockManager::publishDormant()
@@ -230,6 +229,7 @@ void MasterClockManager::publishDormant()
     // Keep last BPM, but signal that nobody is playing and reset phase origin.
     MasterClockSnapshot snap;
     snap.masterBPM               = lastMasterBPM_;
+    snap.masterNativeBPM         = lastMasterNativeBPM_;
     snap.masterPhaseOriginSample  = 0;
     snap.masterIsPlaying          = false;
     publisher_.publish (snap);
@@ -239,6 +239,42 @@ void MasterClockManager::publishDormant()
 juce::String MasterClockManager::getPlaybackStatus (const juce::ValueTree& deckTree)
 {
     return deckTree.getProperty (IDs::playbackStatus, "empty").toString();
+}
+
+double MasterClockManager::getDeckEffectiveBpm (const juce::ValueTree& deckTree)
+{
+    const double baseBpm = getDeckNativeBpm (deckTree);
+
+    if (baseBpm <= 0.0 || ! std::isfinite (baseBpm))
+        return 0.0;
+
+    const double speedMul = static_cast<double> (deckTree.getProperty (IDs::speedMultiplier, 1.0f));
+    if (! std::isfinite (speedMul) || speedMul <= 0.0)
+        return baseBpm;
+
+    return baseBpm * speedMul;
+}
+
+double MasterClockManager::getDeckNativeBpm (const juce::ValueTree& deckTree)
+{
+    const auto beatGrid = deckTree.getChildWithName (IDs::BeatGrid);
+    const double baseBpm = beatGrid.isValid()
+        ? static_cast<double> (beatGrid.getProperty (IDs::bpm, 0.0))
+        : 0.0;
+
+    if (! std::isfinite (baseBpm) || baseBpm <= 0.0)
+        return 0.0;
+
+    return baseBpm;
+}
+
+int MasterClockManager::deckIdToSlot (const juce::String& deckId)
+{
+    if (deckId == "A") return 0;
+    if (deckId == "B") return 1;
+    if (deckId == "C") return 2;
+    if (deckId == "D") return 3;
+    return -1;
 }
 
 int MasterClockManager::findLowestPlayingDeckIndex() const

@@ -3,8 +3,11 @@
 #include <juce_audio_devices/juce_audio_devices.h>
 #include "Features/AudioEngine/AudioEngine.h"
 #include "Features/AudioEngine/DeckAudioSource.h"
+#include "Features/AudioEngine/AudioBufferHolder.h"
 #include "Features/Deck/DeckIdentifiers.h"
 #include "Features/Deck/AudioThreadState.h"
+#include "Features/Sync/MasterClockPublisher.h"
+#include "Features/Sync/MasterClockSnapshot.h"
 
 class AudioEngineTests : public juce::UnitTest
 {
@@ -27,6 +30,7 @@ public:
         testAudioStatePointerAfterRegister();
         testProcessBlockClearsOutput();
         testProcessBlockHardClip();
+        testSyncDisengageKeepsCurrentSpeed();
         testMultipleDeckRegistration();
         testReRegisterDeck();
     }
@@ -362,6 +366,55 @@ private:
             expect (outputR[i] >= -1.0f && outputR[i] <= 1.0f,
                     "Right channel sample should be in [-1, 1]");
         }
+    }
+
+    // -----------------------------------------------------------------------
+    void testSyncDisengageKeepsCurrentSpeed()
+    {
+        beginTest ("Sync disengage keeps current speed multiplier latched");
+        EngineContext ctx;
+
+        DeckAudioState stateB;
+        stateB.playbackStatus.store (static_cast<int> (PlaybackStatusCode::playing), std::memory_order_relaxed);
+        stateB.deckBPM.store (100.0, std::memory_order_relaxed);
+        stateB.pitchFaderMultiplier.store (1.0f, std::memory_order_relaxed);
+        stateB.speedMultiplier.store (1.0f, std::memory_order_relaxed);
+        stateB.isSynced.store (true, std::memory_order_relaxed);
+
+        ctx.engine->registerDeck ("B", &stateB);
+
+        juce::AudioBuffer<float> deckBuffer (2, 1024);
+        deckBuffer.clear();
+        AudioBufferHolder::Ptr holder = new AudioBufferHolder (std::move (deckBuffer), 44100.0, 1024);
+        ctx.engine->setDeckBuffer ("B", holder);
+
+        MasterClockPublisher publisher;
+        MasterClockSnapshot snapshot;
+        snapshot.masterBPM = 128.0;
+        snapshot.masterIsPlaying = true;
+        publisher.publish (snapshot);
+        ctx.engine->setMasterClockPublisher (&publisher);
+
+        float outputL[128] = {};
+        float outputR[128] = {};
+        float* outputs[2] = { outputL, outputR };
+
+        // SYNC on: speed should be forced to master/deck ratio (128/100 = 1.28)
+        ctx.engine->audioDeviceIOCallbackWithContext (nullptr, 0, outputs, 2, 128, {});
+        expectWithinAbsoluteError (stateB.speedMultiplier.load (std::memory_order_relaxed),
+                                   1.28f,
+                                   0.0005f,
+                                   "With SYNC on, speed should match normalized ratio");
+
+        // SYNC off: speed must remain latched to current value (not snapped to pitch fader)
+        stateB.isSynced.store (false, std::memory_order_relaxed);
+        stateB.pitchFaderMultiplier.store (1.0f, std::memory_order_relaxed);
+        ctx.engine->audioDeviceIOCallbackWithContext (nullptr, 0, outputs, 2, 128, {});
+
+        expectWithinAbsoluteError (stateB.speedMultiplier.load (std::memory_order_relaxed),
+                                   1.28f,
+                                   0.0005f,
+                                   "With SYNC off, speed should stay at the last synced value");
     }
 
     // -----------------------------------------------------------------------

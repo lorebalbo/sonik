@@ -31,6 +31,7 @@ public:
         testTimeFormatNegative();
         testMetadataPopulation();
         testBpmEffectiveCalculation();
+        testSyncedSpeedMirrorsPitchForFader();
         testComponentLifecycle();
         testEmptyStateDefaults();
     }
@@ -304,7 +305,43 @@ private:
     }
 
     // -----------------------------------------------------------------------
-    // Test 9: Component lifecycle (created on load, destroyed on eject)
+    // Test 9: synced speed mirrored to ValueTree pitch/speed (fader follows)
+    // -----------------------------------------------------------------------
+    void testSyncedSpeedMirrorsPitchForFader()
+    {
+        beginTest ("TrackInfoComponent - synced speed mirrors pitch/speed for fader UI");
+
+        TestContext ctx;
+        auto deckId = ctx.mgr->addDeck();
+        auto deckTree = ctx.mgr->getDeckState (deckId);
+        auto* audioState = ctx.mgr->getAudioState (deckId);
+
+        expect (deckTree.isValid(), "Deck tree should be valid");
+        expect (audioState != nullptr, "Audio state should exist");
+        if (audioState == nullptr)
+            return;
+
+        deckTree.setProperty (IDs::isSynced, true, nullptr);
+        audioState->speedMultiplier.store (1.125f, std::memory_order_relaxed); // +12.5%
+
+        TrackInfoComponent comp (deckTree, *ctx.mgr, *ctx.loader, deckId);
+
+        if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
+            mm->runDispatchLoopUntil (50);
+
+        expectWithinAbsoluteError (static_cast<float> (deckTree.getProperty (IDs::speedMultiplier, 1.0f)),
+                                   1.125f,
+                                   0.001f,
+                                   "speedMultiplier should follow synced speed");
+
+        expectWithinAbsoluteError (static_cast<float> (deckTree.getProperty (IDs::pitch, 0.0f)),
+                                   12.5f,
+                                   0.05f,
+                                   "pitch should follow synced speed so fader position updates");
+    }
+
+    // -----------------------------------------------------------------------
+    // Test 10: Component lifecycle (created on load, destroyed on eject)
     // -----------------------------------------------------------------------
     void testComponentLifecycle()
     {
@@ -361,7 +398,7 @@ private:
     }
 
     // -----------------------------------------------------------------------
-    // Test 10: Empty state defaults
+    // Test 11: Empty state defaults
     // -----------------------------------------------------------------------
     void testEmptyStateDefaults()
     {

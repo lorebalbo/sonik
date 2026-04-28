@@ -1,5 +1,6 @@
 #include "TrackInfoComponent.h"
 #include "../../KeyDetection/KeyUtils.h"
+#include <cmath>
 
 TrackInfoComponent::TrackInfoComponent (juce::ValueTree tree,
                                         DeckStateManager& deckState,
@@ -104,6 +105,28 @@ void TrackInfoComponent::valueTreeChildRemoved (juce::ValueTree& parent, juce::V
 
 void TrackInfoComponent::timerCallback()
 {
+    // Keep pitch UI state aligned with the real synced speed.
+    if (static_cast<bool> (deckTree.getProperty (IDs::isSynced, false)))
+    {
+        if (auto* audioState = deckStateManager.getAudioState (deckId))
+        {
+            const float syncedSpeed = audioState->speedMultiplier.load (std::memory_order_relaxed);
+            const float syncedPitch = (syncedSpeed - 1.0f) * 100.0f;
+
+            const float treeSpeed = static_cast<float> (deckTree.getProperty (IDs::speedMultiplier, 1.0f));
+            const float treePitch = static_cast<float> (deckTree.getProperty (IDs::pitch, 0.0f));
+
+            constexpr float speedEpsilon = 0.0001f;
+            constexpr float pitchEpsilon = 0.001f;
+
+            if (std::abs (treeSpeed - syncedSpeed) > speedEpsilon)
+                deckTree.setProperty (IDs::speedMultiplier, syncedSpeed, nullptr);
+
+            if (std::abs (treePitch - syncedPitch) > pitchEpsilon)
+                deckTree.setProperty (IDs::pitch, syncedPitch, nullptr);
+        }
+    }
+
     repaint();
 }
 

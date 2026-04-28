@@ -34,6 +34,7 @@ void PhaseLockEngine::process (DeckAudioSource& source,
     {
         source.correctionMultiplier = 1.0;
         source.phaseOffset.store (0.0f, std::memory_order_relaxed);
+        prevIsSyncedInEngine_ = false;
         return;
     }
 
@@ -43,6 +44,7 @@ void PhaseLockEngine::process (DeckAudioSource& source,
     {
         source.correctionMultiplier = 1.0;
         source.phaseOffset.store (0.0f, std::memory_order_relaxed);
+        prevIsSyncedInEngine_ = false;
         return;
     }
 
@@ -55,6 +57,7 @@ void PhaseLockEngine::process (DeckAudioSource& source,
     {
         source.correctionMultiplier = 1.0;
         source.phaseOffset.store (0.0f, std::memory_order_relaxed);
+        prevIsSyncedInEngine_ = false;
         return;
     }
 
@@ -65,14 +68,20 @@ void PhaseLockEngine::process (DeckAudioSource& source,
     {
         source.correctionMultiplier = 1.0;
         source.phaseOffset.store (0.0f, std::memory_order_relaxed);
+        prevIsSyncedInEngine_ = false;
         return;
     }
 
-    // Guard: master BPM must be valid before using it as a divisor below.
-    if (snapshot.masterBPM <= 0.0 || ! std::isfinite (snapshot.masterBPM))
+    // Guard: master native BPM must be valid before using it as a divisor below.
+    const double masterNativeBPM =
+        (snapshot.masterNativeBPM > 0.0 && std::isfinite (snapshot.masterNativeBPM))
+            ? snapshot.masterNativeBPM
+            : snapshot.masterBPM;
+    if (masterNativeBPM <= 0.0 || ! std::isfinite (masterNativeBPM))
     {
         source.correctionMultiplier = 1.0;
         source.phaseOffset.store (0.0f, std::memory_order_relaxed);
+        prevIsSyncedInEngine_ = false;
         return;
     }
 
@@ -99,13 +108,18 @@ void PhaseLockEngine::process (DeckAudioSource& source,
         return r;
     };
 
-    // Account for stretcher latency: the audible output lags by this many
-    // samples behind the internal accumulator.
-    const double effectivePlayhead =
-        source.playheadAccumulator - static_cast<double> (source.stretcherLatency);
+    // Account for stretcher latency only when key lock is active.
+    // In vinyl mode (key lock off), playheadAccumulator already represents
+    // the audible position and no latency offset should be applied.
+    const bool keyLockEnabled = state.keyLockEnabled.load (std::memory_order_relaxed);
+    const double latencyComp = keyLockEnabled
+        ? static_cast<double> (source.stretcherLatency)
+        : 0.0;
+    const double effectivePlayhead = source.playheadAccumulator - latencyComp;
 
-    // Master beat interval: derived from the master's native BPM.
-    const double masterBeatInterval = (sampleRate * 60.0) / snapshot.masterBPM;
+    // Master beat interval must use native (source-domain) master BPM because
+    // masterPlayheadSample is published in source-sample coordinates.
+    const double masterBeatInterval = (sampleRate * 60.0) / masterNativeBPM;
 
     // Slave beat interval: derived from the slave's NATIVE deckBPM (before speedMul).
     // This represents how the slave's OWN beat grid is laid out in its audio file.

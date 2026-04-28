@@ -26,10 +26,13 @@ public:
         testAutoPromoteToLowestPlayingOnMasterStop();
         testDormantStateWhenNoPlayingDeck();
         testPauseMasterPublishesIsPlayingFalse();
+        testMasterBpmTracksPitchMultiplier();
         testSetMasterDemotesAndPromotes();
         testSetMasterNoOpWhenAlreadyPlayingMaster();
         testAtMostOneMasterAtAnyTime();
         testSetMasterClearsSyncedFlag();
+        testAutoPromotedMasterClearsSyncedFlag();
+        testMasterSlotIndexUsesDeckIdMapping();
     }
 
 private:
@@ -49,9 +52,13 @@ private:
         for (int i = 0; i < numDecks; ++i)
         {
             juce::ValueTree deck (IDs::Deck);
+            deck.setProperty (IDs::id,
+                              juce::String::charToString (static_cast<juce::juce_wchar> ('A' + i)),
+                              nullptr);
             deck.setProperty (IDs::playbackStatus, "empty", nullptr);
             deck.setProperty (IDs::isMaster,       false,   nullptr);
             deck.setProperty (IDs::isSynced,       false,   nullptr);
+            deck.setProperty (IDs::speedMultiplier, 1.0f,   nullptr);
 
             juce::ValueTree beatGrid (IDs::BeatGrid);
             beatGrid.setProperty (IDs::bpm,          0.0,         nullptr);
@@ -98,6 +105,7 @@ private:
         MasterClockPublisher pub;
         auto snap = pub.read();
         expectEquals (snap.masterBPM,               0.0);
+        expectEquals (snap.masterNativeBPM,         0.0);
         expectEquals (snap.masterPhaseOriginSample, (int64_t) 0);
         expect       (! snap.masterIsPlaying);
     }
@@ -108,12 +116,14 @@ private:
         MasterClockPublisher pub;
         MasterClockSnapshot snap;
         snap.masterBPM               = 128.0;
+        snap.masterNativeBPM         = 128.0;
         snap.masterPhaseOriginSample = 1000;
         snap.masterIsPlaying         = true;
         pub.publish (snap);
 
         auto result = pub.read();
         expectEquals (result.masterBPM,               128.0);
+        expectEquals (result.masterNativeBPM,         128.0);
         expectEquals (result.masterPhaseOriginSample, (int64_t) 1000);
         expect       (result.masterIsPlaying);
     }
@@ -128,12 +138,14 @@ private:
         {
             MasterClockSnapshot snap;
             snap.masterBPM               = bpm;
+            snap.masterNativeBPM         = bpm;
             snap.masterPhaseOriginSample = static_cast<int64_t> (bpm * 100.0);
             snap.masterIsPlaying         = (bpm > 100.0);
             pub.publish (snap);
 
             auto result = pub.read();
             expectEquals (result.masterBPM,               bpm);
+            expectEquals (result.masterNativeBPM,         bpm);
             expectEquals (result.masterPhaseOriginSample, static_cast<int64_t> (bpm * 100.0));
             expect       (result.masterIsPlaying == (bpm > 100.0));
         }
@@ -147,6 +159,7 @@ private:
         // Publish snapshot A
         MasterClockSnapshot snapA;
         snapA.masterBPM               = 128.0;
+        snapA.masterNativeBPM         = 128.0;
         snapA.masterPhaseOriginSample = 44100;
         snapA.masterIsPlaying         = true;
         pub.publish (snapA);
@@ -154,6 +167,7 @@ private:
         // Publish snapshot B immediately after
         MasterClockSnapshot snapB;
         snapB.masterBPM               = 96.0;
+        snapB.masterNativeBPM         = 96.0;
         snapB.masterPhaseOriginSample = 88200;
         snapB.masterIsPlaying         = false;
         pub.publish (snapB);
@@ -161,6 +175,7 @@ private:
         // Must return exactly B — no field from A should appear
         auto result = pub.read();
         expectEquals (result.masterBPM,               96.0);
+        expectEquals (result.masterNativeBPM,         96.0);
         expectEquals (result.masterPhaseOriginSample, (int64_t) 88200);
         expect       (! result.masterIsPlaying);
     }
@@ -299,6 +314,40 @@ private:
         expectEquals (snap.masterBPM, 128.0);
     }
 
+    void testMasterBpmTracksPitchMultiplier()
+    {
+        beginTest ("MasterClockManager - Master BPM follows pitch/speed multiplier changes");
+        auto root = createRootState (1);
+        MasterClockPublisher pub;
+        MasterClockManager mgr (root, pub);
+
+        auto deck0 = getDeck (root, 0);
+
+        // Configure beat-grid and promote the deck by starting playback.
+        deck0.getChildWithName (IDs::BeatGrid).setProperty (IDs::bpm, 128.0, nullptr);
+        deck0.setProperty (IDs::speedMultiplier, 1.05f, nullptr);
+        deck0.setProperty (IDs::playbackStatus, "playing", nullptr);
+
+        auto snap = pub.read();
+        expectWithinAbsoluteError (snap.masterBPM, 134.4, 0.0001);
+        expectWithinAbsoluteError (snap.masterNativeBPM, 128.0, 0.0001);
+        expect (snap.masterIsPlaying);
+
+        // Changing speedMultiplier on the master should republish effective BPM.
+        deck0.setProperty (IDs::speedMultiplier, 0.95f, nullptr);
+        snap = pub.read();
+        expectWithinAbsoluteError (snap.masterBPM, 121.6, 0.0001);
+        expectWithinAbsoluteError (snap.masterNativeBPM, 128.0, 0.0001);
+
+        // Works while paused as well (isPlaying=false, BPM still updated).
+        deck0.setProperty (IDs::playbackStatus, "paused", nullptr);
+        deck0.setProperty (IDs::speedMultiplier, 1.10f, nullptr);
+        snap = pub.read();
+        expect (! snap.masterIsPlaying);
+        expectWithinAbsoluteError (snap.masterBPM, 140.8, 0.0001);
+        expectWithinAbsoluteError (snap.masterNativeBPM, 128.0, 0.0001);
+    }
+
     void testSetMasterDemotesAndPromotes()
     {
         beginTest ("MasterClockManager - setMaster(1) demotes current master (deck 0) and promotes deck 1");
@@ -394,6 +443,68 @@ private:
         // Deck 1 must now be master
         expect (static_cast<bool>   (getDeck (root, 1).getProperty (IDs::isMaster)));
         expectEquals (mgr.getMasterDeckIndex(), 1);
+    }
+
+    void testAutoPromotedMasterClearsSyncedFlag()
+    {
+        beginTest ("MasterClockManager - auto-promoted master clears isSynced");
+        auto root = createRootState (2);
+        MasterClockPublisher pub;
+        MasterClockManager mgr (root, pub);
+
+        // Deck 0 becomes master and starts playing.
+        getDeck (root, 0).setProperty (IDs::playbackStatus, "playing", nullptr);
+        expectEquals (mgr.getMasterDeckIndex(), 0);
+
+        // Deck 1 is playing and synced while still slave.
+        getDeck (root, 1).setProperty (IDs::isSynced, true, nullptr);
+        getDeck (root, 1).setProperty (IDs::playbackStatus, "playing", nullptr);
+        expect (static_cast<bool> (getDeck (root, 1).getProperty (IDs::isSynced)));
+
+        // Master deck stops -> deck 1 auto-promoted.
+        getDeck (root, 0).setProperty (IDs::playbackStatus, "stopped", nullptr);
+
+        expectEquals (mgr.getMasterDeckIndex(), 1);
+        expect (static_cast<bool> (getDeck (root, 1).getProperty (IDs::isMaster)));
+        expect (! static_cast<bool> (getDeck (root, 1).getProperty (IDs::isSynced)));
+    }
+
+    void testMasterSlotIndexUsesDeckIdMapping()
+    {
+        beginTest ("MasterClockManager - publisher masterSlotIndex maps by deck ID, not tree index");
+
+        // Build root where deck order is B then A (tree index does not match audio slot index).
+        juce::ValueTree root (IDs::SonikState);
+        root.setProperty (IDs::masterDeckIndex, -1, nullptr);
+        juce::ValueTree decks (IDs::Decks);
+
+        auto makeDeck = [] (const juce::String& id)
+        {
+            juce::ValueTree d (IDs::Deck);
+            d.setProperty (IDs::id, id, nullptr);
+            d.setProperty (IDs::playbackStatus, "empty", nullptr);
+            d.setProperty (IDs::isMaster, false, nullptr);
+            d.setProperty (IDs::isSynced, false, nullptr);
+            d.setProperty (IDs::speedMultiplier, 1.0f, nullptr);
+            juce::ValueTree bg (IDs::BeatGrid);
+            bg.setProperty (IDs::bpm, 128.0, nullptr);
+            bg.setProperty (IDs::anchorSample, (int64_t) 0, nullptr);
+            d.addChild (bg, -1, nullptr);
+            return d;
+        };
+
+        decks.addChild (makeDeck ("B"), -1, nullptr); // tree index 0, audio slot 1
+        decks.addChild (makeDeck ("A"), -1, nullptr); // tree index 1, audio slot 0
+        root.addChild (decks, -1, nullptr);
+
+        MasterClockPublisher pub;
+        MasterClockManager mgr (root, pub);
+
+        // Auto-promote deck at tree index 0 (ID=B)
+        decks.getChild (0).setProperty (IDs::playbackStatus, "playing", nullptr);
+
+        expectEquals (mgr.getMasterDeckIndex(), 0);
+        expectEquals (pub.masterSlotIndex.load (std::memory_order_relaxed), 1);
     }
 };
 
