@@ -31,7 +31,8 @@ int TimeStretcher::process (const float* const* input, int inputSamples,
                             float* const* output, int maxOutputSamples,
                             double timeRatio)
 {
-    if (inputSamples <= 0)
+    if (stretcher == nullptr || input == nullptr || output == nullptr
+        || inputSamples <= 0 || maxOutputSamples <= 0)
         return 0;
 
     // Update time ratio if changed (audio-thread safe in RealTime mode).
@@ -64,6 +65,14 @@ void TimeStretcher::reset()
 int TimeStretcher::getLatency() const
 {
     return static_cast<int> (stretcher->getLatency());
+}
+
+int TimeStretcher::getBufferedOutputSamples() const
+{
+    if (stretcher == nullptr)
+        return 0;
+
+    return std::max (0, static_cast<int> (stretcher->available()));
 }
 
 void TimeStretcher::prime()
@@ -105,13 +114,27 @@ void TimeStretcher::prime()
     }
 }
 
-void TimeStretcher::primeWithAudio (const float* channelL, const float* channelR,
-                                    int numFramesAvailable)
+int TimeStretcher::primeWithAudio (const float* channelL, const float* channelR,
+                                   int numFramesAvailable)
 {
     // Feed real track audio for pad + latency samples so the stretcher's
-    // internal pipeline is filled with valid data.  After this, the
-    // stretcher output is immediately aligned with the playhead when
-    // processBlock reads from playheadAccumulator + latency.
+    // internal pipeline is filled with valid data.
+    //
+    // The R3 engine does NOT produce all (pad + latency) output samples
+    // immediately after being fed — it only makes a small fraction available
+    // at once.  We discard that fraction and compute the EFFECTIVE pipeline
+    // depth as:
+    //
+    //   effectiveLatency = (pad + latency) - discardedSamples
+    //
+    // The caller (AudioEngine) stores this as stretcherLatency and uses it
+    // as the read-ahead offset:
+    //
+    //   readPos = playheadAccumulator + stretcherLatency
+    //
+    // This ensures the stretched output aligns exactly with the vinyl path
+    // (zero phase offset at Key Lock toggle).  See measurement in
+    // check_r3.cpp: readAhead=3840 gives output[0]=file pos 0 for R3.
     size_t pad     = stretcher->getPreferredStartPad();
     size_t latency = stretcher->getLatency();
     size_t total   = pad + latency;
@@ -154,14 +177,15 @@ void TimeStretcher::primeWithAudio (const float* channelL, const float* channelR
         }
     }
 
-    // Discard all output produced during priming.
-    int outputAvail = stretcher->available();
-    if (outputAvail > 0)
+    // Discard all output produced during priming and measure how much
+    // was ready.  The rest is still buffered in the pipeline.
+    int discarded = stretcher->available();
+    if (discarded > 0)
     {
         float discardA[chunkSize];
         float discardB[chunkSize];
         float* discardPtrs[2] = { discardA, discardB };
-        size_t discardRemaining = static_cast<size_t> (outputAvail);
+        size_t discardRemaining = static_cast<size_t> (discarded);
         while (discardRemaining > 0)
         {
             size_t dn = std::min (discardRemaining, chunkSize);
@@ -169,4 +193,7 @@ void TimeStretcher::primeWithAudio (const float* channelL, const float* channelR
             discardRemaining -= dn;
         }
     }
+
+    // The effective read-ahead offset needed for zero phase error.
+    return static_cast<int> (pad + latency) - discarded;
 }

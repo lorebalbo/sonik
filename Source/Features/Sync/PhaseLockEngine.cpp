@@ -108,14 +108,10 @@ void PhaseLockEngine::process (DeckAudioSource& source,
         return r;
     };
 
-    // Account for stretcher latency only when key lock is active.
-    // In vinyl mode (key lock off), playheadAccumulator already represents
-    // the audible position and no latency offset should be applied.
-    const bool keyLockEnabled = state.keyLockEnabled.load (std::memory_order_relaxed);
-    const double latencyComp = keyLockEnabled
-        ? static_cast<double> (source.stretcherLatency)
-        : 0.0;
-    const double effectivePlayhead = source.playheadAccumulator - latencyComp;
+    // playheadAccumulator is already in audible-time coordinates for both
+    // vinyl and key-lock paths because AudioEngine feeds the stretcher from
+    // playhead + latency. Do not subtract stretcher latency again here.
+    const double effectivePlayhead = source.playheadAccumulator;
 
     // Master beat interval must use native (source-domain) master BPM because
     // masterPlayheadSample is published in source-sample coordinates.

@@ -32,6 +32,7 @@ public:
         testStretcherPassthroughAtUnityRatio();
         testStretcherProducesOutput();
         testStretcherHandlesZeroInput();
+        testStretcherBalancedInputKeepsQueueBounded();
 
         // AudioEngine integration
         testStretcherCreatedOnBufferSet();
@@ -236,6 +237,50 @@ private:
 
         int produced = stretcher.process (nullptr, 0, outPtrs, 128, 1.0);
         expectEquals (produced, 0, "Zero input should produce zero output");
+    }
+
+    void testStretcherBalancedInputKeepsQueueBounded()
+    {
+        beginTest ("TimeStretcher balanced input keeps internal queue bounded");
+
+        constexpr int maxOutput = 128;
+        constexpr int maxInput = 256;
+        constexpr double speed = 0.9;
+        constexpr double timeRatio = 1.0 / speed;
+        TimeStretcher stretcher (44100.0, 2, maxOutput);
+        stretcher.prime();
+
+        float inL[maxInput] = {};
+        float inR[maxInput] = {};
+        float outL[maxOutput] = {};
+        float outR[maxOutput] = {};
+
+        const float* inPtrs[2] = { inL, inR };
+        float* outPtrs[2] = { outL, outR };
+
+        double carry = 0.0;
+        int maxBuffered = 0;
+
+        for (int i = 0; i < 1024; ++i)
+        {
+            const double exactInput =
+                (static_cast<double> (maxOutput) / timeRatio) + carry;
+            const int inputSamples = juce::jlimit (
+                1, maxInput,
+                static_cast<int> (std::floor (exactInput)));
+            carry = exactInput - static_cast<double> (inputSamples);
+
+            (void) stretcher.process (
+                inPtrs, inputSamples, outPtrs, maxOutput, timeRatio);
+
+            const int buffered = stretcher.getBufferedOutputSamples();
+            maxBuffered = std::max (maxBuffered, buffered);
+            expect (buffered <= maxOutput * 3,
+                    "Buffered output grew unexpectedly large: "
+                        + juce::String (buffered));
+        }
+
+        expect (maxBuffered > 0, "Expected some internal buffering in realtime mode");
     }
 
     // ---------------------------------------------------------------

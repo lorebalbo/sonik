@@ -12,7 +12,7 @@ struct DeckAudioState;
 /// then multiplied into the final `speed` value before the time-stretcher.
 ///
 /// Algorithm (PRD-0028):
-///   effectivePlayhead = playheadAccumulator − stretcherLatency
+///   effectivePlayhead = playheadAccumulator
 ///   slaveBPM          = deckBPM × speedMultiplier (effective BPM after sync)
 ///   beatInterval      = (sampleRate × 60.0) / slaveBPM  (samples / beat)
 ///   rawPhase          = fmod(effectivePlayhead − masterPhaseOriginSample, beatInterval)

@@ -295,13 +295,14 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
 
             // Prime with actual track audio so the stretcher output is
             // immediately valid and latency-aligned with the vinyl path.
+            // primeWithAudio() returns the effective pipeline depth — the
+            // exact read-ahead offset that makes stretched output align with
+            // the vinyl path (zero phase offset at Key Lock toggle).
             const auto& buf = holder->getBuffer();
-            newStretcher->primeWithAudio (
+            src.stretcherLatency = newStretcher->primeWithAudio (
                 buf.getReadPointer (0),
                 buf.getReadPointer (1),
                 holder->getNumFrames());
-
-            src.stretcherLatency = newStretcher->getLatency();
             src.timeStretcherOwned = newStretcher;
             src.timeStretcher.store (newStretcher, std::memory_order_release);
 
@@ -311,6 +312,8 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
             src.keyLockFadingIn = false;
             src.keyLockFadingOut = false;
             src.smoothedTimeRatio = 1.0;
+            src.stretchInputSampleCarry = 0.0;
+            src.stemStretchInputSampleCarry = 0.0;
 
             // PRD-0022: Stem stretchers will be created when stems become active + key lock
             destroyStemStretchers(deckId);
@@ -366,6 +369,9 @@ void AudioEngine::clearDeckBuffer (const juce::String& deckId)
     src.timeStretcherPendingDelete = src.timeStretcherOwned;
     src.timeStretcherOwned = nullptr;
     src.stretcherLatency = 0;
+    src.smoothedTimeRatio = 1.0;
+    src.stretchInputSampleCarry = 0.0;
+    src.stemStretchInputSampleCarry = 0.0;
 
     // PRD-0022: Tear down stem stretchers on eject
     destroyStemStretchers(deckId);
@@ -499,15 +505,23 @@ void AudioEngine::createStemStretchers (const juce::String& deckId)
         auto  stemLen = src.stemBufferNumFrames[s].load (std::memory_order_relaxed);
 
         if (stemL != nullptr && stemR != nullptr && stemLen > 0)
-            stretcher->primeWithAudio (stemL, stemR, static_cast<int>(stemLen));
+        {
+            int eff = stretcher->primeWithAudio (stemL, stemR, static_cast<int>(stemLen));
+            // Store latency from first stem (all stems share same stretcher params)
+            if (s == 0)
+                src.stemStretcherLatency = eff;
+        }
         else
+        {
             stretcher->prime();
+            if (s == 0)
+                src.stemStretcherLatency = stretcher->getLatency();
+        }
 
         src.stemTimeStretchersOwned[s] = stretcher;
     }
 
-    // Cache latency (identical for all stretchers with same params)
-    src.stemStretcherLatency = src.stemTimeStretchersOwned[0]->getLatency();
+    src.stemStretchInputSampleCarry = 0.0;
 
     // Publish all 4 atomically via release stores
     for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
@@ -537,6 +551,7 @@ void AudioEngine::destroyStemStretchers (const juce::String& deckId)
     }
 
     src.stemStretcherLatency = 0;
+    src.stemStretchInputSampleCarry = 0.0;
     src.stemStretchDegraded.store (false, std::memory_order_relaxed);
 }
 
@@ -579,24 +594,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             auto* masterSrc =
                 deckSlots[static_cast<size_t> (masterSlot)].load (std::memory_order_acquire);
             if (masterSrc != nullptr)
-            {
-                double masterPlayhead = masterSrc->playheadAccumulator;
-
-                // Keep master phase reference in audible-time coordinates.
-                // When key lock is active, the audible output is delayed by
-                // stretcher latency relative to playheadAccumulator.
-                if (masterSrc->audioState != nullptr
-                    && masterSrc->audioState->keyLockEnabled.load (std::memory_order_relaxed))
-                {
-                    masterPlayhead -= static_cast<double> (masterSrc->stretcherLatency);
-                    if (masterPlayhead < 0.0)
-                        masterPlayhead = 0.0;
-                }
-
                 cachedClockPublisher_->masterPlayheadSample.store (
-                    static_cast<int64_t> (masterPlayhead),
+                    static_cast<int64_t> (masterSrc->playheadAccumulator),
                     std::memory_order_relaxed);
-            }
         }
     }
 
@@ -1022,6 +1022,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             source->keyLockFadeSamplesRemaining = DeckAudioSource::KEY_LOCK_FADE_LENGTH;
             source->keyLockFadingIn  = keyLockOn;   // TO stretched
             source->keyLockFadingOut = ! keyLockOn;  // FROM stretched
+            // No playhead adjustment needed: the stretcher is always pre-fed
+            // from (playheadAccumulator + stretcherLatency), so after
+            // stretcherLatency samples of pipeline delay its output already
+            // represents audio at playheadAccumulator — identical position to
+            // the vinyl path.  Any adjustment here would inject a false phase
+            // error that PhaseLockEngine would detect and try to correct,
+            // causing audible sync drift.
         }
 
         // --- Time-stretched path ---
@@ -1045,11 +1052,30 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             else if (delta < -maxD) sRatio -= maxD;
             else                    sRatio  = targetTimeRatio;
 
-            // Feed enough source samples for the smoothed ratio to produce
-            // exactly numSamples of output.
-            int sourceSamples = std::min (
-                static_cast<int> (std::ceil (static_cast<double> (numSamples) / sRatio)),
-                DeckAudioSource::MAX_STRETCH_BLOCK);
+            // Convert the desired (fractional) source sample count to an
+            // integer block size without long-term bias. This avoids
+            // overfeeding the stretcher and building delayed queued output.
+            const double exactSourceSamples =
+                (static_cast<double> (numSamples) / sRatio)
+                + source->stretchInputSampleCarry;
+
+            int sourceSamples = 1;
+            if (exactSourceSamples <= 1.0)
+            {
+                sourceSamples = 1;
+                source->stretchInputSampleCarry = 0.0;
+            }
+            else if (exactSourceSamples >= static_cast<double> (DeckAudioSource::MAX_STRETCH_BLOCK))
+            {
+                sourceSamples = DeckAudioSource::MAX_STRETCH_BLOCK;
+                source->stretchInputSampleCarry = 0.0;
+            }
+            else
+            {
+                sourceSamples = static_cast<int> (std::floor (exactSourceSamples));
+                source->stretchInputSampleCarry =
+                    exactSourceSamples - static_cast<double> (sourceSamples);
+            }
 
             double readPos = source->playheadAccumulator
                            + static_cast<double> (source->stretcherLatency);
@@ -1121,11 +1147,29 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             {
                 useStemStretchers = true;
 
-                int sourceSamples = std::min(
-                    static_cast<int>(std::ceil(static_cast<double>(numSamples) * static_cast<double>(speed))),
-                    DeckAudioSource::MAX_STRETCH_BLOCK);
-
                 double timeRatio = 1.0 / static_cast<double>(speed);
+
+                const double exactStemSourceSamples =
+                    (static_cast<double> (numSamples) / timeRatio)
+                    + source->stemStretchInputSampleCarry;
+
+                int sourceSamples = 1;
+                if (exactStemSourceSamples <= 1.0)
+                {
+                    sourceSamples = 1;
+                    source->stemStretchInputSampleCarry = 0.0;
+                }
+                else if (exactStemSourceSamples >= static_cast<double> (DeckAudioSource::MAX_STRETCH_BLOCK))
+                {
+                    sourceSamples = DeckAudioSource::MAX_STRETCH_BLOCK;
+                    source->stemStretchInputSampleCarry = 0.0;
+                }
+                else
+                {
+                    sourceSamples = static_cast<int> (std::floor (exactStemSourceSamples));
+                    source->stemStretchInputSampleCarry =
+                        exactStemSourceSamples - static_cast<double> (sourceSamples);
+                }
 
                 for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
                 {

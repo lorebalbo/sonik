@@ -43,6 +43,10 @@ public:
     /// Returns the algorithmic latency in samples.
     int getLatency() const;
 
+    /// Returns the currently queued output samples inside RubberBand.
+    /// Primarily used by tests/diagnostics.
+    int getBufferedOutputSamples() const;
+
     /// Feed silence to prime the stretcher after construction or reset.
     /// Call on the message thread before publishing to the audio thread.
     void prime();
@@ -51,8 +55,14 @@ public:
     /// immediately valid when playback starts.  Feeds getPreferredStartPad()
     /// + getLatency() samples from the track buffer, reading from position 0.
     /// Call on the message thread before publishing to the audio thread.
-    void primeWithAudio (const float* channelL, const float* channelR,
-                         int numFramesAvailable);
+    ///
+    /// @return Effective pipeline depth: the value to use as stretcherLatency
+    ///         in AudioEngine (= getPreferredStartPad() + getLatency() minus
+    ///         the output samples discarded during priming).  Feed the
+    ///         stretcher from playheadAccumulator + this value so its output
+    ///         aligns exactly with the vinyl path.
+    int primeWithAudio (const float* channelL, const float* channelR,
+                        int numFramesAvailable);
 
 private:
     std::unique_ptr<RubberBand::RubberBandStretcher> stretcher;

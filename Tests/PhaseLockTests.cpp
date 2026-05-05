@@ -28,6 +28,7 @@ public:
         testPhaseBehindSpeesUp();
         testUnwrappedPhaseWraps();
         testMasterPitchUsesNativeMasterGrid();
+        testKeyLockToggleDoesNotInjectPhaseOffset();
         testStretcherLatencyIgnoredWhenKeyLockOff();
         testStretcherLatencyApplied();
         testRampIsGradual();
@@ -417,18 +418,17 @@ private:
 
     void testStretcherLatencyApplied()
     {
-        beginTest ("PhaseLockEngine - key lock on: stretcherLatency=1024 is compensated in phase");
+        beginTest ("PhaseLockEngine - key lock on: stretcherLatency must NOT bias phase");
 
-        // If we place the accumulator exactly on-beat (accounting for latency),
-        // the effective playhead should still be on-beat → phase ≈ 0.
+        // AudioEngine already aligns stretched output to playheadAccumulator by
+        // feeding the stretcher with read-ahead. PhaseLockEngine must therefore
+        // use playheadAccumulator directly even when key lock is enabled.
         constexpr double sr    = 44100.0;
         constexpr double bpm   = 128.0;
         const double beatInterval = sr * 60.0 / bpm;
         constexpr int latency   = 1024;
 
-        // Set accumulator so that (accumulator - latency) lands exactly at 0.0
-        // (one full beat, just to avoid trivially 0).
-        const double accumulator = beatInterval + static_cast<double> (latency);
+        const double accumulator = 0.3 * beatInterval;
 
         MasterClockPublisher pub;
         pub.publish (makePlaying (bpm, 0));
@@ -451,11 +451,8 @@ private:
         source.correctionMultiplier = 1.0;
         engine.process (source, fx.state, sr);
 
-        // effectivePlayhead = accumulator - latency = beatInterval → phase = 0
-        expectWithinAbsoluteError (source.phaseOffset.load(), 0.0f, 0.001f,
-                                   "with latency compensation phase must be ~0");
-        expect (source.correctionMultiplier == 1.0,
-                "correctionMultiplier must be 1.0 at zero phase");
+        expectWithinAbsoluteError (source.phaseOffset.load(), 0.3f, 0.01f,
+                       "phase must reflect raw playhead when key lock is on");
     }
 
     void testMasterPitchUsesNativeMasterGrid()
@@ -541,6 +538,48 @@ private:
 
         expectWithinAbsoluteError (source.phaseOffset.load(), 0.3f, 0.01f,
                                    "phase must reflect raw playhead when key lock is off");
+    }
+
+    void testKeyLockToggleDoesNotInjectPhaseOffset()
+    {
+        beginTest ("PhaseLockEngine - key lock toggle while synced does not inject phase jump");
+
+        constexpr double sr    = 44100.0;
+        constexpr double bpm   = 128.0;
+        const double beatInterval = sr * 60.0 / bpm;
+        const double alignedFraction = 0.25;
+
+        MasterClockPublisher pub;
+        pub.publish (makePlaying (bpm, 0));
+        pub.masterPlayheadSample.store (
+            static_cast<int64_t> (alignedFraction * beatInterval),
+            std::memory_order_relaxed);
+
+        TestFixture fx;
+        fx.setBpm (bpm);
+        fx.setSpeedMultiplier (1.0f);
+        fx.setKeyLock (false);
+
+        DeckAudioSource source;
+        source.playheadAccumulator = alignedFraction * beatInterval;
+        source.shadowPlayheadAccumulator = source.playheadAccumulator;
+        source.stretcherLatency = 2048;
+        source.correctionMultiplier = 1.0;
+
+        PhaseLockEngine engine (pub);
+
+        // Initial steady state (consumes engagement snap path).
+        engine.process (source, fx.state, sr);
+
+        // Toggle key lock ON while remaining synced/playing.
+        fx.setKeyLock (true);
+        source.correctionMultiplier = 1.0;
+        engine.process (source, fx.state, sr);
+
+        expectWithinAbsoluteError (source.phaseOffset.load(), 0.0f, 0.01f,
+                                   "key lock toggle must not introduce phase offset");
+        expectWithinAbsoluteError (source.correctionMultiplier, 1.0, 1.0e-6,
+                                   "correction must stay neutral when already aligned");
     }
 
     void testRampIsGradual()
