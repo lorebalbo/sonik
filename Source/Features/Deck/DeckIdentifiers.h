@@ -104,6 +104,10 @@ DECLARE_ID (masterDeckIndex)  // root-level int: Decks-array index of current ma
 // Active controller tab: "loop" | "cue" | "jump" | "grid"
 DECLARE_ID (controllerTab)
 
+// Track loading protocol (PRD-0034)
+DECLARE_ID (pendingLoadPath)   // Library writes this; DeckShellComponent watches & calls AudioFileLoader
+DECLARE_ID (loadedFilePath)    // Set by DeckShellComponent after initiating a successful load
+
 #undef DECLARE_ID
 
 } // namespace IDs

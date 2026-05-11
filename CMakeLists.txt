@@ -40,6 +40,7 @@ if(sqlite3_ADDED)
     target_compile_definitions(sqlite3 PRIVATE
         SQLITE_THREADSAFE=1
         SQLITE_OMIT_LOAD_EXTENSION=1
+        SQLITE_ENABLE_FTS5=1
     )
     if(UNIX)
         target_link_libraries(sqlite3 PRIVATE pthread dl)
@@ -191,6 +192,27 @@ target_sources(Sonik PRIVATE
     Source/Features/Sync/UI/SyncButton.cpp
     Source/Features/Sync/UI/MasterButton.h
     Source/Features/Sync/UI/MasterButton.cpp
+    Source/Features/Library/WatchFolderScanner.h
+    Source/Features/Library/WatchFolderScanner.cpp
+    Source/Features/Library/LibraryAnalysisService.h
+    Source/Features/Library/LibraryAnalysisService.cpp
+    Source/Features/Library/LibraryQueryThread.h
+    Source/Features/Library/LibraryQueryThread.cpp
+    Source/Features/Library/UI/LibraryPalette.h
+    Source/Features/Library/UI/SearchBarAtom.h
+    Source/Features/Library/UI/SearchBarAtom.cpp
+    Source/Features/Library/UI/SidebarItemAtom.h
+    Source/Features/Library/UI/SidebarItemAtom.cpp
+    Source/Features/Library/UI/RatingAtom.h
+    Source/Features/Library/UI/RatingAtom.cpp
+    Source/Features/Library/UI/FilterBarMolecule.h
+    Source/Features/Library/UI/FilterBarMolecule.cpp
+    Source/Features/Library/UI/SidebarMolecule.h
+    Source/Features/Library/UI/SidebarMolecule.cpp
+    Source/Features/Library/UI/TrackTableMolecule.h
+    Source/Features/Library/UI/TrackTableMolecule.cpp
+    Source/Features/Library/UI/LibraryComponent.h
+    Source/Features/Library/UI/LibraryComponent.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -256,6 +278,15 @@ add_executable(SonikTests
     Tests/MasterClockTests.cpp
     Tests/SyncEngineTests.cpp
     Tests/PhaseLockTests.cpp
+    Tests/LibraryDatabaseSchemaTests.cpp
+    Tests/WatchFolderScannerTests.cpp
+    Tests/LibraryQueryThreadTests.cpp
+    Tests/SidebarMoleculeTests.cpp
+    Source/Features/Library/LibraryQueryThread.cpp
+    Source/Features/Library/LibraryAnalysisService.cpp
+    Source/Features/Library/WatchFolderScanner.cpp
+    Source/Features/Library/UI/SidebarItemAtom.cpp
+    Source/Features/Library/UI/SidebarMolecule.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp

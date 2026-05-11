@@ -1,5 +1,5 @@
 ---
-status: Not Implemented
+status: Done
 epic: EPIC-0003
 depends-on:
   - PRD-0001

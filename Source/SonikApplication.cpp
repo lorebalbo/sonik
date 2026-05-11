@@ -83,7 +83,21 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
         });
 
     mainWindow = std::make_unique<MainWindow> (
-        *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager, *beatGridManager, *stemSeparationManager, *masterClockManager);
+        *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager,
+        *beatGridManager, *stemSeparationManager, *masterClockManager,
+        *trackDatabase);
+
+    // Create the watch-folder scanner (PRD-0031) and kick off the startup scan.
+    // Constructed after trackDatabase is ready; destroyed in shutdown() before
+    // trackDatabase is reset. Created AFTER mainWindow so the LibraryComponent
+    // exists and can register as a listener.
+    watchFolderScanner = std::make_unique<WatchFolderScanner> (*trackDatabase);
+
+    // Wire the scanner to the LibraryComponent listener interface.
+    if (auto* content = mainWindow->getContent())
+        content->registerScannerWithLibrary (*watchFolderScanner);
+
+    watchFolderScanner->startScan();
 }
 
 void SonikApplication::shutdown()
@@ -92,6 +106,11 @@ void SonikApplication::shutdown()
         deckStateManager->saveSession();
 
     mainWindow.reset();
+
+    // Stop the watch-folder scanner before the database is torn down.
+    if (watchFolderScanner != nullptr)
+        watchFolderScanner->cancelScan();
+    watchFolderScanner.reset();
 
     // Stop file loader before engine
     audioFileLoader.reset();
@@ -122,5 +141,23 @@ void SonikApplication::shutdown()
 
 void SonikApplication::systemRequestedQuit()
 {
+    if (quitSaveActive)
+        return;
+
+    if (mainWindow != nullptr)
+    {
+        if (auto* content = mainWindow->getContent())
+        {
+            quitSaveActive = true;
+            content->savePreparationListBeforeQuit (
+                [this] (bool)
+                {
+                    quitSaveActive = false;
+                    quit();
+                });
+            return;
+        }
+    }
+
     quit();
 }

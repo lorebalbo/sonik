@@ -4,6 +4,7 @@ BeatGridManager::BeatGridManager (DeckStateManager& deckState,
                                   TrackDatabase& database,
                                   AudioEngine& engine)
     : deckStateManager (deckState),
+    db (database),
       audioEngine (engine),
       analyzer (database),
       rootState (deckState.getStateTree())
@@ -50,7 +51,7 @@ void BeatGridManager::valueTreePropertyChanged (juce::ValueTree& tree,
         // Check if beat grid analysis is already done or in progress
         auto beatGrid = tree.getChildWithName (IDs::BeatGrid);
         auto analysisStatus = beatGrid.getProperty (IDs::analysisStatus).toString();
-        if (analysisStatus == "done" || analysisStatus == "analyzing")
+        if (analysisStatus == "done" || analysisStatus == "completed" || analysisStatus == "analyzing")
             return;
 
         triggerAnalysis (deckId, contentHash, filePath);
@@ -74,7 +75,7 @@ void BeatGridManager::triggerAnalysis (const juce::String& deckId,
     beatGrid.setProperty (IDs::analysisProgress, 0.0f,        nullptr);
 
     analyzer.analyze (contentHash, filePath, std::move (buffer),
-        [this, deckId] (const juce::String& /*hash*/, BeatGridData::Ptr data)
+        [this, deckId, filePath, contentHash] (const juce::String& /*hash*/, BeatGridData::Ptr data)
         {
             auto dt = deckStateManager.getDeckState (deckId);
             if (! dt.isValid())
@@ -85,6 +86,9 @@ void BeatGridManager::triggerAnalysis (const juce::String& deckId,
             if (data != nullptr)
             {
                 beatGridDataMap[deckId] = data;
+
+                if (data->bpm > 0.0)
+                    db.updateLibraryTrackBpm (filePath, contentHash, data->bpm);
 
                 bg.setProperty (IDs::bpm,                 data->bpm,                 nullptr);
                 bg.setProperty (IDs::anchorSample,        static_cast<double> (data->anchorSample), nullptr);

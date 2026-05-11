@@ -9,10 +9,15 @@
 #include "../../Sync/MasterClockManager.h"
 #include "GlobalToolbar.h"
 #include "DeckLayoutManager.h"
+#include "Features/Library/UI/LibraryComponent.h"
+#include "Features/Library/WatchFolderScanner.h"
+#include <functional>
+#include <memory>
 
 class StemSeparationManager;
 
 class MainContentComponent final : public juce::Component,
+                                    public juce::DragAndDropContainer,
                                     private juce::ValueTree::Listener
 {
 public:
@@ -22,12 +27,15 @@ public:
                           WaveformManager& waveformMgr,
                           BeatGridManager& beatGridMgr,
                           StemSeparationManager& stemMgr,
-                          MasterClockManager& clockMgr)
+                          MasterClockManager& clockMgr,
+                          TrackDatabase& trackDb)
         : deckStateManager (deckState),
           audioEngine (engine),
+          audioFileLoader (loader),
           rootState (deckState.getStateTree()),
           toolbar (deckState),
-          layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr, clockMgr)
+          layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr, clockMgr),
+          libraryComponent (std::make_unique<LibraryComponent> (rootState, trackDb))
     {
         setOpaque (true);
         setWantsKeyboardFocus (true);
@@ -39,6 +47,17 @@ public:
 
         addAndMakeVisible (toolbar);
         addAndMakeVisible (layoutManager);
+        addAndMakeVisible (divider);
+        addAndMakeVisible (*libraryComponent);
+
+        divider.setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+        divider.onDragDy = [this] (int dy)
+        {
+            libraryHeight = juce::jlimit (kMinLibraryHeight,
+                                          juce::jmax (kMinLibraryHeight, getHeight() - toolbarHeight - 80),
+                                          libraryHeight - dy);
+            resized();
+        };
 
         rootState.addListener (this);
     }
@@ -55,10 +74,33 @@ public:
 
     void resized() override
     {
-        auto bounds = getLocalBounds();
-        toolbar.setBounds (bounds.removeFromTop (toolbarHeight));
-        bounds.reduce (8, 8);  // outer padding: separates decks from the window border
-        layoutManager.setBounds (bounds);
+        auto b = getLocalBounds();
+        toolbar.setBounds (b.removeFromTop (toolbarHeight));
+
+        const int remaining = b.getHeight();
+        const int libH  = juce::jlimit (kMinLibraryHeight,
+                                         juce::jmax (kMinLibraryHeight, remaining - 80),
+                                         libraryHeight);
+
+        libraryComponent->setBounds (b.removeFromBottom (libH));
+        divider.setBounds           (b.removeFromBottom (kDividerHeight));
+
+        b.reduce (8, 8);
+        layoutManager.setBounds (b);
+    }
+
+    void registerScannerWithLibrary (WatchFolderScanner& scanner)
+    {
+        if (libraryComponent)
+            libraryComponent->setScanner (scanner);
+    }
+
+    void savePreparationListBeforeQuit (std::function<void(bool)> completion)
+    {
+        if (libraryComponent != nullptr)
+            libraryComponent->savePreparationListBeforeQuit (std::move (completion));
+        else if (completion)
+            completion (true);
     }
 
     bool keyPressed (const juce::KeyPress& key) override
@@ -130,8 +172,15 @@ public:
 
     void visibilityChanged() override
     {
-        if (isVisible())
-            grabKeyboardFocus();
+        if (!isVisible())
+            return;
+
+        juce::Component::SafePointer<MainContentComponent> safeThis (this);
+        juce::MessageManager::callAsync ([safeThis]
+        {
+            if (safeThis != nullptr && safeThis->isShowing())
+                safeThis->grabKeyboardFocus();
+        });
     }
 
 private:
@@ -166,13 +215,48 @@ private:
 
     DeckStateManager& deckStateManager;
     AudioEngine&      audioEngine;
+    AudioFileLoader&  audioFileLoader;
     juce::ValueTree   rootState;
 
     GlobalToolbar      toolbar;
     DeckLayoutManager  layoutManager;
     juce::TooltipWindow tooltipWindow { this };
 
-    static constexpr int toolbarHeight = 40;
+    // ---- Library panel + drag divider --------------------------------------
+    struct DividerHandle final : public juce::Component
+    {
+        std::function<void (int dy)> onDragDy;
+
+        void paint (juce::Graphics& g) override
+        {
+            g.fillAll (juce::Colour (0xffe2e2e2));
+        }
+
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            lastScreenY = e.getScreenY();
+        }
+
+        void mouseDrag (const juce::MouseEvent& e) override
+        {
+            const int dy = e.getScreenY() - lastScreenY;
+            lastScreenY  = e.getScreenY();
+            if (dy != 0 && onDragDy)
+                onDragDy (dy);
+        }
+
+    private:
+        int lastScreenY = 0;
+    };
+
+    std::unique_ptr<LibraryComponent> libraryComponent;
+    DividerHandle                     divider;
+    int                               libraryHeight = kDefaultLibraryHeight;
+
+    static constexpr int toolbarHeight        = 40;
+    static constexpr int kDividerHeight       = 4;
+    static constexpr int kMinLibraryHeight    = 200;
+    static constexpr int kDefaultLibraryHeight = 280;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainContentComponent)
 };

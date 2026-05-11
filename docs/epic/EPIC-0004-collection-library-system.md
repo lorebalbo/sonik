@@ -96,12 +96,12 @@ On startup, after the watch-folder scan completes, a second background pass chec
 
 ## 1.4. PRD Roadmap
 
-- [ ] PRD-0030: Library Database Schema & Migration
-- [ ] PRD-0031: Watch Folder Scanner & Track Ingestion
-- [ ] PRD-0032: Async Library Query Engine (LibraryQueryThread)
-- [ ] PRD-0033: Library UI Shell (Table, Search Bar, Sidebar, Navigation)
-- [ ] PRD-0034: Track Loading & Drag-and-Drop to Deck
-- [ ] PRD-0035: Deck-Aware Smart Filters (KEY MATCH / BPM MATCH / BPM VISION)
+- [x] PRD-0030: Library Database Schema & Migration
+- [x] PRD-0031: Watch Folder Scanner & Track Ingestion
+- [x] PRD-0032: Async Library Query Engine (LibraryQueryThread)
+- [x] PRD-0033: Library UI Shell (Table, Search Bar, Sidebar, Navigation)
+- [x] PRD-0034: Track Loading & Drag-and-Drop to Deck
+- [x] PRD-0035: Deck-Aware Smart Filters (KEY MATCH / BPM MATCH / BPM VISION)
 - [ ] PRD-0036: Playlist Management (Playlists, History, Preparation List)
 - [ ] PRD-0037: Track Rating & Played Session Indicator
 - [ ] PRD-0038: Bulk Analysis Queue & Right-Click Context Menus

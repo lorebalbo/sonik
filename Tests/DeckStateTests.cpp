@@ -4,6 +4,7 @@
 #include "Features/Deck/DeckIdentifiers.h"
 #include "Features/Deck/AudioThreadState.h"
 #include "Features/Deck/Database/TrackDatabase.h"
+#include <sqlite3.h>
 
 class DeckStateTests : public juce::UnitTest
 {
@@ -18,6 +19,7 @@ public:
         testDeckIndependence();
         testStateMachineTransitions();
         testTrackLoading();
+        testTrackLoadingProjectsPersistedKey();
         testTrackEjection();
         testActiveDeck();
         testMasterTempo();
@@ -64,6 +66,45 @@ private:
         meta.totalSamples = 7938000;
         meta.hasAlbumArt  = false;
         return meta;
+    }
+
+    int execSql (sqlite3* handle, const char* sql)
+    {
+        char* errMsg = nullptr;
+        const int rc = sqlite3_exec (handle, sql, nullptr, nullptr, &errMsg);
+        if (errMsg != nullptr)
+            sqlite3_free (errMsg);
+        return rc;
+    }
+
+    juce::String queryText (sqlite3* handle, const char* sql)
+    {
+        sqlite3_stmt* stmt = nullptr;
+        juce::String result;
+        if (sqlite3_prepare_v2 (handle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+        {
+            if (sqlite3_step (stmt) == SQLITE_ROW)
+            {
+                const auto* text = reinterpret_cast<const char*> (sqlite3_column_text (stmt, 0));
+                if (text != nullptr)
+                    result = juce::String::fromUTF8 (text);
+            }
+            sqlite3_finalize (stmt);
+        }
+        return result;
+    }
+
+    int queryInt (sqlite3* handle, const char* sql)
+    {
+        sqlite3_stmt* stmt = nullptr;
+        int result = -1;
+        if (sqlite3_prepare_v2 (handle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+        {
+            if (sqlite3_step (stmt) == SQLITE_ROW)
+                result = sqlite3_column_int (stmt, 0);
+            sqlite3_finalize (stmt);
+        }
+        return result;
     }
 
     // -----------------------------------------------------------------------
@@ -282,6 +323,38 @@ private:
                             .getChildWithName (IDs::TrackMetadata)
                             .getProperty (IDs::title).toString();
         expectEquals (newTitle, oldTitle);
+    }
+
+    void testTrackLoadingProjectsPersistedKey()
+    {
+        beginTest ("Track Loading - persisted key updates library row when hashes differ");
+        TestContext ctx;
+        ctx.mgr->addDeck();
+
+        auto meta = makeSampleMetadata ("CachedKeyTrack");
+        meta.contentHash = "deck_loader_hash";
+
+        auto* handle = ctx.db->getDbHandle();
+        expectEquals (execSql (handle,
+            "INSERT INTO library_tracks "
+            "  (file_path, content_hash, title, artist, album, date_added) "
+            "VALUES "
+            "  ('/path/to/CachedKeyTrack.wav', 'scanner_sha256_hash', "
+            "   'CachedKeyTrack', 'Test Artist', 'Test Album', 1000);"),
+            SQLITE_OK);
+
+        ctx.db->saveTrackData (meta.filePath, meta.contentHash,
+                               {}, {}, 19, 0.9f, false);
+
+        ctx.mgr->loadTrack ("A", meta);
+
+        const auto key = queryText (
+            handle, "SELECT key FROM library_tracks WHERE file_path='/path/to/CachedKeyTrack.wav';");
+        expectEquals (key, juce::String ("8A"));
+
+        const int keyIndex = queryInt (
+            handle, "SELECT key_index FROM library_tracks WHERE file_path='/path/to/CachedKeyTrack.wav';");
+        expectEquals (keyIndex, 7);
     }
 
     // -----------------------------------------------------------------------

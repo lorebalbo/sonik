@@ -32,6 +32,7 @@ class StemSeparationManager;
 
 class DeckShellComponent final : public juce::Component,
                                   public juce::FileDragAndDropTarget,
+                                  public juce::DragAndDropTarget,
                                   private juce::ValueTree::Listener,
                                   private HotCueManager::Listener,
                                   private LoopEngine::Listener
@@ -57,11 +58,17 @@ public:
     void resized() override;
     void mouseDown (const juce::MouseEvent& e) override;
 
-    // juce::FileDragAndDropTarget
+    // juce::FileDragAndDropTarget  (OS file drag from Finder)
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void fileDragEnter (const juce::StringArray& files, int x, int y) override;
     void fileDragExit (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;
+
+    // juce::DragAndDropTarget  (in-app drag from library table)
+    bool isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& details) override;
+    void itemDragEnter (const juce::DragAndDropTarget::SourceDetails& details) override;
+    void itemDragExit  (const juce::DragAndDropTarget::SourceDetails& details) override;
+    void itemDropped   (const juce::DragAndDropTarget::SourceDetails& details) override;
 
     /// Callback for remove button clicks.
     std::function<void (const juce::String&)> onRemoveRequested;
@@ -91,6 +98,15 @@ private:
 
     /// Persist the current in-memory beatgrid to SQLite, preserving other fields.
     void persistBeatGridToDb();
+
+    // ---- Track loading via pendingLoadPath (PRD-0034) ----------------------
+    /// Entry point: validates the path, checks file existence and format,
+    /// auto-disengages SYNC, fires AudioFileLoader, sets loadedFilePath.
+    void handlePendingLoad      (const juce::String& path);
+    /// Opens a FileChooser to let the user relocate a missing file.
+    void showRelocateDialog     (const juce::String& originalPath);
+    /// Removes a track from the library_tracks table by file_path.
+    void removeTrackFromLibrary (const juce::String& filePath);
 
     DeckStateManager&      deckStateManager;
     AudioEngine&           audioEngine;

@@ -160,7 +160,12 @@ void DeckStateManager::loadTrack (const juce::String& deckId, const TrackMetadat
         keyInfo.setProperty (IDs::confidence,        persisted->keyConfidence,      nullptr);
         keyInfo.setProperty (IDs::manuallyAdjusted,  persisted->keyManuallyAdjusted, nullptr);
         if (persisted->keyIndex >= 0)
+        {
+            db.updateLibraryTrackKey (metadata.filePath, metadata.contentHash,
+                                      KeyUtils::toCamelot (persisted->keyIndex),
+                                      KeyUtils::toCamelotIndex (persisted->keyIndex));
             keyInfo.setProperty (IDs::analysisStatus, "done", nullptr);
+        }
 
         // Cue points and beatgrid JSON stored for future features to parse
     }
@@ -176,6 +181,9 @@ void DeckStateManager::loadTrack (const juce::String& deckId, const TrackMetadat
             {
                 keyInfo.setProperty (IDs::keyIndex,        parsedKey, nullptr);
                 keyInfo.setProperty (IDs::confidence,      0.5,       nullptr);
+                db.updateLibraryTrackKey (metadata.filePath, metadata.contentHash,
+                                          KeyUtils::toCamelot (parsedKey),
+                                          KeyUtils::toCamelotIndex (parsedKey));
                 keyInfo.setProperty (IDs::analysisStatus,  "done",    nullptr);
             }
         }

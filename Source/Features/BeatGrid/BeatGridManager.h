@@ -30,6 +30,7 @@ private:
                           const juce::String& filePath);
 
     DeckStateManager& deckStateManager;
+    TrackDatabase&    db;
     AudioEngine&      audioEngine;
     BeatGridAnalyzer  analyzer;
 

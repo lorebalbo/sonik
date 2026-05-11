@@ -44,6 +44,16 @@ public:
     std::optional<TrackPersistentData> loadTrackData (const juce::String& filePath,
                                                       const juce::String& contentHash);
 
+    // Library browser analysis projection. These update library_tracks so the
+    // collection table reflects analyzed BPM/key values without requiring a rescan.
+    void updateLibraryTrackBpm (const juce::String& filePath,
+                                const juce::String& contentHash,
+                                double bpm);
+    void updateLibraryTrackKey (const juce::String& filePath,
+                                const juce::String& contentHash,
+                                const juce::String& key,
+                                int keyIndex);
+
     // Waveform cache (PRD-0006)
     void storeWaveformData (const juce::String& contentHash, const juce::MemoryBlock& data);
     bool loadWaveformData (const juce::String& contentHash, juce::MemoryBlock& data);
@@ -80,9 +90,20 @@ public:
     };
     std::vector<StemRecordInfo> getAllStemRecords();
 
+    // Raw handle for Message-Thread-only DML by other Library classes.
+    // Never call this from the audio thread.
+    sqlite3* getDbHandle() const noexcept { return dbHandle; }
+
+    // Path to the database file (used by background threads to open their own connection).
+    const juce::File& getDbFile() const noexcept { return dbFileStored; }
+
 private:
     void createTables();
-    void exec (const juce::String& sql);
+    int  execRc (const char* sql) noexcept;
+    void exec   (const juce::String& sql);
+    bool applyMigration1();
+    bool applyMigration2();
 
-    sqlite3* dbHandle = nullptr;
+    juce::File dbFileStored;
+    sqlite3*   dbHandle = nullptr;
 };

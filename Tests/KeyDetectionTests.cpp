@@ -20,6 +20,7 @@ public:
         testMusicalNotation();
         testCamelotColour();
         testCamelotNumber();
+        testCamelotIndex();
         testParseKeyString();
         testParseCamelotNotation();
         testParseEdgeCases();
@@ -130,6 +131,17 @@ private:
         expectEquals (KeyUtils::getCamelotNumber (22), 1);
         // Invalid
         expectEquals (KeyUtils::getCamelotNumber (-1), 0);
+    }
+
+    void testCamelotIndex()
+    {
+        beginTest ("Library Camelot index conversion");
+
+        expectEquals (KeyUtils::toCamelotIndex (19), 7);  // A minor = 8A
+        expectEquals (KeyUtils::toCamelotIndex (3),  11); // C# minor = 12A
+        expectEquals (KeyUtils::toCamelotIndex (22), 12); // B major = 1B
+        expectEquals (KeyUtils::toCamelotIndex (4),  21); // D major = 10B
+        expectEquals (KeyUtils::toCamelotIndex (-1), -1);
     }
 
     void testParseKeyString()

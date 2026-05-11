@@ -94,6 +94,27 @@ namespace KeyUtils
         return isMajor ? pitchToCamelotMajor[pitchClass] : pitchToCamelotMinor[pitchClass];
     }
 
+    /** Convert canonical key index to library Camelot index:
+        1A=0, 12A=11, 1B=12, 12B=23. Returns -1 when invalid. */
+    inline int toCamelotIndex (int canonicalKey)
+    {
+        const auto camelot = toCamelot (canonicalKey);
+        if (camelot.length() < 2)
+            return -1;
+
+        const auto upper = camelot.toUpperCase();
+        const bool isA = upper.endsWithChar ('A');
+        const bool isB = upper.endsWithChar ('B');
+        if (!isA && !isB)
+            return -1;
+
+        const int number = upper.dropLastCharacters (1).getIntValue();
+        if (number < 1 || number > 12)
+            return -1;
+
+        return isA ? number - 1 : number + 11;
+    }
+
     /** Get a Camelot color for the canonical key index.
      *  12-hue wheel (30-degree increments), major at full saturation, minor at reduced. */
     inline juce::Colour getCamelotColour (int canonicalKey)

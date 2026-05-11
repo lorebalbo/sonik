@@ -1,4 +1,5 @@
 #include "DeckShellComponent.h"
+#include <sqlite3.h>
 
 DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
                                         AudioEngine& engine,
@@ -438,11 +439,12 @@ void DeckShellComponent::paint (juce::Graphics& g)
         paintEmptyState (g, waveArea);
     }
 
-    // Drag overlay
+    // Drag overlay — binary-invert the header region only (AC-02 / DESIGN.md §2.1)
     if (isDragOver)
     {
-        g.setColour (juce::Colour (0x20000000));
-        g.fillRect (getLocalBounds());
+        const auto headerBounds = getLocalBounds().reduced (kPad).withHeight (kHeaderH);
+        g.setColour (juce::Colour (0xFF000000));
+        g.fillRect (headerBounds);
     }
 }
 
@@ -609,16 +611,47 @@ void DeckShellComponent::filesDropped (const juce::StringArray& files, int, int)
     isDragOver = false;
     repaint();
 
+    // Route through pendingLoadPath so format/existence checks happen in one place.
     for (const auto& f : files)
     {
         juce::File file (f);
         if (AudioFileLoader::isSupportedExtension (file.getFileExtension()))
         {
-            deckStateManager.setActiveDeck (deckId);
-            audioFileLoader.loadFile (deckId, file);
+            deckTree.setProperty (IDs::pendingLoadPath, f, nullptr);
             break;
         }
     }
+}
+
+// --- In-app DragAndDropTarget (library table) ---
+
+bool DeckShellComponent::isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& details)
+{
+    return details.description.toString().isNotEmpty();
+}
+
+void DeckShellComponent::itemDragEnter (const juce::DragAndDropTarget::SourceDetails&)
+{
+    isDragOver = true;
+    repaint();
+}
+
+void DeckShellComponent::itemDragExit (const juce::DragAndDropTarget::SourceDetails&)
+{
+    isDragOver = false;
+    repaint();
+}
+
+void DeckShellComponent::itemDropped (const juce::DragAndDropTarget::SourceDetails& details)
+{
+    isDragOver = false;
+    repaint();
+
+    const auto filePath = details.description.toString()
+                              .upToFirstOccurrenceOf ("\n", false, false)
+                              .trim();
+    if (filePath.isNotEmpty())
+        deckTree.setProperty (IDs::pendingLoadPath, filePath, nullptr);
 }
 
 // --- ValueTree::Listener ---
@@ -643,6 +676,20 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
     // Deck tree: playback/loading status changed
     if (tree == deckTree)
     {
+        if (property == IDs::pendingLoadPath)
+        {
+            const auto path = tree.getProperty (IDs::pendingLoadPath).toString();
+            if (path.isEmpty()) return;
+            // Clear immediately to prevent double-fire before the async work runs.
+            tree.setProperty (IDs::pendingLoadPath, "", nullptr);
+            juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this), path]()
+            {
+                if (safeThis != nullptr)
+                    safeThis->handlePendingLoad (path);
+            });
+            return;
+        }
+
         if (property == IDs::playbackStatus || property == IDs::loadingStatus)
         {
             juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
@@ -767,6 +814,116 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
                 }
             });
         }
+    }
+}
+
+// --- Track loading via pendingLoadPath (PRD-0034) ---
+
+void DeckShellComponent::handlePendingLoad (const juce::String& path)
+{
+    juce::File file (path);
+
+    if (! file.existsAsFile())
+    {
+        // Show Relocate / Remove dialog (AC-10)
+        auto opts = juce::MessageBoxOptions::makeOptionsOkCancel (
+            juce::MessageBoxIconType::WarningIcon,
+            "File Not Found",
+            "The track file could not be found:\n\n" + path,
+            "Relocate",
+            "Remove from Library");
+
+        juce::AlertWindow::showAsync (
+            opts,
+            [safeThis = juce::Component::SafePointer (this), path] (int result)
+            {
+                if (safeThis == nullptr) return;
+                if (result == 1)
+                    safeThis->showRelocateDialog (path);
+                else
+                    safeThis->removeTrackFromLibrary (path);
+            });
+        return;
+    }
+
+    // Format check — reject unsupported extensions (AC-13)
+    if (! AudioFileLoader::isSupportedExtension (file.getFileExtension()))
+    {
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::MessageBoxIconType::InfoIcon,
+            "Format Not Supported",
+            "The file format \"" + file.getFileExtension() + "\" is not supported.",
+            "OK",
+            this);
+        return;
+    }
+
+    // Auto-disengage SYNC if the deck is currently playing (AC-15)
+    if (deckTree.getProperty (IDs::playbackStatus).toString() == "playing")
+        deckTree.setProperty (IDs::syncEnabled, false, nullptr);
+
+    // Make this deck active
+    deckStateManager.setActiveDeck (deckId);
+
+    // Kick off the async decode
+    audioFileLoader.loadFile (deckId, file);
+
+    // Record the loaded path so LibraryComponent can track play-count and
+    // loadFocusedDeckTrack can detect empty decks (AC-08, AC-16).
+    deckTree.setProperty (IDs::loadedFilePath, path, nullptr);
+}
+
+void DeckShellComponent::showRelocateDialog (const juce::String& originalPath)
+{
+    auto fc = std::make_shared<juce::FileChooser> (
+        "Relocate Track",
+        juce::File{},
+        "*.mp3;*.flac;*.wav;*.aiff;*.aif;*.ogg;*.m4a");
+
+    fc->launchAsync (
+        juce::FileBrowserComponent::openMode
+        | juce::FileBrowserComponent::canSelectFiles,
+        [safeThis = juce::Component::SafePointer (this), originalPath, fc] (const juce::FileChooser& ch)
+        {
+            const auto result = ch.getResult();
+            if (! result.existsAsFile() || safeThis == nullptr)
+                return;
+
+            const juce::String newPath = result.getFullPathName();
+
+            // Persist new path to DB (AC-11)
+            auto* handle = safeThis->deckStateManager.getDatabase().getDbHandle();
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2 (handle,
+                    "UPDATE library_tracks SET file_path=?, is_missing=0 WHERE file_path=?",
+                    -1, &stmt, nullptr) == SQLITE_OK)
+            {
+                const std::string newPs  = newPath.toStdString();
+                const std::string origPs = originalPath.toStdString();
+                sqlite3_bind_text (stmt, 1, newPs.c_str(),  -1, SQLITE_TRANSIENT);
+                sqlite3_bind_text (stmt, 2, origPs.c_str(), -1, SQLITE_TRANSIENT);
+                sqlite3_step      (stmt);
+                sqlite3_finalize  (stmt);
+            }
+
+            // Proceed with the load using the new path
+            safeThis->handlePendingLoad (newPath);
+        });
+}
+
+void DeckShellComponent::removeTrackFromLibrary (const juce::String& filePath)
+{
+    // AC-12: delete from library_tracks and do not load anything
+    auto* handle = deckStateManager.getDatabase().getDbHandle();
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2 (handle,
+            "DELETE FROM library_tracks WHERE file_path=?",
+            -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        const std::string ps = filePath.toStdString();
+        sqlite3_bind_text (stmt, 1, ps.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step      (stmt);
+        sqlite3_finalize  (stmt);
     }
 }
 

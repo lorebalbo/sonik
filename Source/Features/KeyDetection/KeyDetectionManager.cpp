@@ -1,9 +1,11 @@
 #include "KeyDetectionManager.h"
+#include "KeyUtils.h"
 
 KeyDetectionManager::KeyDetectionManager (DeckStateManager& deckState,
                                            TrackDatabase& database,
                                            AudioEngine& engine)
     : deckStateManager (deckState),
+    db (database),
       audioEngine (engine),
       analyzer (database),
       rootState (deckState.getStateTree())
@@ -41,7 +43,7 @@ void KeyDetectionManager::valueTreePropertyChanged (juce::ValueTree& tree,
         // Check if key analysis is already done or in progress
         auto keyInfo = tree.getChildWithName (IDs::KeyInfo);
         auto analysisStatus = keyInfo.getProperty (IDs::analysisStatus).toString();
-        if (analysisStatus == "done" || analysisStatus == "analyzing")
+        if (analysisStatus == "done" || analysisStatus == "completed" || analysisStatus == "analyzing")
             return;
 
         triggerAnalysis (deckId, contentHash, filePath);
@@ -65,13 +67,20 @@ void KeyDetectionManager::triggerAnalysis (const juce::String& deckId,
     keyInfo.setProperty (IDs::analysisProgress, 0.0f,        nullptr);
 
     analyzer.analyze (contentHash, filePath, std::move (buffer),
-        [this, deckId] (const juce::String& /*hash*/, int keyIndex, float confidence)
+        [this, deckId, filePath, contentHash] (const juce::String& /*hash*/, int keyIndex, float confidence)
         {
             auto dt = deckStateManager.getDeckState (deckId);
             if (! dt.isValid())
                 return;
 
             auto ki = dt.getChildWithName (IDs::KeyInfo);
+
+            if (keyIndex >= 0)
+            {
+                db.updateLibraryTrackKey (filePath, contentHash,
+                                          KeyUtils::toCamelot (keyIndex),
+                                          KeyUtils::toCamelotIndex (keyIndex));
+            }
 
             ki.setProperty (IDs::keyIndex,    keyIndex,   nullptr);
             ki.setProperty (IDs::confidence,  static_cast<double> (confidence), nullptr);

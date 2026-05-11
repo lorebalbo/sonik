@@ -2,6 +2,7 @@
 #include <sqlite3.h>
 
 TrackDatabase::TrackDatabase (const juce::File& dbFile)
+    : dbFileStored (dbFile)
 {
     dbFile.getParentDirectory().createDirectory();
 
@@ -14,6 +15,11 @@ TrackDatabase::TrackDatabase (const juce::File& dbFile)
         dbHandle = nullptr;
         return;
     }
+
+    // Enable WAL journal mode for crash-safe writes and concurrent readers.
+    execRc ("PRAGMA journal_mode=WAL;");
+    // Enforce referential integrity (CASCADE deletes, FK constraints).
+    execRc ("PRAGMA foreign_keys=ON;");
 
     createTables();
 }
@@ -65,21 +71,247 @@ void TrackDatabase::createTables()
           "  created_at      INTEGER,"
           "  file_size_bytes INTEGER DEFAULT 0"
           ");");
+
+    // -----------------------------------------------------------------------
+    // Migration system (PRD-0030)
+    // -----------------------------------------------------------------------
+    exec ("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER PRIMARY KEY);");
+
+    // Determine the current schema version (0 when the table is empty).
+    int currentVersion = 0;
+    {
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2 (dbHandle,
+                                "SELECT version FROM schema_version LIMIT 1;",
+                                -1, &stmt, nullptr) == SQLITE_OK)
+        {
+            if (sqlite3_step (stmt) == SQLITE_ROW)
+                currentVersion = sqlite3_column_int (stmt, 0);
+            sqlite3_finalize (stmt);
+        }
+    }
+
+    // Each migration block is guarded by its minimum required version.
+    if (currentVersion < 1)
+    {
+        const bool ok = applyMigration1();
+        jassert (ok); // Migration 1 failed — inspect DBG output for SQL errors.
+        (void) ok;
+        currentVersion = 2;
+    }
+
+    if (currentVersion < 2)
+    {
+        const bool ok = applyMigration2();
+        jassert (ok); // Migration 2 failed — inspect DBG output for SQL errors.
+        (void) ok;
+    }
 }
 
-void TrackDatabase::exec (const juce::String& sql)
+int TrackDatabase::execRc (const char* sql) noexcept
 {
-    if (dbHandle == nullptr) return;
+    if (dbHandle == nullptr) return SQLITE_ERROR;
 
     char* errMsg = nullptr;
-    auto result = sqlite3_exec (dbHandle, sql.toRawUTF8(), nullptr, nullptr, &errMsg);
+    const int rc = sqlite3_exec (dbHandle, sql, nullptr, nullptr, &errMsg);
 
-    if (result != SQLITE_OK)
+    if (rc != SQLITE_OK)
     {
         DBG ("TrackDatabase SQL error: " + juce::String (errMsg != nullptr ? errMsg : "unknown"));
         if (errMsg != nullptr)
             sqlite3_free (errMsg);
     }
+
+    return rc;
+}
+
+void TrackDatabase::exec (const juce::String& sql)
+{
+    execRc (sql.toRawUTF8());
+}
+
+// ---------------------------------------------------------------------------
+// Migration 1 — Library schema (PRD-0030)
+// All DDL is wrapped in a single BEGIN IMMEDIATE / COMMIT transaction.
+// On any failure the transaction is rolled back and schema_version is NOT
+// updated, so the migration will be retried on the next startup.
+// ---------------------------------------------------------------------------
+bool TrackDatabase::applyMigration1()
+{
+    if (execRc ("BEGIN IMMEDIATE;") != SQLITE_OK)
+        return false;
+
+    // Convenience: roll back and signal failure.
+    const auto rollbackAndFail = [this]() -> bool
+    {
+        char* e = nullptr;
+        sqlite3_exec (dbHandle, "ROLLBACK;", nullptr, nullptr, &e);
+        if (e != nullptr) sqlite3_free (e);
+        return false;
+    };
+
+    // -- library_tracks -------------------------------------------------------
+    if (execRc (
+        "CREATE TABLE library_tracks ("
+        "  id               INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  file_path        TEXT    NOT NULL UNIQUE,"
+        "  content_hash     TEXT    NOT NULL,"
+        "  title            TEXT,"
+        "  artist           TEXT,"
+        "  album            TEXT,"
+        "  bpm              REAL,"
+        "  key              TEXT,"
+        "  key_index        INTEGER,"
+        "  duration_seconds REAL,"
+        "  file_size_bytes  INTEGER,"
+        "  date_added       INTEGER NOT NULL,"
+        "  last_seen        INTEGER,"
+        "  is_missing       INTEGER NOT NULL DEFAULT 0,"
+        "  play_count       INTEGER NOT NULL DEFAULT 0,"
+        "  rating           INTEGER NOT NULL DEFAULT 0"
+        ");") != SQLITE_OK)
+        return rollbackAndFail();
+
+    // -- library_fts (FTS5 content-backed virtual table) ----------------------
+    if (execRc (
+        "CREATE VIRTUAL TABLE library_fts USING fts5("
+        "  title, artist, album,"
+        "  content=library_tracks,"
+        "  content_rowid=id"
+        ");") != SQLITE_OK)
+        return rollbackAndFail();
+
+    // -- watched_folders ------------------------------------------------------
+    if (execRc (
+        "CREATE TABLE watched_folders ("
+        "  id              INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  folder_path     TEXT    NOT NULL UNIQUE,"
+        "  last_scanned_at INTEGER"
+        ");") != SQLITE_OK)
+        return rollbackAndFail();
+
+    // -- playlists ------------------------------------------------------------
+    if (execRc (
+        "CREATE TABLE playlists ("
+        "  id         INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  name       TEXT    NOT NULL,"
+        "  type       TEXT    NOT NULL DEFAULT 'normal',"
+        "  created_at INTEGER NOT NULL"
+        ");") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc (
+        "CREATE UNIQUE INDEX idx_playlists_name_nocase "
+        "ON playlists(name COLLATE NOCASE);") != SQLITE_OK)
+        return rollbackAndFail();
+
+    // -- playlist_tracks ------------------------------------------------------
+    if (execRc (
+        "CREATE TABLE playlist_tracks ("
+        "  id          INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,"
+        "  track_id    INTEGER NOT NULL REFERENCES library_tracks(id) ON DELETE CASCADE,"
+        "  position    INTEGER NOT NULL,"
+        "  played_at   TEXT"
+        ");") != SQLITE_OK)
+        return rollbackAndFail();
+
+    // -- FTS sync triggers ----------------------------------------------------
+    if (execRc (
+        "CREATE TRIGGER after_insert_library_tracks "
+        "AFTER INSERT ON library_tracks BEGIN "
+        "  INSERT INTO library_fts(rowid, title, artist, album) "
+        "  VALUES (new.id, new.title, new.artist, new.album); "
+        "END;") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc (
+        "CREATE TRIGGER after_update_library_tracks "
+        "AFTER UPDATE ON library_tracks "
+        "WHEN old.title != new.title OR old.artist != new.artist OR old.album != new.album BEGIN "
+        "  INSERT INTO library_fts(library_fts, rowid, title, artist, album) "
+        "  VALUES('delete', old.id, old.title, old.artist, old.album); "
+        "  INSERT INTO library_fts(rowid, title, artist, album) "
+        "  VALUES (new.id, new.title, new.artist, new.album); "
+        "END;") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc (
+        "CREATE TRIGGER after_delete_library_tracks "
+        "AFTER DELETE ON library_tracks BEGIN "
+        "  INSERT INTO library_fts(library_fts, rowid, title, artist, album) "
+        "  VALUES('delete', old.id, old.title, old.artist, old.album); "
+        "END;") != SQLITE_OK)
+        return rollbackAndFail();
+
+    // -- Seed: built-in History playlist --------------------------------------
+    if (execRc (
+        "INSERT INTO playlists (name, type, created_at) "
+        "VALUES ('History', 'history', CAST(strftime('%s', 'now') AS INTEGER));") != SQLITE_OK)
+        return rollbackAndFail();
+
+    // -- Stamp schema version -------------------------------------------------
+    if (execRc ("INSERT INTO schema_version (version) VALUES (2);") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc ("COMMIT;") != SQLITE_OK)
+    {
+        // COMMIT failed; WAL crash-recovery will restore a clean state on next
+        // open, and the migration will be retried because schema_version is
+        // still empty.
+        return false;
+    }
+
+    return true;
+}
+
+bool TrackDatabase::applyMigration2()
+{
+    if (execRc ("BEGIN IMMEDIATE;") != SQLITE_OK)
+        return false;
+
+    const auto rollbackAndFail = [this]() -> bool
+    {
+        char* e = nullptr;
+        sqlite3_exec (dbHandle, "ROLLBACK;", nullptr, nullptr, &e);
+        if (e != nullptr) sqlite3_free (e);
+        return false;
+    };
+
+    if (execRc (
+        "CREATE TABLE playlist_tracks_new ("
+        "  id          INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "  playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,"
+        "  track_id    INTEGER NOT NULL REFERENCES library_tracks(id) ON DELETE CASCADE,"
+        "  position    INTEGER NOT NULL,"
+        "  played_at   TEXT"
+        ");") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc (
+        "INSERT INTO playlist_tracks_new (playlist_id, track_id, position) "
+        "SELECT playlist_id, track_id, position FROM playlist_tracks "
+        "ORDER BY playlist_id, position;") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc ("DROP TABLE playlist_tracks;") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc ("ALTER TABLE playlist_tracks_new RENAME TO playlist_tracks;") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc (
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_name_nocase "
+        "ON playlists(name COLLATE NOCASE);") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc ("UPDATE schema_version SET version = 2;") != SQLITE_OK)
+        return rollbackAndFail();
+
+    if (execRc ("COMMIT;") != SQLITE_OK)
+        return false;
+
+    return true;
 }
 
 void TrackDatabase::saveSessionState (int deckCount, const juce::String& activeDeckId,
@@ -205,6 +437,54 @@ std::optional<TrackPersistentData> TrackDatabase::loadTrackData (const juce::Str
 
     sqlite3_finalize (stmt);
     return result;
+}
+
+void TrackDatabase::updateLibraryTrackBpm (const juce::String& filePath,
+                                           const juce::String& contentHash,
+                                           double bpm)
+{
+    if (dbHandle == nullptr || filePath.isEmpty() || bpm <= 0.0)
+        return;
+
+    juce::ignoreUnused (contentHash);
+
+    const char* sql =
+        "UPDATE library_tracks SET bpm = ? "
+        "WHERE file_path = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_double (stmt, 1, bpm);
+        sqlite3_bind_text   (stmt, 2, filePath.toRawUTF8(),    -1, SQLITE_TRANSIENT);
+        sqlite3_step (stmt);
+        sqlite3_finalize (stmt);
+    }
+}
+
+void TrackDatabase::updateLibraryTrackKey (const juce::String& filePath,
+                                           const juce::String& contentHash,
+                                           const juce::String& key,
+                                           int keyIndex)
+{
+    if (dbHandle == nullptr || filePath.isEmpty() || key.isEmpty() || keyIndex < 0)
+        return;
+
+    juce::ignoreUnused (contentHash);
+
+    const char* sql =
+        "UPDATE library_tracks SET key = ?, key_index = ? "
+        "WHERE file_path = ?;";
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text (stmt, 1, key.toRawUTF8(),         -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int  (stmt, 2, keyIndex);
+        sqlite3_bind_text (stmt, 3, filePath.toRawUTF8(),    -1, SQLITE_TRANSIENT);
+        sqlite3_step (stmt);
+        sqlite3_finalize (stmt);
+    }
 }
 
 void TrackDatabase::storeWaveformData (const juce::String& contentHash,

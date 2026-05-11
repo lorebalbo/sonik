@@ -1,0 +1,1343 @@
+#include "LibraryComponent.h"
+#include "LibraryPalette.h"
+#include "Features/KeyDetection/KeyUtils.h"
+#include <sqlite3.h>
+
+static constexpr int kSidebarWidth  = 200;
+static constexpr int kFilterBarHeight = 40;
+static constexpr int kScanLabelHeight = 16;
+
+namespace
+{
+bool isAnalysisComplete (const juce::String& status)
+{
+    return status == "done" || status == "completed";
+}
+}
+
+// =============================================================================
+// Construction / destruction
+// =============================================================================
+
+LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
+                                     TrackDatabase&   dbRef)
+    : rootState (rootStateRef)
+    , db        (dbRef)
+    , analysisService (dbRef)
+{
+    currentSidebarContext = "collection";
+
+    // ---- Scan progress label ------------------------------------------------
+    scanProgressLabel.setFont (juce::Font (LibraryPalette::bodyFont (11.0f)));
+    scanProgressLabel.setColour (juce::Label::textColourId, LibraryPalette::primary());
+    scanProgressLabel.setJustificationType (juce::Justification::centredLeft);
+    scanProgressLabel.setVisible (false);
+    addAndMakeVisible (scanProgressLabel);
+
+    // ---- Child components ---------------------------------------------------
+    addAndMakeVisible (sidebar);
+    addAndMakeVisible (filterBar);
+    addAndMakeVisible (trackTable);
+
+    // ---- Sidebar callbacks --------------------------------------------------
+    sidebar.onCollectionSelected = [this]
+    {
+        currentSidebarContext = "collection";
+        dispatchCurrentQuery (true);
+    };
+
+    sidebar.onFolderSelected = [this] (const juce::String& path)
+    {
+        currentSidebarContext = "folder:" + path;
+        dispatchCurrentQuery (true);
+    };
+
+    sidebar.onPlaylistSelected = [this] (int64_t id, juce::String type)
+    {
+        currentSidebarContext = (type == "preparation")
+                                    ? "preparation"
+                                    : "playlist:" + juce::String (id) + ":" + type;
+        dispatchCurrentQuery (true);
+    };
+
+    sidebar.onPlaylistHeaderMenuRequested = [this] (juce::Point<int> screenPos)
+    {
+        showPlaylistHeaderMenu (screenPos);
+    };
+
+    sidebar.onPlaylistMenuRequested = [this] (int64_t playlistId, juce::String type, juce::Point<int> screenPos)
+    {
+        showPlaylistMenu (playlistId, type, screenPos);
+    };
+
+    sidebar.onPlaylistDoubleClicked = [this] (int64_t playlistId, juce::String type)
+    {
+        if (type == "normal")
+        {
+            for (const auto& playlist : playlistCache)
+            {
+                if (playlist.id == playlistId)
+                {
+                    promptForPlaylistName ("Rename Playlist", playlist.name,
+                        [this, playlistId] (const juce::String& name)
+                        {
+                            handlePlaylistRename (playlistId, name);
+                        });
+                    break;
+                }
+            }
+        }
+    };
+
+    sidebar.onTrackPathDroppedOnPlaylist = [this] (int64_t playlistId, juce::String type, juce::String filePath)
+    {
+        addTrackPathToPlaylist (playlistId, type, filePath);
+    };
+
+    // ---- FilterBar callbacks ------------------------------------------------
+    filterBar.onSearchChanged = [this] (const juce::String& text)
+    {
+        QueryParams np = LibraryQueryThread::parseSearchString (text);
+        np.sortColumn    = currentParams.sortColumn;
+        np.sortAscending = currentParams.sortAscending;
+        currentParams    = std::move (np);
+        dispatchCurrentQuery (true);
+    };
+
+    filterBar.onKeyMatchToggled = [this] (bool active)
+    {
+        deckFilter.keyMatchActive = active;
+        rebuildDeckAwareFilter();
+        dispatchCurrentQuery (true);
+        saveFilterState();
+    };
+
+    filterBar.onBpmMatchToggled = [this] (bool active)
+    {
+        deckFilter.bpmMatchActive = active;
+        rebuildDeckAwareFilter();
+        dispatchCurrentQuery (true);
+        saveFilterState();
+    };
+
+    filterBar.onBpmVisionChanged = [this] (double vision)
+    {
+        deckFilter.bpmVision = vision;
+        rebuildDeckAwareFilter();
+        if (deckFilter.bpmMatchActive)
+            dispatchCurrentQuery (true);
+        saveFilterState();
+    };
+
+    filterBar.onHalfTimeToggled = [this] (bool enabled)
+    {
+        halfTimeEnabled = enabled;
+        rebuildDeckAwareFilter();
+        if (deckFilter.bpmMatchActive)
+            dispatchCurrentQuery (true);
+        saveFilterState();
+    };
+
+    // ---- TrackTable callbacks -----------------------------------------------
+    trackTable.onRowDoubleClicked = [this] (int rowIndex)
+    {
+        loadFocusedDeckTrack (rowIndex);
+    };
+
+    trackTable.onRowRightClicked = [this] (int rowIndex, juce::Point<int> pos)
+    {
+        showContextMenu (rowIndex,
+                         trackTable.localPointToGlobal (pos));
+    };
+
+    trackTable.onRatingChanged = [this] (int rowIndex, int newRating)
+    {
+        if (rowIndex >= 0
+            && rowIndex < static_cast<int> (trackTable.resultBuffer.size()))
+        {
+            setTrackRating (trackTable.resultBuffer[static_cast<size_t> (rowIndex)].id, newRating);
+        }
+    };
+
+    trackTable.onSortChanged = [this] (int columnId, bool ascending)
+    {
+        juce::String col;
+        switch (columnId)
+        {
+            case TrackTableMolecule::ColTitle:    col = "title";            break;
+            case TrackTableMolecule::ColArtist:   col = "artist";           break;
+            case TrackTableMolecule::ColBpm:      col = "bpm";              break;
+            case TrackTableMolecule::ColKey:      col = "key_index";        break;
+            case TrackTableMolecule::ColDuration: col = "duration_seconds"; break;
+            case TrackTableMolecule::ColRating:   col = "rating";           break;
+            default:                               col = "date_added";       break;
+        }
+        currentParams.sortColumn    = col;
+        currentParams.sortAscending = ascending;
+        dispatchCurrentQuery (true);
+    };
+
+    trackTable.onPlaylistEntryDropped = [this] (int64_t entryId, int newRowIndex)
+    {
+        movePlaylistEntry (entryId, newRowIndex);
+    };
+
+    // ---- Query thread -------------------------------------------------------
+    queryThread = std::make_unique<LibraryQueryThread> (db);
+    queryThread->setResultCallback ([this] (std::vector<LibraryTrackRow> rows)
+    {
+        updateResultBuffer (std::move (rows));
+    });
+
+    // ---- Filter state persistence -------------------------------------------
+    {
+        juce::PropertiesFile::Options opts;
+        opts.applicationName     = "Sonik";
+        opts.filenameSuffix      = ".settings";
+        opts.folderName          = "Sonik";
+        opts.osxLibrarySubFolder = "Application Support";
+        filterPropsFile = std::make_unique<juce::PropertiesFile> (opts);
+    }
+
+    // ---- Empty state panel --------------------------------------------------
+    emptyStateLabel.setFont (juce::Font (LibraryPalette::bodyFont (13.0f)));
+    emptyStateLabel.setColour (juce::Label::textColourId, LibraryPalette::primary());
+    emptyStateLabel.setJustificationType (juce::Justification::centred);
+    emptyStateLabel.setText ("No tracks match the current deck filters.\n"
+                              "Try widening BPM VISION or loading a different track.",
+                              juce::dontSendNotification);
+    emptyStateLabel.setVisible (false);
+    addAndMakeVisible (emptyStateLabel);
+
+    clearFiltersButton.setButtonText ("Clear Filters");
+    clearFiltersButton.setColour (juce::TextButton::buttonColourId,   LibraryPalette::surface());
+    clearFiltersButton.setColour (juce::TextButton::textColourOffId,  LibraryPalette::primary());
+    clearFiltersButton.setColour (juce::TextButton::buttonOnColourId, LibraryPalette::primary());
+    clearFiltersButton.setColour (juce::TextButton::textColourOnId,   LibraryPalette::surface());
+    clearFiltersButton.onClick = [this]
+    {
+        deckFilter.keyMatchActive = false;
+        deckFilter.bpmMatchActive = false;
+        filterBar.setKeyMatchActive (false);
+        filterBar.setBpmMatchActive (false);
+        rebuildDeckAwareFilter();
+        dispatchCurrentQuery (true);
+        saveFilterState();
+    };
+    clearFiltersButton.setVisible (false);
+    addAndMakeVisible (clearFiltersButton);
+
+    // ---- ValueTree listening ------------------------------------------------
+    rootState.addListener (this);
+
+    // ---- Populate sidebar ---------------------------------------------------
+    refreshSidebarFolders();
+    refreshSidebarPlaylists();
+
+    // ---- Initial query (full library, date_added DESC) ----------------------
+    currentParams.sortColumn    = "date_added";
+    currentParams.sortAscending = false;
+    dispatchCurrentQuery (true);
+
+    // Load persisted filter state (must come after wiring all callbacks)
+    loadFilterState();
+
+    setWantsKeyboardFocus (true);
+}
+
+LibraryComponent::~LibraryComponent()
+{
+    rootState.removeListener (this);
+    if (scanner != nullptr)
+        scanner->removeListener (this);
+    queryThread.reset();
+}
+
+// =============================================================================
+// paint / resized / keyPressed
+// =============================================================================
+
+void LibraryComponent::paint (juce::Graphics& g)
+{
+    g.fillAll (LibraryPalette::surface());
+}
+
+void LibraryComponent::resized()
+{
+    auto b = getLocalBounds();
+
+    if (scanning || activeAnalysisJobs > 0)
+    {
+        scanProgressLabel.setVisible (true);
+        scanProgressLabel.setBounds (b.removeFromTop (kScanLabelHeight));
+    }
+    else
+    {
+        scanProgressLabel.setVisible (false);
+    }
+
+    auto sidebarBounds = b.removeFromLeft (kSidebarWidth);
+    sidebar.setBounds (sidebarBounds);
+
+    filterBar.setBounds (b.removeFromTop (kFilterBarHeight));
+
+    if (showingEmptyState)
+    {
+        trackTable.setVisible (false);
+        emptyStateLabel.setVisible (true);
+        clearFiltersButton.setVisible (true);
+        emptyStateLabel.setBounds (b.withTrimmedBottom (48));
+        clearFiltersButton.setBounds (b.removeFromBottom (48)
+                                        .withSizeKeepingCentre (120, 32));
+    }
+    else
+    {
+        emptyStateLabel.setVisible (false);
+        clearFiltersButton.setVisible (false);
+        trackTable.setVisible (true);
+        trackTable.setBounds (b);
+    }
+}
+
+bool LibraryComponent::keyPressed (const juce::KeyPress& key)
+{
+    if (key.getModifiers().isCommandDown() && key.getKeyCode() == 'f')
+    {
+        filterBar.focusSearchBar();
+        return true;
+    }
+
+    if (key == juce::KeyPress::returnKey)
+    {
+        const int row = trackTable.getSelectedRow();
+        if (row >= 0) loadFocusedDeckTrack (row);
+        return true;
+    }
+
+    if (key == juce::KeyPress::upKey)
+    {
+        const int row = juce::jmax (0, trackTable.getSelectedRow() - 1);
+        trackTable.selectRow (row);
+        trackTable.scrollToRow (row);
+        return true;
+    }
+
+    if (key == juce::KeyPress::downKey)
+    {
+        const int maxRow = static_cast<int> (trackTable.resultBuffer.size()) - 1;
+        const int row    = juce::jmin (maxRow, trackTable.getSelectedRow() + 1);
+        if (row >= 0) { trackTable.selectRow (row); trackTable.scrollToRow (row); }
+        return true;
+    }
+
+    return false;
+}
+
+// =============================================================================
+// WatchFolderScanner::Listener
+// =============================================================================
+
+void LibraryComponent::setScanner (WatchFolderScanner& s)
+{
+    scanner = &s;
+    s.addListener (this);
+}
+
+void LibraryComponent::scanProgressUpdate (int filesScanned, int total,
+                                            const juce::String& currentFile)
+{
+    scanning = true;
+    const juce::String msg = "Scanning: "
+        + juce::String (filesScanned) + " / " + juce::String (total)
+        + "  " + currentFile.fromLastOccurrenceOf ("/", false, false).substring (0, 48);
+    scanProgressLabel.setText (msg, juce::dontSendNotification);
+    resized();
+}
+
+void LibraryComponent::scanCompleted()
+{
+    scanning = false;
+    resized();
+    refreshSidebarFolders();
+    refreshSidebarPlaylists();
+    dispatchCurrentQuery (true);
+}
+
+void LibraryComponent::savePreparationListBeforeQuit (std::function<void(bool)> completionIn)
+{
+    if (queryThread == nullptr || preparationTrackIds.empty())
+    {
+        if (completionIn)
+            completionIn (true);
+        return;
+    }
+
+    const auto now = juce::Time::getCurrentTime();
+    const auto stamp = now.formatted ("%Y-%m-%d %H.%M.%S")
+                     + "." + juce::String (static_cast<int> (now.toMilliseconds() % 1000)).paddedLeft ('0', 3);
+
+    queryThread->createPlaylistWithTracks ("Preparation " + stamp, preparationTrackIds,
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this), quitCompletion = std::move (completionIn)]
+        (bool ok, juce::String, int64_t) mutable
+        {
+            if (safeThis != nullptr && ok)
+            {
+                safeThis->preparationTrackIds.clear();
+                safeThis->sidebar.setPreparationCount (0);
+            }
+
+            if (quitCompletion)
+                quitCompletion (true);
+        });
+}
+
+// =============================================================================
+// ValueTree::Listener
+// =============================================================================
+
+void LibraryComponent::valueTreePropertyChanged (juce::ValueTree&         tree,
+                                                  const juce::Identifier& property)
+{
+    // We care about changes on Deck nodes or their immediate children
+    // (BeatGrid, TrackMetadata, KeyInfo).
+    const juce::ValueTree& parent = tree.getParent();
+    const bool isDeckLevel  = (tree.getType() == IDs::Deck);
+    const bool isDeckChild  = parent.isValid() && (parent.getType() == IDs::Deck);
+
+    if (!isDeckLevel && !isDeckChild)
+        return;
+
+    // Playing-track indicator: update whenever file or loaded-path or status changes.
+    if (property == IDs::filePath || property == IDs::playbackStatus || property == IDs::loadedFilePath)
+        updatePlayingTrack();
+
+    if (isDeckChild && property == IDs::analysisStatus
+        && (tree.hasType (IDs::BeatGrid) || tree.hasType (IDs::KeyInfo))
+        && isAnalysisComplete (tree.getProperty (IDs::analysisStatus).toString()))
+    {
+        rebuildDeckAwareFilter();
+        dispatchCurrentQuery (true);
+        return;
+    }
+
+    // Play-count increment: fire exactly once per new track the first time it plays (AC-16)
+    if (isDeckLevel && property == IDs::playbackStatus)
+    {
+        const auto newStatus = tree.getProperty (IDs::playbackStatus).toString();
+        const auto dId       = tree.getProperty (IDs::id).toString();
+        const auto oldStatus = lastPlaybackStatusPerDeck[dId];
+        lastPlaybackStatusPerDeck[dId] = newStatus;
+
+        if (newStatus == "playing")
+        {
+            const auto loadedPath = tree.getProperty (IDs::loadedFilePath).toString();
+            if (loadedPath.isNotEmpty() && loadedPath != lastCountedPathPerDeck[dId])
+            {
+                incrementPlayCount (loadedPath);
+                lastCountedPathPerDeck[dId] = loadedPath;
+            }
+
+            if (loadedPath.isNotEmpty() && oldStatus != "playing")
+            {
+                queryThread->appendHistoryEntryForFilePath (loadedPath,
+                    [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+                    (bool, juce::String, int64_t)
+                    {
+                        if (safeThis != nullptr)
+                        {
+                            safeThis->refreshSidebarPlaylists();
+                            if (safeThis->currentSidebarContext.contains (":history"))
+                                safeThis->dispatchCurrentQuery (true);
+                        }
+                    });
+            }
+        }
+    }
+
+    // Key change → immediate re-dispatch (no debounce)
+    if (property == IDs::keyIndex)
+    {
+        rebuildDeckAwareFilter();
+        if (deckFilter.keyMatchActive)
+            dispatchCurrentQuery (true);
+        return;
+    }
+
+    // New track loaded → immediate
+    if (property == IDs::loadedFilePath)
+    {
+        rebuildDeckAwareFilter();
+        if (deckFilter.bpmMatchActive || deckFilter.keyMatchActive)
+            dispatchCurrentQuery (true);
+        return;
+    }
+
+    // BPM / speed changes → 150 ms debounce
+    if (property == IDs::speedMultiplier
+        || property == IDs::bpm
+        || property == IDs::playbackStatus)
+    {
+        rebuildDeckAwareFilter();
+        if (deckFilter.bpmMatchActive || deckFilter.keyMatchActive)
+            dispatchCurrentQuery (false); // debounced (150 ms)
+    }
+}
+
+// =============================================================================
+// Timer — debounce for deck state changes
+// =============================================================================
+
+void LibraryComponent::timerCallback()
+{
+    stopTimer();
+    queryThread->dispatchQuery (buildQueryParams());
+}
+
+// =============================================================================
+// Private helpers
+// =============================================================================
+
+void LibraryComponent::dispatchCurrentQuery (bool immediate)
+{
+    if (immediate)
+    {
+        stopTimer();
+        queryThread->dispatchQuery (buildQueryParams());
+    }
+    else
+    {
+        startTimer (150);
+    }
+}
+
+void LibraryComponent::rebuildDeckAwareFilter()
+{
+    deckFilter.bpmWindows.clear();
+    deckFilter.compatibleKeyIndices.clear();
+
+    auto decksNode = rootState.getChildWithName (IDs::Decks);
+    for (int i = 0; i < decksNode.getNumChildren(); ++i)
+    {
+        auto deckNode  = decksNode.getChild (i);
+        auto beatGrid  = deckNode.getChildWithName (IDs::BeatGrid);
+        auto keyInfo   = deckNode.getChildWithName (IDs::KeyInfo);
+        auto trackMeta = deckNode.getChildWithName (IDs::TrackMetadata);
+
+        // Skip decks with no track loaded
+        if (!trackMeta.isValid()
+            || trackMeta.getProperty (IDs::filePath).toString().isEmpty())
+            continue;
+
+        // BPM window: effectiveBpm = storedBpm * speedMultiplier
+        // Only when BeatGrid analysis is completed (AC-3.2)
+        if (deckFilter.bpmMatchActive)
+        {
+            const juce::String bgStatus = beatGrid.isValid()
+                ? beatGrid.getProperty (IDs::analysisStatus).toString()
+                : juce::String{};
+
+            if (isAnalysisComplete (bgStatus))
+            {
+                const double storedBpm = static_cast<double> (
+                    beatGrid.getProperty (IDs::bpm));
+                const double speed = static_cast<double> (
+                    deckNode.getProperty (IDs::speedMultiplier, 1.0));
+                const double effective = storedBpm * speed;
+
+                if (effective > 0.0)
+                {
+                    const double v = deckFilter.bpmVision;
+                    deckFilter.bpmWindows.add ({ effective - v, effective + v });
+
+                    if (halfTimeEnabled)
+                    {
+                        deckFilter.bpmWindows.add ({ effective * 0.5 - v, effective * 0.5 + v });
+                        deckFilter.bpmWindows.add ({ effective * 2.0 - v, effective * 2.0 + v });
+                    }
+                }
+            }
+        }
+
+        // Key compatibility: Camelot Wheel adjacency (fixed boundary wrapping)
+        // Only when KeyInfo analysis is completed (AC-3.2)
+        if (deckFilter.keyMatchActive && keyInfo.isValid())
+        {
+            const juce::String kiStatus =
+                keyInfo.getProperty (IDs::analysisStatus).toString();
+
+            if (isAnalysisComplete (kiStatus))
+            {
+                const int canonicalKey = static_cast<int> (
+                    keyInfo.getProperty (IDs::keyIndex, -1));
+                const int ki = KeyUtils::toCamelotIndex (canonicalKey);
+
+                if (ki >= 0 && ki < 24)
+                {
+                    const int letter = ki / 12;   // 0 = A ring, 1 = B ring
+                    const int num    = ki % 12;   // 0-11
+
+                    deckFilter.compatibleKeyIndices.addIfNotAlreadyThere (ki);
+                    deckFilter.compatibleKeyIndices.addIfNotAlreadyThere ((num + 1)  % 12 + letter * 12); // CW
+                    deckFilter.compatibleKeyIndices.addIfNotAlreadyThere ((num + 11) % 12 + letter * 12); // CCW
+                    deckFilter.compatibleKeyIndices.addIfNotAlreadyThere (ki < 12 ? ki + 12 : ki - 12);  // relative
+                }
+            }
+        }
+    }
+
+    // Compute suspended state and update FilterBar visual
+    const bool keySuspended = deckFilter.keyMatchActive
+                               && deckFilter.compatibleKeyIndices.isEmpty();
+    const bool bpmSuspended = deckFilter.bpmMatchActive
+                               && deckFilter.bpmWindows.isEmpty();
+    filterBar.setSuspended (keySuspended || bpmSuspended);
+}
+
+void LibraryComponent::updatePlayingTrack()
+{
+    juce::String playingPath;
+
+    auto decksNode = rootState.getChildWithName (IDs::Decks);
+    for (int i = 0; i < decksNode.getNumChildren(); ++i)
+    {
+        auto deckNode = decksNode.getChild (i);
+        if (deckNode.getProperty (IDs::playbackStatus).toString() == "playing")
+        {
+            auto meta = deckNode.getChildWithName (IDs::TrackMetadata);
+            if (meta.isValid())
+            {
+                playingPath = meta.getProperty (IDs::filePath).toString();
+                break;
+            }
+        }
+    }
+
+    trackTable.setPlayingTrack (playingPath);
+}
+
+void LibraryComponent::updateResultBuffer (std::vector<LibraryTrackRow> rows)
+{
+    updatePlayingTrack();
+    trackTable.setPlaylistReorderEnabled (currentSidebarContext.contains (":normal"));
+    trackTable.resultBuffer = std::move (rows);
+
+    const bool filtersActive = deckFilter.keyMatchActive || deckFilter.bpmMatchActive;
+    const bool nowEmpty      = trackTable.resultBuffer.empty() && filtersActive;
+    if (nowEmpty != showingEmptyState)
+    {
+        showingEmptyState = nowEmpty;
+        resized();
+    }
+
+    trackTable.updateContent();
+}
+
+void LibraryComponent::refreshSidebarFolders()
+{
+    auto*  handle = db.getDbHandle();
+    juce::StringArray paths;
+
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2 (handle,
+                             "SELECT folder_path FROM watched_folders ORDER BY folder_path",
+                             -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        while (sqlite3_step (stmt) == SQLITE_ROW)
+        {
+            const auto* txt = reinterpret_cast<const char*> (sqlite3_column_text (stmt, 0));
+            if (txt) paths.add (juce::String::fromUTF8 (txt));
+        }
+        sqlite3_finalize (stmt);
+    }
+
+    sidebar.setFolders (paths);
+}
+
+void LibraryComponent::refreshSidebarPlaylists()
+{
+    if (queryThread == nullptr)
+        return;
+
+    queryThread->requestPlaylists (
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        (std::vector<PlaylistInfo> playlists)
+        {
+            if (safeThis == nullptr)
+                return;
+
+            safeThis->playlistCache = std::move (playlists);
+            safeThis->sidebar.setPreparationCount (static_cast<int> (safeThis->preparationTrackIds.size()));
+            safeThis->sidebar.setPlaylists (safeThis->playlistCache);
+        });
+}
+
+QueryParams LibraryComponent::buildQueryParams() const
+{
+    QueryParams p  = currentParams;
+    p.deckFilter   = deckFilter;
+
+    if (currentSidebarContext.startsWith ("folder:"))
+    {
+        p.folderPath = currentSidebarContext.fromFirstOccurrenceOf ("folder:", false, false);
+    }
+    else if (currentSidebarContext == "preparation")
+    {
+        p.playlistType = "preparation";
+        p.preparationTrackIds = preparationTrackIds;
+    }
+    else if (currentSidebarContext.startsWith ("playlist:"))
+    {
+        const auto tail = currentSidebarContext.fromFirstOccurrenceOf ("playlist:", false, false);
+        p.playlistId = tail.upToFirstOccurrenceOf (":", false, false).getLargeIntValue();
+        p.playlistType = tail.fromFirstOccurrenceOf (":", false, false);
+    }
+
+    return p;
+}
+
+// ---- Track loading ---------------------------------------------------------
+
+void LibraryComponent::loadFocusedDeckTrack (int rowIndex)
+{
+    auto decksNode = rootState.getChildWithName (IDs::Decks);
+
+    // Prefer the first deck (by index) whose loadedFilePath is empty (AC-08)
+    for (int i = 0; i < decksNode.getNumChildren(); ++i)
+    {
+        auto d = decksNode.getChild (i);
+        if (d.getProperty (IDs::loadedFilePath).toString().isEmpty())
+        {
+            loadTrackToDeck (rowIndex, d.getProperty (IDs::id).toString());
+            return;
+        }
+    }
+
+    // Fallback: deck at index 0
+    if (decksNode.getNumChildren() > 0)
+    {
+        const auto fallbackId = decksNode.getChild (0).getProperty (IDs::id).toString();
+        loadTrackToDeck (rowIndex, fallbackId.isNotEmpty() ? fallbackId : "A");
+    }
+}
+
+void LibraryComponent::loadTrackToDeck (int rowIndex, const juce::String& deckId)
+{
+    if (rowIndex < 0 || rowIndex >= static_cast<int> (trackTable.resultBuffer.size()))
+        return;
+
+    // File existence and format checks are the deck's responsibility (AC-09/AC-13 handled in DeckShellComponent)
+    doLoadToDeck (rowIndex, deckId);
+}
+
+void LibraryComponent::doLoadToDeck (int rowIndex, const juce::String& deckId)
+{
+    if (rowIndex < 0 || rowIndex >= static_cast<int> (trackTable.resultBuffer.size()))
+        return;
+
+    const auto& row       = trackTable.resultBuffer[static_cast<size_t> (rowIndex)];
+    auto        decksNode = rootState.getChildWithName (IDs::Decks);
+
+    for (int i = 0; i < decksNode.getNumChildren(); ++i)
+    {
+        auto deckNode = decksNode.getChild (i);
+        if (deckNode.getProperty (IDs::id).toString() == deckId)
+        {
+            // Single write: pendingLoadPath. DeckShellComponent handles everything else.
+            deckNode.setProperty (IDs::pendingLoadPath, row.filePath, nullptr);
+
+            // Mark as played this session for the session indicator column
+            trackTable.playedThisSession.insert (row.filePath);
+            trackTable.repaint();
+            break;
+        }
+    }
+}
+
+// ---- Context menu ----------------------------------------------------------
+
+void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos)
+{
+    if (rowIndex < 0 || rowIndex >= static_cast<int> (trackTable.resultBuffer.size()))
+        return;
+
+    juce::PopupMenu menu;
+
+    // Dynamically list all decks present in the root ValueTree (AC-05, AC-19)
+    auto decksNode = rootState.getChildWithName (IDs::Decks);
+    const int numDecks = decksNode.getNumChildren();
+    for (int i = 0; i < numDecks; ++i)
+    {
+        const auto dId = decksNode.getChild (i).getProperty (IDs::id).toString();
+        menu.addItem (i + 1, "Load to Deck " + dId);
+    }
+
+    menu.addSeparator();
+    juce::PopupMenu addToPlaylistMenu;
+    addToPlaylistMenu.addItem (1001, "Preparation List");
+    bool hasNormalPlaylists = false;
+    for (const auto& playlist : playlistCache)
+    {
+        if (!playlist.isNormal())
+            continue;
+
+        hasNormalPlaylists = true;
+        addToPlaylistMenu.addItem (static_cast<int> (2000 + playlist.id), playlist.name);
+    }
+    if (hasNormalPlaylists)
+        addToPlaylistMenu.addSeparator();
+    addToPlaylistMenu.addItem (1002, "New Playlist From Selection");
+    menu.addSubMenu ("Add to Playlist", addToPlaylistMenu);
+
+    const bool inNormalPlaylist = currentSidebarContext.contains (":normal");
+    menu.addItem (numDecks + 1, "Analyze Track");
+    menu.addItem (numDecks + 2, "Separate Stems");
+    if (inNormalPlaylist)
+        menu.addItem (numDecks + 4, "Remove from Playlist");
+    menu.addSeparator();
+    menu.addItem (numDecks + 3, "Remove from Library");
+
+    const auto targetArea = juce::Rectangle<int> { screenPos.x, screenPos.y, 1, 1 };
+    juce::Component::SafePointer<LibraryComponent> safeThis (this);
+
+    menu.showMenuAsync (
+        juce::PopupMenu::Options{}.withTargetScreenArea (targetArea),
+        [safeThis, rowIndex, numDecks] (int choice)
+        {
+            if (safeThis == nullptr) return;
+
+            // Load to deck N  (items 1 … numDecks)
+            if (choice >= 1 && choice <= numDecks)
+            {
+                auto decks = safeThis->rootState.getChildWithName (IDs::Decks);
+                const int idx = choice - 1;
+                if (idx < decks.getNumChildren())
+                {
+                    const auto dId = decks.getChild (idx).getProperty (IDs::id).toString();
+                    safeThis->loadTrackToDeck (rowIndex, dId);
+                }
+                return;
+            }
+
+            if (choice == 1001)
+            {
+                safeThis->addSelectedRowsToPreparation();
+                return;
+            }
+
+            if (choice == 1002)
+            {
+                safeThis->pendingCreatePlaylistTrackIds.clear();
+                auto selectedRows = safeThis->trackTable.getSelectedRows();
+                if (selectedRows.empty())
+                    selectedRows.push_back (rowIndex);
+
+                for (auto selectedRow : selectedRows)
+                    if (selectedRow >= 0
+                        && selectedRow < static_cast<int> (safeThis->trackTable.resultBuffer.size()))
+                        safeThis->pendingCreatePlaylistTrackIds.push_back (
+                            safeThis->trackTable.resultBuffer[static_cast<size_t> (selectedRow)].id);
+
+                safeThis->promptForPlaylistName ("New Playlist", {},
+                    [safeThis] (const juce::String& name)
+                    {
+                        if (safeThis != nullptr)
+                            safeThis->handlePlaylistCreate (name);
+                    });
+                return;
+            }
+
+            if (choice >= 2000)
+            {
+                safeThis->addSelectedRowsToPlaylist (choice - 2000);
+                return;
+            }
+
+            // Remove from Library
+            if (choice == numDecks + 1)
+            {
+                safeThis->analyzeTrack (rowIndex);
+                return;
+            }
+
+            if (choice == numDecks + 4)
+            {
+                safeThis->removeSelectedPlaylistEntries();
+                return;
+            }
+
+            if (choice == numDecks + 3)
+            {
+                if (rowIndex >= static_cast<int> (safeThis->trackTable.resultBuffer.size()))
+                    return;
+                const int64_t trackId = safeThis->trackTable.resultBuffer[static_cast<size_t> (rowIndex)].id;
+                auto* handle = safeThis->db.getDbHandle();
+                sqlite3_stmt* stmt = nullptr;
+                if (sqlite3_prepare_v2 (handle,
+                        "DELETE FROM library_tracks WHERE id=?",
+                        -1, &stmt, nullptr) == SQLITE_OK)
+                {
+                    sqlite3_bind_int64 (stmt, 1, trackId);
+                    sqlite3_step       (stmt);
+                    sqlite3_finalize   (stmt);
+                }
+                safeThis->refreshSidebarPlaylists();
+                safeThis->dispatchCurrentQuery (true);
+            }
+        });
+}
+
+void LibraryComponent::promptForPlaylistName (const juce::String& title,
+                                             const juce::String& initialName,
+                                             std::function<void(const juce::String&)> onSubmit)
+{
+    auto* alert = new juce::AlertWindow (title, {}, juce::MessageBoxIconType::NoIcon, this);
+    alert->addTextEditor ("playlistName", initialName, "Name", false);
+    alert->addButton ("OK", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    alert->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    if (auto* editor = alert->getTextEditor ("playlistName"))
+        editor->setSelectAllWhenFocused (true);
+
+    juce::Component::SafePointer<LibraryComponent> safeThis (this);
+    juce::Component::SafePointer<juce::AlertWindow> safeAlert (alert);
+
+    alert->enterModalState (true,
+        juce::ModalCallbackFunction::create (
+            [safeThis, safeAlert, submitCallback = std::move (onSubmit)] (int result) mutable
+            {
+                if (safeThis == nullptr || safeAlert == nullptr || result != 1)
+                    return;
+
+                const auto name = safeAlert->getTextEditorContents ("playlistName").trim();
+                if (name.isEmpty())
+                {
+                    juce::AlertWindow::showMessageBoxAsync (
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Playlist Name",
+                        "Playlist name is required.",
+                        "OK",
+                        safeThis);
+                    return;
+                }
+
+                submitCallback (name);
+            }),
+        true);
+
+    juce::MessageManager::callAsync ([safeAlert]
+    {
+        if (safeAlert != nullptr)
+            if (auto* editor = safeAlert->getTextEditor ("playlistName"))
+                editor->grabKeyboardFocus();
+    });
+}
+
+void LibraryComponent::showPlaylistHeaderMenu (juce::Point<int> screenPos)
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, "New Playlist");
+
+    const auto targetArea = juce::Rectangle<int> { screenPos.x, screenPos.y, 1, 1 };
+    juce::Component::SafePointer<LibraryComponent> safeThis (this);
+    menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (targetArea),
+        [safeThis] (int choice)
+        {
+            if (safeThis != nullptr && choice == 1)
+            {
+                safeThis->pendingCreatePlaylistTrackIds.clear();
+                safeThis->promptForPlaylistName ("New Playlist", {},
+                    [safeThis] (const juce::String& name)
+                    {
+                        if (safeThis != nullptr)
+                            safeThis->handlePlaylistCreate (name);
+                    });
+            }
+        });
+}
+
+void LibraryComponent::showPlaylistMenu (int64_t playlistId, const juce::String& type, juce::Point<int> screenPos)
+{
+    if (type != "normal")
+        return;
+
+    juce::PopupMenu menu;
+    menu.addItem (1, "Rename");
+    menu.addItem (2, "Delete");
+
+    const auto targetArea = juce::Rectangle<int> { screenPos.x, screenPos.y, 1, 1 };
+    juce::Component::SafePointer<LibraryComponent> safeThis (this);
+    menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (targetArea),
+        [safeThis, playlistId] (int choice)
+        {
+            if (safeThis == nullptr)
+                return;
+
+            if (choice == 1)
+            {
+                for (const auto& playlist : safeThis->playlistCache)
+                {
+                    if (playlist.id == playlistId)
+                    {
+                        safeThis->promptForPlaylistName ("Rename Playlist", playlist.name,
+                            [safeThis, playlistId] (const juce::String& name)
+                            {
+                                if (safeThis != nullptr)
+                                    safeThis->handlePlaylistRename (playlistId, name);
+                            });
+                        break;
+                    }
+                }
+                return;
+            }
+
+            if (choice == 2)
+            {
+                auto options = juce::MessageBoxOptions()
+                    .withIconType (juce::MessageBoxIconType::WarningIcon)
+                    .withTitle ("Delete Playlist")
+                    .withMessage ("Delete this playlist? Tracks stay in the library.")
+                    .withButton ("Delete")
+                    .withButton ("Cancel");
+
+                juce::AlertWindow::showAsync (options,
+                    [safeThis, playlistId] (int result)
+                    {
+                        if (safeThis == nullptr || result != 1 || safeThis->queryThread == nullptr)
+                            return;
+
+                        safeThis->queryThread->deletePlaylist (playlistId,
+                            [safeThis, playlistId] (bool ok, juce::String message, int64_t)
+                            {
+                                if (safeThis == nullptr)
+                                    return;
+
+                                if (!ok)
+                                {
+                                    juce::AlertWindow::showMessageBoxAsync (
+                                        juce::MessageBoxIconType::WarningIcon,
+                                        "Playlist",
+                                        message.isNotEmpty() ? message : "Playlist update failed.",
+                                        "OK",
+                                        safeThis);
+                                    return;
+                                }
+
+                                if (safeThis->currentSidebarContext.startsWith ("playlist:" + juce::String (playlistId) + ":"))
+                                {
+                                    safeThis->currentSidebarContext = "collection";
+                                    safeThis->sidebar.setActiveCollection();
+                                }
+
+                                safeThis->refreshSidebarPlaylists();
+                                safeThis->dispatchCurrentQuery (true);
+                            });
+                    });
+            }
+        });
+}
+
+void LibraryComponent::handlePlaylistCreate (const juce::String& name)
+{
+    if (queryThread == nullptr)
+        return;
+
+    auto trackIds = std::move (pendingCreatePlaylistTrackIds);
+    pendingCreatePlaylistTrackIds.clear();
+
+    auto callback = [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        (bool ok, juce::String message, int64_t playlistId)
+        {
+            if (safeThis != nullptr)
+                safeThis->handlePlaylistMutationResult (ok, message, playlistId);
+        };
+
+    if (trackIds.empty())
+    {
+        queryThread->createPlaylist (name, std::move (callback));
+        return;
+    }
+
+    queryThread->createPlaylistWithTracks (name, std::move (trackIds),
+        std::move (callback));
+}
+
+void LibraryComponent::handlePlaylistRename (int64_t playlistId, const juce::String& name)
+{
+    if (queryThread == nullptr)
+        return;
+
+    pendingCreatePlaylistTrackIds.clear();
+
+    queryThread->renamePlaylist (playlistId, name,
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        (bool ok, juce::String message, int64_t id)
+        {
+            if (safeThis != nullptr)
+                safeThis->handlePlaylistMutationResult (ok, message, id);
+        });
+}
+
+void LibraryComponent::handlePlaylistMutationResult (bool ok, const juce::String& message, int64_t playlistId)
+{
+    if (!ok)
+    {
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::MessageBoxIconType::WarningIcon,
+            "Playlist",
+            message.isNotEmpty() ? message : "Playlist update failed.",
+            "OK",
+            this);
+        return;
+    }
+
+    refreshSidebarPlaylists();
+    if (playlistId > 0)
+    {
+        currentSidebarContext = "playlist:" + juce::String (playlistId) + ":normal";
+        sidebar.setActivePlaylist (playlistId, "normal");
+    }
+    dispatchCurrentQuery (true);
+}
+
+void LibraryComponent::addSelectedRowsToPlaylist (int64_t playlistId)
+{
+    std::vector<int64_t> trackIds;
+    auto selectedRows = trackTable.getSelectedRows();
+    if (selectedRows.empty())
+        selectedRows.push_back (trackTable.getSelectedRow());
+
+    for (auto rowIndex : selectedRows)
+        if (rowIndex >= 0 && rowIndex < static_cast<int> (trackTable.resultBuffer.size()))
+            trackIds.push_back (trackTable.resultBuffer[static_cast<size_t> (rowIndex)].id);
+
+    if (trackIds.empty() || queryThread == nullptr)
+        return;
+
+    queryThread->addTracksToPlaylist (playlistId, std::move (trackIds),
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        (bool ok, juce::String message, int64_t id)
+        {
+            if (safeThis != nullptr)
+                safeThis->handlePlaylistMutationResult (ok, message, id);
+        });
+}
+
+void LibraryComponent::addSelectedRowsToPreparation()
+{
+    auto selectedRows = trackTable.getSelectedRows();
+    if (selectedRows.empty())
+        selectedRows.push_back (trackTable.getSelectedRow());
+
+    for (auto rowIndex : selectedRows)
+        if (rowIndex >= 0 && rowIndex < static_cast<int> (trackTable.resultBuffer.size()))
+            preparationTrackIds.push_back (trackTable.resultBuffer[static_cast<size_t> (rowIndex)].id);
+
+    sidebar.setPreparationCount (static_cast<int> (preparationTrackIds.size()));
+    if (currentSidebarContext == "preparation")
+        dispatchCurrentQuery (true);
+}
+
+void LibraryComponent::addTrackPathToPlaylist (int64_t playlistId, const juce::String& type,
+                                               const juce::String& filePath)
+{
+    juce::StringArray draggedPaths;
+    draggedPaths.addLines (filePath);
+    draggedPaths.removeEmptyStrings();
+
+    if (type == "preparation")
+    {
+        for (const auto& path : draggedPaths)
+        {
+            for (const auto& row : trackTable.resultBuffer)
+            {
+                if (row.filePath == path)
+                {
+                    preparationTrackIds.push_back (row.id);
+                    break;
+                }
+            }
+        }
+
+        sidebar.setPreparationCount (static_cast<int> (preparationTrackIds.size()));
+        if (currentSidebarContext == "preparation")
+            dispatchCurrentQuery (true);
+        return;
+    }
+
+    if (type != "normal" || queryThread == nullptr)
+        return;
+
+    std::vector<int64_t> trackIds;
+    for (const auto& path : draggedPaths)
+    {
+        for (const auto& row : trackTable.resultBuffer)
+        {
+            if (row.filePath == path)
+            {
+                trackIds.push_back (row.id);
+                break;
+            }
+        }
+    }
+
+    if (!trackIds.empty())
+    {
+        queryThread->addTracksToPlaylist (playlistId, std::move (trackIds),
+            [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+            (bool ok, juce::String message, int64_t id)
+            {
+                if (safeThis != nullptr)
+                    safeThis->handlePlaylistMutationResult (ok, message, id);
+            });
+        return;
+    }
+
+    queryThread->addFilePathToPlaylist (playlistId, draggedPaths.isEmpty() ? filePath : draggedPaths[0],
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        (bool ok, juce::String message, int64_t id)
+        {
+            if (safeThis != nullptr)
+                safeThis->handlePlaylistMutationResult (ok, message, id);
+        });
+}
+
+void LibraryComponent::removeSelectedPlaylistEntries()
+{
+    if (!currentSidebarContext.contains (":normal"))
+        return;
+
+    const auto tail = currentSidebarContext.fromFirstOccurrenceOf ("playlist:", false, false);
+    const auto playlistId = tail.upToFirstOccurrenceOf (":", false, false).getLargeIntValue();
+
+    std::vector<int64_t> entryIds;
+    auto selectedRows = trackTable.getSelectedRows();
+    if (selectedRows.empty())
+        selectedRows.push_back (trackTable.getSelectedRow());
+
+    for (auto rowIndex : selectedRows)
+        if (rowIndex >= 0 && rowIndex < static_cast<int> (trackTable.resultBuffer.size()))
+            entryIds.push_back (trackTable.resultBuffer[static_cast<size_t> (rowIndex)].playlistEntryId);
+
+    if (entryIds.empty() || queryThread == nullptr)
+        return;
+
+    queryThread->removePlaylistEntries (playlistId, std::move (entryIds),
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        (bool ok, juce::String message, int64_t id)
+        {
+            if (safeThis != nullptr)
+                safeThis->handlePlaylistMutationResult (ok, message, id);
+        });
+}
+
+void LibraryComponent::movePlaylistEntry (int64_t entryId, int newRowIndex)
+{
+    if (!currentSidebarContext.contains (":normal") || queryThread == nullptr)
+        return;
+
+    const auto tail = currentSidebarContext.fromFirstOccurrenceOf ("playlist:", false, false);
+    const auto playlistId = tail.upToFirstOccurrenceOf (":", false, false).getLargeIntValue();
+
+    queryThread->movePlaylistEntry (playlistId, entryId, newRowIndex,
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        (bool ok, juce::String message, int64_t id)
+        {
+            if (safeThis != nullptr)
+                safeThis->handlePlaylistMutationResult (ok, message, id);
+        });
+}
+
+void LibraryComponent::analyzeTrack (int rowIndex)
+{
+    if (rowIndex < 0 || rowIndex >= static_cast<int> (trackTable.resultBuffer.size()))
+        return;
+
+    const auto row = trackTable.resultBuffer[static_cast<size_t> (rowIndex)];
+    const auto displayName = row.title.isNotEmpty()
+        ? row.title
+        : juce::File (row.filePath).getFileNameWithoutExtension();
+
+    ++activeAnalysisJobs;
+    scanProgressLabel.setText ("Analyzing: " + displayName.substring (0, 64),
+                                juce::dontSendNotification);
+    resized();
+
+    analysisService.analyzeTrack (row.filePath, row.contentHash,
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        (const juce::String&, bool)
+        {
+            if (safeThis == nullptr)
+                return;
+
+            safeThis->activeAnalysisJobs = juce::jmax (0, safeThis->activeAnalysisJobs - 1);
+            safeThis->dispatchCurrentQuery (true);
+            safeThis->resized();
+        });
+}
+
+// ---- Play count DB write ---------------------------------------------------
+
+void LibraryComponent::incrementPlayCount (const juce::String& filePath)
+{
+    auto* handle = db.getDbHandle();
+    sqlite3_stmt* stmt = nullptr;
+    if (sqlite3_prepare_v2 (handle,
+                             "UPDATE library_tracks SET play_count = play_count + 1 WHERE file_path = ?",
+                             -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        const std::string ps = filePath.toStdString();
+        sqlite3_bind_text (stmt, 1, ps.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step      (stmt);
+        sqlite3_finalize  (stmt);
+    }
+    // Refresh the result buffer so the PLAYS column shows the updated count.
+    dispatchCurrentQuery (true);
+}
+
+// ---- Rating DB write -------------------------------------------------------
+
+void LibraryComponent::setTrackRating (int64_t trackId, int newRating)
+{
+    auto* handle = db.getDbHandle();
+    sqlite3_stmt* stmt = nullptr;
+
+    if (sqlite3_prepare_v2 (handle,
+                             "UPDATE library_tracks SET rating=? WHERE id=?",
+                             -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_int   (stmt, 1, newRating);
+        sqlite3_bind_int64 (stmt, 2, trackId);
+        sqlite3_step       (stmt);
+        sqlite3_finalize   (stmt);
+    }
+}
+
+// ---- Filter state persistence (PRD-0035) -----------------------------------
+
+void LibraryComponent::loadFilterState()
+{
+    if (!filterPropsFile) return;
+
+    deckFilter.keyMatchActive = filterPropsFile->getBoolValue   ("keyMatchActive", false);
+    deckFilter.bpmMatchActive = filterPropsFile->getBoolValue   ("bpmMatchActive", false);
+    deckFilter.bpmVision      = filterPropsFile->getDoubleValue ("bpmVision",       6.0);
+    halfTimeEnabled           = filterPropsFile->getBoolValue   ("halfTimeEnabled", false);
+
+    filterBar.setKeyMatchActive  (deckFilter.keyMatchActive);
+    filterBar.setBpmMatchActive  (deckFilter.bpmMatchActive);
+    filterBar.setBpmVisionValue  (deckFilter.bpmVision);
+    filterBar.setHalfTimeEnabled (halfTimeEnabled);
+
+    rebuildDeckAwareFilter();
+}
+
+void LibraryComponent::saveFilterState()
+{
+    if (!filterPropsFile) return;
+
+    filterPropsFile->setValue ("keyMatchActive", deckFilter.keyMatchActive);
+    filterPropsFile->setValue ("bpmMatchActive", deckFilter.bpmMatchActive);
+    filterPropsFile->setValue ("bpmVision",      deckFilter.bpmVision);
+    filterPropsFile->setValue ("halfTimeEnabled", halfTimeEnabled);
+    filterPropsFile->saveIfNeeded();
+}
