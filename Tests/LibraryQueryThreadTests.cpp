@@ -32,6 +32,11 @@ public:
         testSortAscendingByBpm();
         testPlaylistQueryPreservesDuplicatesAndPositions();
         testPreparationQueryPreservesOrder();
+        testCreatePlaylistRejectsDuplicateName();
+        testRenamePlaylistRejectsDuplicateAndSystemPlaylist();
+        testPlaylistAddRemoveMoveAndDelete();
+        testHistoryAppendCapsAtFiveHundred();
+        testRequestPlaylistsOrdersSystemAndNormalNodes();
 
         // Static parsing tests (no DB required)
         testParseSearchStringBpmExact();
@@ -58,7 +63,7 @@ private:
     };
 
     /// Create an isolated temp DB + thread.  Drains the initial blank query
-    /// the thread fires on startup (no callback set → silently discarded).
+    /// the thread fires on startup (no callback set -> silently discarded).
     TestContext makeContext (const juce::String& name)
     {
         TestContext ctx;
@@ -135,6 +140,23 @@ private:
         {
             if (sqlite3_step (stmt) == SQLITE_ROW)
                 result = sqlite3_column_int (stmt, 0);
+            sqlite3_finalize (stmt);
+        }
+        return result;
+    }
+
+    juce::String queryText (sqlite3* h, const char* sql)
+    {
+        sqlite3_stmt* stmt = nullptr;
+        juce::String result;
+        if (sqlite3_prepare_v2 (h, sql, -1, &stmt, nullptr) == SQLITE_OK)
+        {
+            if (sqlite3_step (stmt) == SQLITE_ROW)
+            {
+                const auto* text = reinterpret_cast<const char*> (sqlite3_column_text (stmt, 0));
+                if (text != nullptr)
+                    result = juce::String::fromUTF8 (text);
+            }
             sqlite3_finalize (stmt);
         }
         return result;
@@ -223,7 +245,7 @@ private:
     }
 
     // =========================================================================
-    // Test 3: bpm:128 returns only track with bpm=128 (±0.5)
+    // Test 3: bpm:128 returns only track with bpm=128 (+/-0.5)
     // =========================================================================
     void testBpmExactFilter()
     {
@@ -248,7 +270,7 @@ private:
         expect (waitForResult (received), "Callback timed out");
         expectEquals (static_cast<int> (results.size()), 1, "Expected 1 track");
         if (!results.empty())
-            expectWithinAbsoluteError (results[0].bpm, 128.0, 0.5, "BPM should be ≈128");
+            expectWithinAbsoluteError (results[0].bpm, 128.0, 0.5, "BPM should be approximately 128");
 
         destroyContext (ctx);
     }
@@ -279,9 +301,9 @@ private:
         ctx.thread->dispatchQuery (LibraryQueryThread::parseSearchString ("bpm:125-135"));
 
         expect (waitForResult (received), "Callback timed out");
-        expectEquals (static_cast<int> (results.size()), 2, "Expected 2 tracks in 125–135 range");
+        expectEquals (static_cast<int> (results.size()), 2, "Expected 2 tracks in 125-135 range");
         for (const auto& r : results)
-            expect (r.bpm >= 125.0 && r.bpm <= 135.0, "BPM must be within 125–135");
+            expect (r.bpm >= 125.0 && r.bpm <= 135.0, "BPM must be within 125-135");
 
         destroyContext (ctx);
     }
@@ -409,7 +431,7 @@ private:
         if (!results.empty())
         {
             expect (results[0].artist.containsIgnoreCase ("DJ"), "Artist should contain 'DJ'");
-            expect (results[0].bpm >= 128.0 && results[0].bpm <= 132.0, "BPM should be in 128–132");
+            expect (results[0].bpm >= 128.0 && results[0].bpm <= 132.0, "BPM should be in 128-132");
         }
 
         destroyContext (ctx);
@@ -429,7 +451,7 @@ private:
             received.store (true, std::memory_order_release);
         });
 
-        // This must NOT crash — the parameterised query handles it safely.
+        // This must NOT crash - the parameterised query handles it safely.
         ctx.thread->dispatchQuery (LibraryQueryThread::parseSearchString ("d'n'b"));
 
         // We just need either a result or a graceful empty-result response.
@@ -444,7 +466,7 @@ private:
     // =========================================================================
     void testSortAscendingByBpm()
     {
-        beginTest ("Sort ASC by bpm: inserted 140,120,130 → results ordered 120,130,140");
+        beginTest ("Sort ASC by bpm: inserted 140,120,130 -> results ordered 120,130,140");
 
         auto ctx = makeContext ("SortBpm");
         auto* h  = ctx.db->getDbHandle();
@@ -567,12 +589,343 @@ private:
         destroyContext (ctx);
     }
 
+    void testCreatePlaylistRejectsDuplicateName()
+    {
+        beginTest ("Create playlist accepts unique names and rejects case-insensitive duplicates");
+
+        auto ctx = makeContext ("CreatePlaylist");
+        auto* h  = ctx.db->getDbHandle();
+
+        expectEquals (execSql (h, "INSERT INTO playlists (name, type, created_at) VALUES ('Warmup', 'normal', 1000);"), SQLITE_OK);
+
+        std::atomic<bool> received { false };
+        bool ok = false;
+        juce::String message;
+        int64_t playlistId = 0;
+
+        ctx.thread->createPlaylist ("Peak Time",
+            [&] (bool resultOk, juce::String resultMessage, int64_t resultPlaylistId)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                playlistId = resultPlaylistId;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "Create callback timed out");
+        expect (ok, "Unique playlist name should be accepted");
+        expect (playlistId > 0, "New playlist id should be returned");
+        expectEquals (queryInt (h, "SELECT COUNT(*) FROM playlists WHERE name='Peak Time' AND type='normal';"), 1);
+
+        received.store (false, std::memory_order_release);
+        ok = true;
+        message = {};
+        playlistId = 0;
+
+        ctx.thread->createPlaylist ("warmup",
+            [&] (bool resultOk, juce::String resultMessage, int64_t resultPlaylistId)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                playlistId = resultPlaylistId;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "Duplicate create callback timed out");
+        expect (! ok, "Duplicate playlist name should be rejected");
+        expectEquals (message, juce::String ("A playlist with this name already exists"));
+        expectEquals (playlistId, static_cast<int64_t> (0));
+        expectEquals (queryInt (h, "SELECT COUNT(*) FROM playlists WHERE name='Warmup' COLLATE NOCASE;"), 1);
+
+        destroyContext (ctx);
+    }
+
+    void testRenamePlaylistRejectsDuplicateAndSystemPlaylist()
+    {
+        beginTest ("Rename playlist rejects duplicate names and system playlists");
+
+        auto ctx = makeContext ("RenamePlaylist");
+        auto* h  = ctx.db->getDbHandle();
+
+        expectEquals (execSql (h, "INSERT INTO playlists (name, type, created_at) VALUES ('Set A', 'normal', 1000);"), SQLITE_OK);
+        expectEquals (execSql (h, "INSERT INTO playlists (name, type, created_at) VALUES ('Warmup', 'normal', 1001);"), SQLITE_OK);
+
+        const int64_t setId = queryInt (h, "SELECT id FROM playlists WHERE name='Set A';");
+        const int64_t historyId = queryInt (h, "SELECT id FROM playlists WHERE type='history';");
+
+        std::atomic<bool> received { false };
+        bool ok = true;
+        juce::String message;
+
+        ctx.thread->renamePlaylist (setId, "warmup",
+            [&] (bool resultOk, juce::String resultMessage, int64_t)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "Duplicate rename callback timed out");
+        expect (! ok, "Duplicate rename should be rejected");
+        expectEquals (message, juce::String ("A playlist with this name already exists"));
+        expectEquals (queryText (h, "SELECT name FROM playlists WHERE id=(SELECT id FROM playlists WHERE name='Set A');"), juce::String ("Set A"));
+
+        received.store (false, std::memory_order_release);
+        ok = false;
+        message = {};
+
+        ctx.thread->renamePlaylist (setId, "After Hours",
+            [&] (bool resultOk, juce::String resultMessage, int64_t)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "Unique rename callback timed out");
+        expect (ok, "Unique rename should be committed");
+        expectEquals (queryText (h, "SELECT name FROM playlists WHERE id=(SELECT id FROM playlists WHERE name='After Hours');"), juce::String ("After Hours"));
+
+        received.store (false, std::memory_order_release);
+        ok = true;
+        message = {};
+
+        ctx.thread->renamePlaylist (historyId, "Past Sets",
+            [&] (bool resultOk, juce::String resultMessage, int64_t)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "History rename callback timed out");
+        expect (! ok, "History playlist should be read-only");
+        expectEquals (queryText (h, "SELECT name FROM playlists WHERE type='history';"), juce::String ("History"));
+
+        destroyContext (ctx);
+    }
+
+    void testPlaylistAddRemoveMoveAndDelete()
+    {
+        beginTest ("Playlist add/remove/move/delete preserves duplicates and library tracks");
+
+        auto ctx = makeContext ("PlaylistMutations");
+        auto* h  = ctx.db->getDbHandle();
+
+        insertTrack (h, "/mut/a.mp3", "Track A", "Artist", 128.0);
+        insertTrack (h, "/mut/b.mp3", "Track B", "Artist", 129.0);
+        insertTrack (h, "/mut/c.mp3", "Track C", "Artist", 130.0);
+        expectEquals (execSql (h, "INSERT INTO playlists (name, type, created_at) VALUES ('Set', 'normal', 1000);"), SQLITE_OK);
+
+        const int64_t playlistId = queryInt (h, "SELECT id FROM playlists WHERE name='Set';");
+        const int64_t trackA = queryInt (h, "SELECT id FROM library_tracks WHERE file_path='/mut/a.mp3';");
+        const int64_t trackB = queryInt (h, "SELECT id FROM library_tracks WHERE file_path='/mut/b.mp3';");
+        const int64_t trackC = queryInt (h, "SELECT id FROM library_tracks WHERE file_path='/mut/c.mp3';");
+
+        std::atomic<bool> received { false };
+        bool ok = false;
+        juce::String message;
+
+        ctx.thread->addTracksToPlaylist (playlistId, { trackA, trackB, trackC, trackA },
+            [&] (bool resultOk, juce::String resultMessage, int64_t)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "Add tracks callback timed out");
+        expect (ok, message);
+        expectEquals (queryInt (h, "SELECT COUNT(*) FROM playlist_tracks;"), 4);
+
+        const juce::String orderAfterAddSql =
+            "SELECT GROUP_CONCAT(track_id || ':' || position, ',') FROM ("
+            "SELECT track_id, position FROM playlist_tracks WHERE playlist_id=" + juce::String (playlistId)
+            + " ORDER BY position ASC, id ASC);";
+        const juce::String expectedAddOrder = juce::String (trackA) + ":1," + juce::String (trackB) + ":2,"
+                                           + juce::String (trackC) + ":3," + juce::String (trackA) + ":4";
+        expectEquals (queryText (h, orderAfterAddSql.toRawUTF8()), expectedAddOrder);
+
+        const juce::String entryAtTwoSql = "SELECT id FROM playlist_tracks WHERE playlist_id=" + juce::String (playlistId) + " AND position=2;";
+        const int64_t entryAtTwo = queryInt (h, entryAtTwoSql.toRawUTF8());
+
+        received.store (false, std::memory_order_release);
+        ok = false;
+        message = {};
+
+        ctx.thread->removePlaylistEntries (playlistId, { entryAtTwo },
+            [&] (bool resultOk, juce::String resultMessage, int64_t)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "Remove tracks callback timed out");
+        expect (ok, message);
+        const juce::String orderAfterRemoveSql =
+            "SELECT GROUP_CONCAT(track_id || ':' || position, ',') FROM ("
+            "SELECT track_id, position FROM playlist_tracks WHERE playlist_id=" + juce::String (playlistId)
+            + " ORDER BY position ASC, id ASC);";
+        const juce::String expectedRemoveOrder = juce::String (trackA) + ":1," + juce::String (trackC) + ":2,"
+                                              + juce::String (trackA) + ":3";
+        expectEquals (queryText (h, orderAfterRemoveSql.toRawUTF8()), expectedRemoveOrder);
+
+        const juce::String entryTrackC = "SELECT id FROM playlist_tracks WHERE playlist_id=" + juce::String (playlistId)
+                                       + " AND track_id=" + juce::String (trackC) + ";";
+        const int64_t trackCEntryId = queryInt (h, entryTrackC.toRawUTF8());
+
+        received.store (false, std::memory_order_release);
+        ok = false;
+        message = {};
+
+        ctx.thread->movePlaylistEntry (playlistId, trackCEntryId, 0,
+            [&] (bool resultOk, juce::String resultMessage, int64_t)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "Move entry callback timed out");
+        expect (ok, message);
+        const juce::String expectedMoveOrder = juce::String (trackC) + ":1," + juce::String (trackA) + ":2,"
+                                            + juce::String (trackA) + ":3";
+        expectEquals (queryText (h, orderAfterRemoveSql.toRawUTF8()), expectedMoveOrder);
+
+        received.store (false, std::memory_order_release);
+        ok = false;
+        message = {};
+
+        ctx.thread->deletePlaylist (playlistId,
+            [&] (bool resultOk, juce::String resultMessage, int64_t)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "Delete playlist callback timed out");
+        expect (ok, message);
+        expectEquals (queryInt (h, "SELECT COUNT(*) FROM playlists WHERE name='Set';"), 0);
+        expectEquals (queryInt (h, "SELECT COUNT(*) FROM playlist_tracks;"), 0);
+        expectEquals (queryInt (h, "SELECT COUNT(*) FROM library_tracks WHERE file_path LIKE '/mut/%';"), 3);
+
+        destroyContext (ctx);
+    }
+
+    void testHistoryAppendCapsAtFiveHundred()
+    {
+        beginTest ("History append records play time and caps entries at 500");
+
+        auto ctx = makeContext ("HistoryCap");
+        auto* h  = ctx.db->getDbHandle();
+
+        insertTrack (h, "/hist/old.mp3", "Old Track", "Artist", 120.0);
+        insertTrack (h, "/hist/new.mp3", "New Track", "Artist", 121.0);
+
+        const int64_t historyId = queryInt (h, "SELECT id FROM playlists WHERE type='history';");
+        const int64_t oldTrackId = queryInt (h, "SELECT id FROM library_tracks WHERE file_path='/hist/old.mp3';");
+
+        sqlite3_stmt* stmt = nullptr;
+        expectEquals (sqlite3_prepare_v2 (h,
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position, played_at) VALUES (?, ?, ?, ?);",
+            -1, &stmt, nullptr), SQLITE_OK);
+
+        if (stmt != nullptr)
+        {
+            for (int i = 0; i < 500; ++i)
+            {
+                const auto playedAt = "2020-01-01T00:" + juce::String (i).paddedLeft ('0', 3) + "Z";
+                sqlite3_reset (stmt);
+                sqlite3_clear_bindings (stmt);
+                sqlite3_bind_int64 (stmt, 1, historyId);
+                sqlite3_bind_int64 (stmt, 2, oldTrackId);
+                sqlite3_bind_int   (stmt, 3, i + 1);
+                sqlite3_bind_text  (stmt, 4, playedAt.toRawUTF8(), -1, SQLITE_TRANSIENT);
+                expectEquals (sqlite3_step (stmt), SQLITE_DONE);
+            }
+            sqlite3_finalize (stmt);
+        }
+
+        std::atomic<bool> received { false };
+        bool ok = false;
+        juce::String message;
+
+        ctx.thread->appendHistoryEntryForFilePath ("/hist/new.mp3",
+            [&] (bool resultOk, juce::String resultMessage, int64_t)
+            {
+                ok = resultOk;
+                message = resultMessage;
+                received.store (true, std::memory_order_release);
+            });
+
+        expect (waitForResult (received), "History append callback timed out");
+        expect (ok, message);
+
+        const juce::String countSql = "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id=" + juce::String (historyId) + ";";
+        expectEquals (queryInt (h, countSql.toRawUTF8()), 500);
+
+        const juce::String topPathSql =
+            "SELECT lt.file_path FROM playlist_tracks pt "
+            "JOIN library_tracks lt ON lt.id=pt.track_id "
+            "WHERE pt.playlist_id=" + juce::String (historyId)
+            + " ORDER BY pt.played_at DESC, pt.id DESC LIMIT 1;";
+        expectEquals (queryText (h, topPathSql.toRawUTF8()), juce::String ("/hist/new.mp3"));
+
+        const juce::String oldestSql = "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id=" + juce::String (historyId)
+                                     + " AND played_at='2020-01-01T00:000Z';";
+        expectEquals (queryInt (h, oldestSql.toRawUTF8()), 0);
+
+        destroyContext (ctx);
+    }
+
+    void testRequestPlaylistsOrdersSystemAndNormalNodes()
+    {
+        beginTest ("Playlist list returns History first, then normal playlists by creation time with counts");
+
+        auto ctx = makeContext ("PlaylistList");
+        auto* h  = ctx.db->getDbHandle();
+
+        insertTrack (h, "/list/a.mp3", "Track A", "Artist", 128.0);
+        const int64_t trackId = queryInt (h, "SELECT id FROM library_tracks WHERE file_path='/list/a.mp3';");
+        expectEquals (execSql (h, "INSERT INTO playlists (name, type, created_at) VALUES ('Later', 'normal', 2000);"), SQLITE_OK);
+        expectEquals (execSql (h, "INSERT INTO playlists (name, type, created_at) VALUES ('Earlier', 'normal', 1000);"), SQLITE_OK);
+
+        const int64_t laterId = queryInt (h, "SELECT id FROM playlists WHERE name='Later';");
+        const juce::String addRows =
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES ("
+            + juce::String (laterId) + ", " + juce::String (trackId) + ", 1), ("
+            + juce::String (laterId) + ", " + juce::String (trackId) + ", 2);";
+        expectEquals (execSql (h, addRows.toRawUTF8()), SQLITE_OK);
+
+        std::atomic<bool> received { false };
+        std::vector<PlaylistInfo> playlists;
+        ctx.thread->requestPlaylists ([&] (std::vector<PlaylistInfo> result)
+        {
+            playlists = std::move (result);
+            received.store (true, std::memory_order_release);
+        });
+
+        expect (waitForResult (received), "Playlist list callback timed out");
+        expectEquals (static_cast<int> (playlists.size()), 3);
+        if (playlists.size() == 3)
+        {
+            expect (playlists[0].isHistory(), "History should be the first database playlist");
+            expectEquals (playlists[1].name, juce::String ("Earlier"));
+            expectEquals (playlists[2].name, juce::String ("Later"));
+            expectEquals (playlists[2].trackCount, 2);
+        }
+
+        destroyContext (ctx);
+    }
+
     // =========================================================================
-    // Test 11: parseSearchString("bpm:128") → exact ±0.5 range
+    // Test 11: parseSearchString("bpm:128") -> exact +/-0.5 range
     // =========================================================================
     void testParseSearchStringBpmExact()
     {
-        beginTest ("parseSearchString(\"bpm:128\") → hasBpmRange=true, min=127.5, max=128.5");
+        beginTest ("parseSearchString(\"bpm:128\") -> hasBpmRange=true, min=127.5, max=128.5");
 
         const auto p = LibraryQueryThread::parseSearchString ("bpm:128");
 
@@ -582,11 +935,11 @@ private:
     }
 
     // =========================================================================
-    // Test 12: parseSearchString("bpm:125-135") → explicit range
+    // Test 12: parseSearchString("bpm:125-135") -> explicit range
     // =========================================================================
     void testParseSearchStringBpmRange()
     {
-        beginTest ("parseSearchString(\"bpm:125-135\") → bpmMin=125.0, bpmMax=135.0");
+        beginTest ("parseSearchString(\"bpm:125-135\") -> bpmMin=125.0, bpmMax=135.0");
 
         const auto p = LibraryQueryThread::parseSearchString ("bpm:125-135");
 
@@ -596,11 +949,11 @@ private:
     }
 
     // =========================================================================
-    // Test 13: parseSearchString("key:8A") → hasKeyFilter=true, keyIndex=7
+    // Test 13: parseSearchString("key:8A") -> hasKeyFilter=true, keyIndex=7
     // =========================================================================
     void testParseSearchStringKey()
     {
-        beginTest ("parseSearchString(\"key:8A\") → hasKeyFilter=true, keyIndex=7");
+        beginTest ("parseSearchString(\"key:8A\") -> hasKeyFilter=true, keyIndex=7");
 
         const auto p = LibraryQueryThread::parseSearchString ("key:8A");
 
@@ -609,11 +962,11 @@ private:
     }
 
     // =========================================================================
-    // Test 14: parseSearchString("rating:4") → hasRatingFilter=true, ratingMin=4
+    // Test 14: parseSearchString("rating:4") -> hasRatingFilter=true, ratingMin=4
     // =========================================================================
     void testParseSearchStringRating()
     {
-        beginTest ("parseSearchString(\"rating:4\") → hasRatingFilter=true, ratingMin=4");
+        beginTest ("parseSearchString(\"rating:4\") -> hasRatingFilter=true, ratingMin=4");
 
         const auto p = LibraryQueryThread::parseSearchString ("rating:4");
 
@@ -622,11 +975,11 @@ private:
     }
 
     // =========================================================================
-    // Test 15: camelotKeyToIndex — full boundary coverage
+    // Test 15: camelotKeyToIndex - full boundary coverage
     // =========================================================================
     void testCamelotKeyToIndex()
     {
-        beginTest ("camelotKeyToIndex: 1A→0, 12A→11, 1B→12, 12B→23, 8A→7, invalid→-1");
+        beginTest ("camelotKeyToIndex: 1A->0, 12A->11, 1B->12, 12B->23, 8A->7, invalid->-1");
 
         expectEquals (LibraryQueryThread::camelotKeyToIndex ("1A"),     0,  "1A should map to 0");
         expectEquals (LibraryQueryThread::camelotKeyToIndex ("12A"),   11,  "12A should map to 11");
@@ -643,7 +996,7 @@ private:
     // =========================================================================
     void testDeckAwareFilterBpm()
     {
-        beginTest ("DeckAwareFilter bpmMatchActive=true, window(125,135) → only bpm=128 from {128,140,115}");
+        beginTest ("DeckAwareFilter bpmMatchActive=true, window(125,135) -> only bpm=128 from {128,140,115}");
 
         auto ctx = makeContext ("DeckBpm");
         auto* h  = ctx.db->getDbHandle();
@@ -668,7 +1021,7 @@ private:
         expect (waitForResult (received), "Callback timed out");
         expectEquals (static_cast<int> (results.size()), 1, "Expected 1 track within BPM window");
         if (!results.empty())
-            expectWithinAbsoluteError (results[0].bpm, 128.0, 0.5, "Track BPM should be ≈128");
+            expectWithinAbsoluteError (results[0].bpm, 128.0, 0.5, "Track BPM should be approximately 128");
 
         destroyContext (ctx);
     }
@@ -678,7 +1031,7 @@ private:
     // =========================================================================
     void testDeckAwareFilterKey()
     {
-        beginTest ("DeckAwareFilter keyMatchActive=true, compatibleKeyIndices={7} → only key_index=7");
+        beginTest ("DeckAwareFilter keyMatchActive=true, compatibleKeyIndices={7} -> only key_index=7");
 
         auto ctx = makeContext ("DeckKey");
         auto* h  = ctx.db->getDbHandle();

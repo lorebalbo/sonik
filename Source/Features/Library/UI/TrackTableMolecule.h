@@ -47,6 +47,7 @@ public:
     ~TrackTableMolecule() override;
 
     void paint   (juce::Graphics& g) override;
+    void paintOverChildren (juce::Graphics& g) override;
     void resized () override;
 
     void setPlayingTrack (const juce::String& path);
@@ -58,6 +59,8 @@ public:
     void setPlaylistReorderEnabled (bool enabled);
 
     bool isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& details) override;
+    void itemDragMove (const juce::DragAndDropTarget::SourceDetails& details) override;
+    void itemDragExit (const juce::DragAndDropTarget::SourceDetails& details) override;
     void itemDropped (const juce::DragAndDropTarget::SourceDetails& details) override;
 
     // juce::TableListBoxModel
@@ -88,6 +91,7 @@ private:
     juce::SparseSet<int> selectionBeforeLastChange;
     juce::SparseSet<int> currentSelection;
     bool playlistReorderEnabled = false;
+    int dropIndicatorRow = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TrackTableMolecule)
 };

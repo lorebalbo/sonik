@@ -71,17 +71,21 @@ private:
     void showContextMenu (int rowIndex, juce::Point<int> screenPos);
     void promptForPlaylistName (const juce::String& title,
                                 const juce::String& initialName,
-                                std::function<void(const juce::String&)> onSubmit);
+                                std::function<void(const juce::String&)> onSubmit,
+                                std::function<void()> onCancel = {});
     void showPlaylistHeaderMenu (juce::Point<int> screenPos);
     void showPlaylistMenu (int64_t playlistId, const juce::String& type, juce::Point<int> screenPos);
     void handlePlaylistCreate (const juce::String& name);
     void handlePlaylistRename (int64_t playlistId, const juce::String& name);
     void handlePlaylistMutationResult (bool ok, const juce::String& message, int64_t playlistId);
+    void handlePlaylistNameEditFailure (const juce::String& message, bool keepCreateEditorOpen);
     void addSelectedRowsToPlaylist (int64_t playlistId);
     void addSelectedRowsToPreparation ();
     void addTrackPathToPlaylist (int64_t playlistId, const juce::String& type, const juce::String& filePath);
     void removeSelectedPlaylistEntries ();
+    void removeSelectedPreparationEntries ();
     void movePlaylistEntry (int64_t entryId, int newRowIndex);
+    void previewPlaylistEntryMove (int64_t entryId, int newRowIndex);
     void loadTrackToDeck (int rowIndex, const juce::String& deckId);
     void doLoadToDeck    (int rowIndex, const juce::String& deckId);
     void loadFocusedDeckTrack (int rowIndex);

@@ -102,7 +102,7 @@ On startup, after the watch-folder scan completes, a second background pass chec
 - [x] PRD-0033: Library UI Shell (Table, Search Bar, Sidebar, Navigation)
 - [x] PRD-0034: Track Loading & Drag-and-Drop to Deck
 - [x] PRD-0035: Deck-Aware Smart Filters (KEY MATCH / BPM MATCH / BPM VISION)
-- [ ] PRD-0036: Playlist Management (Playlists, History, Preparation List)
+- [x] PRD-0036: Playlist Management (Playlists, History, Preparation List)
 - [ ] PRD-0037: Track Rating & Played Session Indicator
 - [ ] PRD-0038: Bulk Analysis Queue & Right-Click Context Menus
 - [ ] PRD-0039: Missing File Detection & Relocation

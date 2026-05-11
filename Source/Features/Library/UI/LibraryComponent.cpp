@@ -1,7 +1,7 @@
 #include "LibraryComponent.h"
 #include "LibraryPalette.h"
-#include "Features/KeyDetection/KeyUtils.h"
 #include <sqlite3.h>
+#include <algorithm>
 
 static constexpr int kSidebarWidth  = 200;
 static constexpr int kFilterBarHeight = 40;
@@ -12,6 +12,22 @@ namespace
 bool isAnalysisComplete (const juce::String& status)
 {
     return status == "done" || status == "completed";
+}
+
+int canonicalKeyToCamelotIndex (int canonicalKey)
+{
+    if (canonicalKey < 0 || canonicalKey > 23)
+        return -1;
+
+    static constexpr int pitchToCamelotMajor[] = { 8, 3, 10, 5, 12, 7, 2, 9, 4, 11, 6, 1 };
+    static constexpr int pitchToCamelotMinor[] = { 5, 12, 7, 2, 9, 4, 11, 6, 1, 8, 3, 10 };
+
+    const int pitchClass = canonicalKey / 2;
+    const bool isMajor = (canonicalKey % 2) == 0;
+    const int number = isMajor ? pitchToCamelotMajor[pitchClass]
+                               : pitchToCamelotMinor[pitchClass];
+
+    return isMajor ? number + 11 : number - 1;
 }
 }
 
@@ -78,15 +94,21 @@ LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
             {
                 if (playlist.id == playlistId)
                 {
-                    promptForPlaylistName ("Rename Playlist", playlist.name,
-                        [this, playlistId] (const juce::String& name)
-                        {
-                            handlePlaylistRename (playlistId, name);
-                        });
+                    sidebar.beginRenamePlaylist (playlistId, type, playlist.name);
                     break;
                 }
             }
         }
+    };
+
+    sidebar.onPlaylistCreateSubmitted = [this] (const juce::String& name)
+    {
+        handlePlaylistCreate (name);
+    };
+
+    sidebar.onPlaylistRenameSubmitted = [this] (int64_t playlistId, const juce::String& name)
+    {
+        handlePlaylistRename (playlistId, name);
     };
 
     sidebar.onTrackPathDroppedOnPlaylist = [this] (int64_t playlistId, juce::String type, juce::String filePath)
@@ -372,22 +394,88 @@ void LibraryComponent::savePreparationListBeforeQuit (std::function<void(bool)> 
         return;
     }
 
-    const auto now = juce::Time::getCurrentTime();
-    const auto stamp = now.formatted ("%Y-%m-%d %H.%M.%S")
-                     + "." + juce::String (static_cast<int> (now.toMilliseconds() % 1000)).paddedLeft ('0', 3);
+    auto quitCompletion = std::make_shared<std::function<void(bool)>> (std::move (completionIn));
+    const int trackCount = static_cast<int> (preparationTrackIds.size());
 
-    queryThread->createPlaylistWithTracks ("Preparation " + stamp, preparationTrackIds,
-        [safeThis = juce::Component::SafePointer<LibraryComponent> (this), quitCompletion = std::move (completionIn)]
-        (bool ok, juce::String, int64_t) mutable
+    auto options = juce::MessageBoxOptions()
+        .withIconType (juce::MessageBoxIconType::WarningIcon)
+        .withTitle ("Preparation List")
+        .withMessage ("Your Preparation List has " + juce::String (trackCount)
+                      + " track(s) and will be lost. Export to a playlist before quitting?")
+        .withButton ("Export to Playlist")
+        .withButton ("Discard")
+        .withButton ("Cancel");
+
+    juce::AlertWindow::showAsync (options,
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this), quitCompletion]
+        (int result) mutable
         {
-            if (safeThis != nullptr && ok)
+            if (safeThis == nullptr)
+            {
+                if (*quitCompletion)
+                    (*quitCompletion) (false);
+                return;
+            }
+
+            if (result == 1)
+            {
+                const auto idsToExport = safeThis->preparationTrackIds;
+                safeThis->promptForPlaylistName ("Export Preparation List", "Preparation",
+                    [safeThis, quitCompletion, idsToExport] (const juce::String& name) mutable
+                    {
+                        if (safeThis == nullptr || safeThis->queryThread == nullptr)
+                        {
+                            if (*quitCompletion)
+                                (*quitCompletion) (false);
+                            return;
+                        }
+
+                        safeThis->queryThread->createPlaylistWithTracks (name, idsToExport,
+                            [safeThis, quitCompletion] (bool ok, juce::String message, int64_t) mutable
+                            {
+                                if (safeThis != nullptr && ok)
+                                {
+                                    safeThis->preparationTrackIds.clear();
+                                    safeThis->sidebar.setPreparationCount (0);
+                                    if (safeThis->currentSidebarContext == "preparation")
+                                        safeThis->dispatchCurrentQuery (true);
+                                }
+                                else if (safeThis != nullptr)
+                                {
+                                    juce::AlertWindow::showMessageBoxAsync (
+                                        juce::MessageBoxIconType::WarningIcon,
+                                        "Playlist",
+                                        message.isNotEmpty() ? message : "Playlist export failed.",
+                                        "OK",
+                                        safeThis);
+                                }
+
+                                if (*quitCompletion)
+                                    (*quitCompletion) (ok);
+                            });
+                    },
+                    [quitCompletion]
+                    {
+                        if (*quitCompletion)
+                            (*quitCompletion) (false);
+                    });
+                return;
+            }
+
+            if (result == 2)
             {
                 safeThis->preparationTrackIds.clear();
                 safeThis->sidebar.setPreparationCount (0);
+                if (safeThis->currentSidebarContext == "preparation")
+                    safeThis->dispatchCurrentQuery (true);
+
+                if (*quitCompletion)
+                    (*quitCompletion) (true);
+                return;
             }
 
-            if (quitCompletion)
-                quitCompletion (true);
+            if (*quitCompletion)
+                (*quitCompletion) (false);
         });
 }
 
@@ -569,7 +657,7 @@ void LibraryComponent::rebuildDeckAwareFilter()
             {
                 const int canonicalKey = static_cast<int> (
                     keyInfo.getProperty (IDs::keyIndex, -1));
-                const int ki = KeyUtils::toCamelotIndex (canonicalKey);
+                const int ki = canonicalKeyToCamelotIndex (canonicalKey);
 
                 if (ki >= 0 && ki < 24)
                 {
@@ -789,10 +877,13 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
     menu.addSubMenu ("Add to Playlist", addToPlaylistMenu);
 
     const bool inNormalPlaylist = currentSidebarContext.contains (":normal");
+    const bool inPreparationList = currentSidebarContext == "preparation";
     menu.addItem (numDecks + 1, "Analyze Track");
     menu.addItem (numDecks + 2, "Separate Stems");
     if (inNormalPlaylist)
         menu.addItem (numDecks + 4, "Remove from Playlist");
+    if (inPreparationList)
+        menu.addItem (numDecks + 5, "Remove from Preparation List");
     menu.addSeparator();
     menu.addItem (numDecks + 3, "Remove from Library");
 
@@ -837,12 +928,7 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
                         safeThis->pendingCreatePlaylistTrackIds.push_back (
                             safeThis->trackTable.resultBuffer[static_cast<size_t> (selectedRow)].id);
 
-                safeThis->promptForPlaylistName ("New Playlist", {},
-                    [safeThis] (const juce::String& name)
-                    {
-                        if (safeThis != nullptr)
-                            safeThis->handlePlaylistCreate (name);
-                    });
+                safeThis->sidebar.beginCreatePlaylist();
                 return;
             }
 
@@ -862,6 +948,12 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
             if (choice == numDecks + 4)
             {
                 safeThis->removeSelectedPlaylistEntries();
+                return;
+            }
+
+            if (choice == numDecks + 5)
+            {
+                safeThis->removeSelectedPreparationEntries();
                 return;
             }
 
@@ -888,7 +980,8 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
 
 void LibraryComponent::promptForPlaylistName (const juce::String& title,
                                              const juce::String& initialName,
-                                             std::function<void(const juce::String&)> onSubmit)
+                                             std::function<void(const juce::String&)> onSubmit,
+                                             std::function<void()> onCancel)
 {
     auto* alert = new juce::AlertWindow (title, {}, juce::MessageBoxIconType::NoIcon, this);
     alert->addTextEditor ("playlistName", initialName, "Name", false);
@@ -903,10 +996,21 @@ void LibraryComponent::promptForPlaylistName (const juce::String& title,
 
     alert->enterModalState (true,
         juce::ModalCallbackFunction::create (
-            [safeThis, safeAlert, submitCallback = std::move (onSubmit)] (int result) mutable
+            [safeThis, safeAlert, submitCallback = std::move (onSubmit), cancelCallback = std::move (onCancel)] (int result) mutable
             {
-                if (safeThis == nullptr || safeAlert == nullptr || result != 1)
+                if (safeThis == nullptr || safeAlert == nullptr)
+                {
+                    if (cancelCallback)
+                        cancelCallback();
                     return;
+                }
+
+                if (result != 1)
+                {
+                    if (cancelCallback)
+                        cancelCallback();
+                    return;
+                }
 
                 const auto name = safeAlert->getTextEditorContents ("playlistName").trim();
                 if (name.isEmpty())
@@ -917,6 +1021,8 @@ void LibraryComponent::promptForPlaylistName (const juce::String& title,
                         "Playlist name is required.",
                         "OK",
                         safeThis);
+                    if (cancelCallback)
+                        cancelCallback();
                     return;
                 }
 
@@ -945,12 +1051,7 @@ void LibraryComponent::showPlaylistHeaderMenu (juce::Point<int> screenPos)
             if (safeThis != nullptr && choice == 1)
             {
                 safeThis->pendingCreatePlaylistTrackIds.clear();
-                safeThis->promptForPlaylistName ("New Playlist", {},
-                    [safeThis] (const juce::String& name)
-                    {
-                        if (safeThis != nullptr)
-                            safeThis->handlePlaylistCreate (name);
-                    });
+                safeThis->sidebar.beginCreatePlaylist();
             }
         });
 }
@@ -978,12 +1079,7 @@ void LibraryComponent::showPlaylistMenu (int64_t playlistId, const juce::String&
                 {
                     if (playlist.id == playlistId)
                     {
-                        safeThis->promptForPlaylistName ("Rename Playlist", playlist.name,
-                            [safeThis, playlistId] (const juce::String& name)
-                            {
-                                if (safeThis != nullptr)
-                                    safeThis->handlePlaylistRename (playlistId, name);
-                            });
+                        safeThis->sidebar.beginRenamePlaylist (playlistId, "normal", playlist.name);
                         break;
                     }
                 }
@@ -992,10 +1088,20 @@ void LibraryComponent::showPlaylistMenu (int64_t playlistId, const juce::String&
 
             if (choice == 2)
             {
+                juce::String playlistName = "this playlist";
+                for (const auto& playlist : safeThis->playlistCache)
+                {
+                    if (playlist.id == playlistId)
+                    {
+                        playlistName = playlist.name;
+                        break;
+                    }
+                }
+
                 auto options = juce::MessageBoxOptions()
                     .withIconType (juce::MessageBoxIconType::WarningIcon)
                     .withTitle ("Delete Playlist")
-                    .withMessage ("Delete this playlist? Tracks stay in the library.")
+                    .withMessage ("Delete '" + playlistName + "'? Tracks in your library will not be affected.")
                     .withButton ("Delete")
                     .withButton ("Cancel");
 
@@ -1041,14 +1147,22 @@ void LibraryComponent::handlePlaylistCreate (const juce::String& name)
     if (queryThread == nullptr)
         return;
 
-    auto trackIds = std::move (pendingCreatePlaylistTrackIds);
-    pendingCreatePlaylistTrackIds.clear();
+    auto trackIds = pendingCreatePlaylistTrackIds;
 
     auto callback = [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
         (bool ok, juce::String message, int64_t playlistId)
         {
-            if (safeThis != nullptr)
-                safeThis->handlePlaylistMutationResult (ok, message, playlistId);
+            if (safeThis == nullptr)
+                return;
+
+            if (!ok)
+            {
+                safeThis->handlePlaylistNameEditFailure (message, true);
+                return;
+            }
+
+            safeThis->pendingCreatePlaylistTrackIds.clear();
+            safeThis->handlePlaylistMutationResult (ok, message, playlistId);
         };
 
     if (trackIds.empty())
@@ -1072,8 +1186,16 @@ void LibraryComponent::handlePlaylistRename (int64_t playlistId, const juce::Str
         [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
         (bool ok, juce::String message, int64_t id)
         {
-            if (safeThis != nullptr)
-                safeThis->handlePlaylistMutationResult (ok, message, id);
+            if (safeThis == nullptr)
+                return;
+
+            if (!ok)
+            {
+                safeThis->handlePlaylistNameEditFailure (message, false);
+                return;
+            }
+
+            safeThis->handlePlaylistMutationResult (ok, message, id);
         });
 }
 
@@ -1090,6 +1212,7 @@ void LibraryComponent::handlePlaylistMutationResult (bool ok, const juce::String
         return;
     }
 
+    sidebar.cancelPlaylistEdit();
     refreshSidebarPlaylists();
     if (playlistId > 0)
     {
@@ -1097,6 +1220,29 @@ void LibraryComponent::handlePlaylistMutationResult (bool ok, const juce::String
         sidebar.setActivePlaylist (playlistId, "normal");
     }
     dispatchCurrentQuery (true);
+}
+
+void LibraryComponent::handlePlaylistNameEditFailure (const juce::String& message, bool keepCreateEditorOpen)
+{
+    const bool duplicate = message.containsIgnoreCase ("already exists");
+
+    if (keepCreateEditorOpen && duplicate)
+    {
+        sidebar.showPlaylistEditError ("A playlist with this name already exists");
+        return;
+    }
+
+    sidebar.cancelPlaylistEdit();
+
+    if (!duplicate)
+    {
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::MessageBoxIconType::WarningIcon,
+            "Playlist",
+            message.isNotEmpty() ? message : "Playlist update failed.",
+            "OK",
+            this);
+    }
 }
 
 void LibraryComponent::addSelectedRowsToPlaylist (int64_t playlistId)
@@ -1230,6 +1376,40 @@ void LibraryComponent::removeSelectedPlaylistEntries()
         });
 }
 
+void LibraryComponent::removeSelectedPreparationEntries()
+{
+    if (currentSidebarContext != "preparation")
+        return;
+
+    auto selectedRows = trackTable.getSelectedRows();
+    if (selectedRows.empty())
+        selectedRows.push_back (trackTable.getSelectedRow());
+
+    std::vector<int> indices;
+    for (auto rowIndex : selectedRows)
+    {
+        if (rowIndex < 0 || rowIndex >= static_cast<int> (trackTable.resultBuffer.size()))
+            continue;
+
+        const auto& row = trackTable.resultBuffer[static_cast<size_t> (rowIndex)];
+        const int index = row.playlistPosition > 0 ? row.playlistPosition - 1 : rowIndex;
+        if (index >= 0 && index < static_cast<int> (preparationTrackIds.size()))
+            indices.push_back (index);
+    }
+
+    if (indices.empty())
+        return;
+
+    std::sort (indices.begin(), indices.end());
+    indices.erase (std::unique (indices.begin(), indices.end()), indices.end());
+
+    for (auto it = indices.rbegin(); it != indices.rend(); ++it)
+        preparationTrackIds.erase (preparationTrackIds.begin() + *it);
+
+    sidebar.setPreparationCount (static_cast<int> (preparationTrackIds.size()));
+    dispatchCurrentQuery (true);
+}
+
 void LibraryComponent::movePlaylistEntry (int64_t entryId, int newRowIndex)
 {
     if (!currentSidebarContext.contains (":normal") || queryThread == nullptr)
@@ -1238,13 +1418,53 @@ void LibraryComponent::movePlaylistEntry (int64_t entryId, int newRowIndex)
     const auto tail = currentSidebarContext.fromFirstOccurrenceOf ("playlist:", false, false);
     const auto playlistId = tail.upToFirstOccurrenceOf (":", false, false).getLargeIntValue();
 
+    previewPlaylistEntryMove (entryId, newRowIndex);
+
     queryThread->movePlaylistEntry (playlistId, entryId, newRowIndex,
         [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
         (bool ok, juce::String message, int64_t id)
         {
-            if (safeThis != nullptr)
-                safeThis->handlePlaylistMutationResult (ok, message, id);
+            if (safeThis == nullptr)
+                return;
+
+            if (!ok)
+            {
+                juce::AlertWindow::showMessageBoxAsync (
+                    juce::MessageBoxIconType::WarningIcon,
+                    "Playlist",
+                    message.isNotEmpty() ? message : "Playlist update failed.",
+                    "OK",
+                    safeThis);
+                safeThis->dispatchCurrentQuery (true);
+                return;
+            }
+
+            safeThis->refreshSidebarPlaylists();
         });
+}
+
+void LibraryComponent::previewPlaylistEntryMove (int64_t entryId, int newRowIndex)
+{
+    auto& rows = trackTable.resultBuffer;
+    const auto it = std::find_if (rows.begin(), rows.end(), [entryId] (const LibraryTrackRow& row)
+    {
+        return row.playlistEntryId == entryId;
+    });
+
+    if (it == rows.end())
+        return;
+
+    auto movedRow = std::move (*it);
+    rows.erase (it);
+
+    const int clampedIndex = juce::jlimit (0, static_cast<int> (rows.size()), newRowIndex);
+    rows.insert (rows.begin() + clampedIndex, std::move (movedRow));
+
+    for (int i = 0; i < static_cast<int> (rows.size()); ++i)
+        rows[static_cast<size_t> (i)].playlistPosition = i + 1;
+
+    trackTable.updateContent();
+    trackTable.selectRow (juce::jlimit (0, static_cast<int> (rows.size()) - 1, clampedIndex));
 }
 
 void LibraryComponent::analyzeTrack (int rowIndex)

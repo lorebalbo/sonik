@@ -8,7 +8,7 @@ TrackTableMolecule::TrackTableMolecule()
     tableBox.setModel (this);
     tableBox.setRowHeight (kRowHeight);
     tableBox.setMultipleSelectionEnabled (true);
-    tableBox.setRowSelectedOnMouseDown (false);
+    tableBox.setRowSelectedOnMouseDown (true);
     tableBox.setOutlineThickness (0);
 
     auto& hdr = tableBox.getHeader();
@@ -62,6 +62,16 @@ void TrackTableMolecule::paint (juce::Graphics& g)
     }
 }
 
+void TrackTableMolecule::paintOverChildren (juce::Graphics& g)
+{
+    if (!playlistReorderEnabled || dropIndicatorRow < 0)
+        return;
+
+    const int y = tableBox.getHeaderHeight() + dropIndicatorRow * kRowHeight;
+    g.setColour (LibraryPalette::primary());
+    g.fillRect (2, y - 1, juce::jmax (0, getWidth() - 4), 2);
+}
+
 void TrackTableMolecule::resized()
 {
     tableBox.setBounds (getLocalBounds());
@@ -108,29 +118,64 @@ void TrackTableMolecule::scrollToRow (int row)
 void TrackTableMolecule::setPlaylistReorderEnabled (bool enabled)
 {
     playlistReorderEnabled = enabled;
+    if (!enabled)
+        dropIndicatorRow = -1;
 }
 
 bool TrackTableMolecule::isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& details)
 {
-    return playlistReorderEnabled && details.description.toString().isNotEmpty();
+    // Only accept reorder drags when in playlist reorder mode.
+    if (playlistReorderEnabled)
+        return details.description.toString().startsWith ("REORDER:");
+
+    return false;
+}
+
+void TrackTableMolecule::itemDragMove (const juce::DragAndDropTarget::SourceDetails& details)
+{
+    if (!playlistReorderEnabled)
+        return;
+
+    const int rowY = details.localPosition.y - tableBox.getHeaderHeight();
+    const int targetRow = juce::jlimit (0, static_cast<int> (resultBuffer.size()),
+                                        (rowY + kRowHeight / 2) / kRowHeight);
+
+    if (targetRow != dropIndicatorRow)
+    {
+        dropIndicatorRow = targetRow;
+        repaint();
+    }
+}
+
+void TrackTableMolecule::itemDragExit (const juce::DragAndDropTarget::SourceDetails&)
+{
+    if (dropIndicatorRow >= 0)
+    {
+        dropIndicatorRow = -1;
+        repaint();
+    }
 }
 
 void TrackTableMolecule::itemDropped (const juce::DragAndDropTarget::SourceDetails& details)
 {
+    dropIndicatorRow = -1;
+    repaint();
+
     if (!playlistReorderEnabled || onPlaylistEntryDropped == nullptr)
         return;
 
-    const int selectedRow = tableBox.getSelectedRow();
-    if (selectedRow < 0 || selectedRow >= static_cast<int> (resultBuffer.size()))
+    // Extract the entryId encoded by getDragSourceDescription.
+    const auto description = details.description.toString();
+    if (!description.startsWith ("REORDER:"))
         return;
 
-    const auto entryId = resultBuffer[static_cast<size_t> (selectedRow)].playlistEntryId;
+    const auto entryId = description.fromFirstOccurrenceOf ("REORDER:", false, false).getLargeIntValue();
     if (entryId <= 0)
         return;
 
     const int rowY = details.localPosition.y - tableBox.getHeaderHeight();
-    const int targetRow = juce::jlimit (0, static_cast<int> (resultBuffer.size()) - 1,
-                                        rowY / kRowHeight);
+    const int targetRow = juce::jlimit (0, static_cast<int> (resultBuffer.size()),
+                                        (rowY + kRowHeight / 2) / kRowHeight);
     onPlaylistEntryDropped (entryId, targetRow);
 }
 
@@ -189,6 +234,8 @@ void TrackTableMolecule::paintCell (juce::Graphics& g,
                 g.drawText ("[>]", cell, juce::Justification::centred);
             else if (row.isMissing)
                 g.drawText ("!", cell, juce::Justification::centred);
+            else if (playlistReorderEnabled && row.playlistEntryId > 0)
+                g.drawText ("||", cell, juce::Justification::centred);
             break;
 
         case ColTitle:
@@ -321,6 +368,19 @@ juce::String TrackTableMolecule::getCellTooltip (int rowNumber, int columnId)
 
 juce::var TrackTableMolecule::getDragSourceDescription (const juce::SparseSet<int>& rows)
 {
+    // When playlist reorder is active, encode "REORDER:<entryId>" so itemDropped
+    // can use the stable entryId rather than the current selection.
+    if (playlistReorderEnabled && rows.size() == 1)
+    {
+        const int row = rows[0];
+        if (row >= 0 && row < static_cast<int> (resultBuffer.size()))
+        {
+            const auto entryId = resultBuffer[static_cast<size_t> (row)].playlistEntryId;
+            if (entryId > 0)
+                return juce::var ("REORDER:" + juce::String (entryId));
+        }
+    }
+
     juce::StringArray paths;
     for (int i = 0; i < rows.size(); ++i)
     {

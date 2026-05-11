@@ -150,10 +150,11 @@ void SonikApplication::systemRequestedQuit()
         {
             quitSaveActive = true;
             content->savePreparationListBeforeQuit (
-                [this] (bool)
+                [this] (bool shouldQuit)
                 {
                     quitSaveActive = false;
-                    quit();
+                    if (shouldQuit)
+                        quit();
                 });
             return;
         }

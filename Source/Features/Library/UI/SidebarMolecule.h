@@ -22,6 +22,8 @@ public:
     std::function<void (int64_t, juce::String, juce::Point<int>)> onPlaylistMenuRequested;
     std::function<void (int64_t, juce::String)> onPlaylistDoubleClicked;
     std::function<void (int64_t, juce::String, juce::String)> onTrackPathDroppedOnPlaylist;
+    std::function<void (const juce::String&)> onPlaylistCreateSubmitted;
+    std::function<void (int64_t, const juce::String&)> onPlaylistRenameSubmitted;
 
     SidebarMolecule();
 
@@ -37,6 +39,11 @@ public:
     void setActiveFolder     (const juce::String& path);
     void setActivePlaylist   (int64_t id, const juce::String& type);
 
+    void beginCreatePlaylist ();
+    void beginRenamePlaylist (int64_t id, const juce::String& type, const juce::String& currentName);
+    void cancelPlaylistEdit ();
+    void showPlaylistEditError (const juce::String& message);
+
     bool isInterestedInDragSource (const juce::DragAndDropTarget::SourceDetails& details) override;
     void itemDragEnter (const juce::DragAndDropTarget::SourceDetails& details) override;
     void itemDragMove  (const juce::DragAndDropTarget::SourceDetails& details) override;
@@ -48,16 +55,21 @@ private:
 
     struct DropTargetRow
     {
-        int          itemIndex = -1;
+        int          rowIndex = -1;
         int64_t      playlistId = 0;
         juce::String playlistType;
     };
 
+    enum class PlaylistEditMode { None, Create, Rename };
+
     void rebuild       ();
+    void scheduleRebuild ();
     void selectCollection ();
     void selectFolder     (const juce::String& path);
     void selectPlaylist   (int64_t id, const juce::String& type);
     DropTargetRow targetRowForY (int y) const;
+    void configureInlineEditor ();
+    void submitInlineEdit ();
 
     juce::StringArray                          folderPaths;
     std::vector<PlaylistInfo>                  playlists;
@@ -73,7 +85,18 @@ private:
     int dragHoverIndex = -1;
 
     std::vector<std::unique_ptr<SidebarItemAtom>> items;
+    std::vector<int> itemRows;
     std::vector<DropTargetRow> dropRows;
+
+    juce::TextEditor inlineEditor;
+    juce::Label      inlineErrorLabel;
+    PlaylistEditMode playlistEditMode = PlaylistEditMode::None;
+    int64_t          editingPlaylistId = 0;
+    juce::String     editingOriginalName;
+    juce::String     editErrorText;
+    int              inlineEditorRow = -1;
+    int              inlineErrorRow = -1;
+    bool             editSubmitInFlight = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SidebarMolecule)
 };

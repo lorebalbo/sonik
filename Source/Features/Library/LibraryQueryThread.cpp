@@ -382,7 +382,7 @@ void LibraryQueryThread::createPlaylistWithTracks (juce::String nameIn,
         if (playlistNameExists (handle, trimmedName))
         {
             rollback (handle);
-            postMutation (std::move (completion), false, "A playlist with that name already exists", 0);
+            postMutation (std::move (completion), false, "A playlist with this name already exists", 0);
             return;
         }
 
@@ -418,6 +418,7 @@ void LibraryQueryThread::createPlaylistWithTracks (juce::String nameIn,
 
         if (!execSql (handle, "COMMIT;"))
         {
+            rollback (handle);
             postMutation (std::move (completion), false, "Could not save playlist", 0);
             return;
         }
@@ -447,7 +448,7 @@ void LibraryQueryThread::renamePlaylist (int64_t playlistId, juce::String newNam
 
         if (playlistNameExists (handle, trimmedName, playlistId))
         {
-            postMutation (std::move (completion), false, "A playlist with that name already exists", playlistId);
+            postMutation (std::move (completion), false, "A playlist with this name already exists", playlistId);
             return;
         }
 
@@ -471,10 +472,17 @@ void LibraryQueryThread::deletePlaylist (int64_t playlistId, PlaylistMutationCal
 {
     enqueueOperation ([playlistId, completion = std::move (callbackIn)] (sqlite3* handle) mutable
     {
+        if (!execSql (handle, "BEGIN IMMEDIATE;"))
+        {
+            postMutation (std::move (completion), false, "Could not start playlist update", playlistId);
+            return;
+        }
+
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2 (handle, "DELETE FROM playlists WHERE id = ? AND type = 'normal';",
                                 -1, &stmt, nullptr) != SQLITE_OK)
         {
+            rollback (handle);
             postMutation (std::move (completion), false, "Could not delete playlist", playlistId);
             return;
         }
@@ -482,6 +490,14 @@ void LibraryQueryThread::deletePlaylist (int64_t playlistId, PlaylistMutationCal
         sqlite3_bind_int64 (stmt, 1, playlistId);
         const bool ok = sqlite3_step (stmt) == SQLITE_DONE && sqlite3_changes (handle) > 0;
         sqlite3_finalize (stmt);
+
+        if (!ok || !execSql (handle, "COMMIT;"))
+        {
+            rollback (handle);
+            postMutation (std::move (completion), false, "Only normal playlists can be deleted", playlistId);
+            return;
+        }
+
         postMutation (std::move (completion), ok, ok ? juce::String{} : "Only normal playlists can be deleted", playlistId);
     });
 }
