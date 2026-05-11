@@ -1,5 +1,169 @@
 #include "StemSeparationManager.h"
 
+namespace
+{
+bool isSupportedAudioFile (const juce::File& file)
+{
+    const auto ext = file.getFileExtension().toLowerCase();
+    return ext == ".mp3" || ext == ".flac" || ext == ".wav"
+        || ext == ".aiff" || ext == ".aif" || ext == ".ogg" || ext == ".m4a";
+}
+
+bool isExternalCancelRequested (const std::shared_ptr<std::atomic<bool>>& cancelFlag)
+{
+    return cancelFlag != nullptr && cancelFlag->load (std::memory_order_acquire);
+}
+} // namespace
+
+class StemSeparationManager::FileSeparationJob final : public juce::ThreadPoolJob
+{
+public:
+    FileSeparationJob (StemSeparationManager& managerIn,
+                       juce::String pathIn,
+                       juce::String hashIn,
+                       std::shared_ptr<std::atomic<bool>> cancelIn,
+                       std::function<void(bool)> completionIn)
+        : juce::ThreadPoolJob ("LibraryStemFile_" + hashIn),
+          manager (managerIn),
+          path (std::move (pathIn)),
+          hash (std::move (hashIn)),
+          externalCancel (std::move (cancelIn)),
+          completion (std::move (completionIn))
+    {
+        formatManager.registerBasicFormats();
+    }
+
+    JobStatus runJob() override
+    {
+        if (shouldStop())
+            return jobHasFinished;
+
+        if (path.isEmpty() || hash.isEmpty() || ! manager.modelManager.isModelReady())
+        {
+            postCompletion (false);
+            return jobHasFinished;
+        }
+
+        const juce::File file (path);
+        if (! file.existsAsFile() || ! isSupportedAudioFile (file))
+        {
+            postCompletion (false);
+            return jobHasFinished;
+        }
+
+        auto sourceBuffer = decodeFile (file);
+        if (sourceBuffer == nullptr || shouldStop())
+        {
+            if (! shouldStop())
+                postCompletion (false);
+            return jobHasFinished;
+        }
+
+        const double durationSeconds = static_cast<double> (sourceBuffer->getNumFrames())
+                                     / juce::jmax (1.0, sourceBuffer->getSampleRate());
+        if (durationSeconds < StemSeparationManager::kMinTrackDurationSeconds)
+        {
+            postCompletion (false);
+            return jobHasFinished;
+        }
+
+        juce::ValueTree stemsNode (IDs::Stems);
+        stemsNode.setProperty (IDs::status, "separating", nullptr);
+        stemsNode.setProperty (IDs::progress, 0.0f, nullptr);
+        stemsNode.setProperty (IDs::stemError, "", nullptr);
+
+        auto engineCompletion = std::make_shared<EngineCompletion>();
+        StemSeparationEngine engine (
+            "library", hash, sourceBuffer,
+            manager.stemCache, stemsNode, manager.audioEngine.getSampleRate(),
+            manager.modelManager.getPythonPath(),
+            manager.modelManager.getScriptPath(),
+            ModelManager::getModelDirectory(),
+            [engineCompletion] (const juce::String&, StemData::Ptr result, const juce::String& error)
+            {
+                engineCompletion->success.store (result != nullptr && error.isEmpty(), std::memory_order_release);
+                engineCompletion->finished.store (true, std::memory_order_release);
+                engineCompletion->event.signal();
+            },
+            [this]
+            {
+                return shouldStop();
+            });
+
+        engine.runJob();
+
+        while (! engineCompletion->finished.load (std::memory_order_acquire))
+        {
+            if (shouldStop())
+                return jobHasFinished;
+
+            engineCompletion->event.wait (100);
+        }
+
+        const bool ok = engineCompletion->success.load (std::memory_order_acquire);
+        if (ok)
+            manager.stemCache.evictIfNeeded (manager.getActiveContentHashes());
+
+        postCompletion (ok);
+        return jobHasFinished;
+    }
+
+private:
+    struct EngineCompletion final
+    {
+        juce::WaitableEvent event;
+        std::atomic<bool> finished { false };
+        std::atomic<bool> success  { false };
+    };
+
+    AudioBufferHolder::Ptr decodeFile (const juce::File& file)
+    {
+        std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
+        if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
+            return nullptr;
+
+        if (shouldStop())
+            return nullptr;
+
+        const int64_t totalFrames = reader->lengthInSamples;
+        const int channels = juce::jlimit (1, 2, static_cast<int> (reader->numChannels));
+        juce::AudioBuffer<float> decoded (channels, static_cast<int> (totalFrames));
+        decoded.clear();
+        reader->read (&decoded, 0, static_cast<int> (totalFrames), 0, true, channels > 1);
+
+        if (shouldStop())
+            return nullptr;
+
+        return new AudioBufferHolder (std::move (decoded), reader->sampleRate, totalFrames);
+    }
+
+    bool shouldStop() const
+    {
+        return shouldExit() || isExternalCancelRequested (externalCancel);
+    }
+
+    void postCompletion (bool success)
+    {
+        if (! completion || shouldStop())
+            return;
+
+        auto aliveFlag = manager.alive;
+        auto callback = completion;
+        juce::MessageManager::callAsync ([aliveFlag, callback = std::move (callback), success]
+        {
+            if (aliveFlag->load (std::memory_order_acquire) && callback)
+                callback (success);
+        });
+    }
+
+    StemSeparationManager& manager;
+    juce::String path;
+    juce::String hash;
+    std::shared_ptr<std::atomic<bool>> externalCancel;
+    std::function<void(bool)> completion;
+    juce::AudioFormatManager formatManager;
+};
+
 // ============================================================================
 // Construction / Destruction
 // ============================================================================
@@ -114,6 +278,23 @@ void StemSeparationManager::startSeparation (const juce::String& deckId)
 
     activeJobs[deckId] = job;
     threadPool.addJob (job, true); // pool takes ownership
+}
+
+void StemSeparationManager::startSeparationForFile (const juce::String& filePath,
+                                                    const juce::String& contentHash,
+                                                    std::function<void(bool success)> completion)
+{
+    startSeparationForFile (filePath, contentHash, nullptr, std::move (completion));
+}
+
+void StemSeparationManager::startSeparationForFile (const juce::String& filePath,
+                                                    const juce::String& contentHash,
+                                                    std::shared_ptr<std::atomic<bool>> cancelFlag,
+                                                    std::function<void(bool success)> completion)
+{
+    threadPool.addJob (new FileSeparationJob (*this, filePath, contentHash,
+                                              std::move (cancelFlag), std::move (completion)),
+                       true);
 }
 
 void StemSeparationManager::cancelSeparation (const juce::String& deckId)

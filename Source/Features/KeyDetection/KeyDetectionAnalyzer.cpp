@@ -94,17 +94,22 @@ public:
                  const juce::String& hash,
                  const juce::String& path,
                  AudioBufferHolder::Ptr buf,
-                 Callback cb)
+                 Callback cb,
+                 CancellationFlag cancel)
         : juce::ThreadPoolJob ("KeyAnalysis_" + hash),
           analyzer (owner),
           contentHash (hash),
           filePath (path),
           buffer (std::move (buf)),
+          cancelFlag (std::move (cancel)),
           callback (std::move (cb))
     {}
 
     JobStatus runJob() override
     {
+        if (shouldCancel())
+            return jobHasFinished;
+
         // 1. Check SQLite cache
         auto cached = analyzer.db.loadTrackData (filePath, contentHash);
         if (cached.has_value() && cached->keyIndex >= 0)
@@ -119,7 +124,7 @@ public:
             return jobHasFinished;
         }
 
-        if (shouldExit())
+        if (shouldCancel())
             return jobHasFinished;
 
         // 2. Run analysis
@@ -127,7 +132,7 @@ public:
         float detectedConf = 0.0f;
         analyzeBuffer (detectedKey, detectedConf);
 
-        if (shouldExit())
+        if (shouldCancel())
         {
             deliverResult (-1, 0.0f);
             return jobHasFinished;
@@ -153,7 +158,7 @@ public:
                 beatgridJson  = existing->beatgridJson;
             }
 
-            if (detectedKey >= 0)
+            if (detectedKey >= 0 && ! shouldCancel())
             {
                 analyzer.db.saveTrackData (filePath, contentHash,
                                            cuePointsJson, beatgridJson,
@@ -187,7 +192,7 @@ private:
         for (int64_t i = 0; i < numFrames; ++i)
             mono[static_cast<size_t> (i)] = (channelL[i] + channelR[i]) * 0.5f;
 
-        if (shouldExit())
+        if (shouldCancel())
             return;
 
         // ================================================================
@@ -280,7 +285,7 @@ private:
 
         for (int hop = 0; hop < numHops; ++hop)
         {
-            if (hop % 500 == 0 && shouldExit())
+            if (hop % 500 == 0 && shouldCancel())
                 return;
 
             int64_t startSample = segStart + static_cast<int64_t> (hop) * hopSize;
@@ -310,7 +315,7 @@ private:
             }
         }
 
-        if (shouldExit())
+        if (shouldCancel())
             return;
 
         // ================================================================
@@ -424,6 +429,9 @@ private:
 
     void deliverResult (int keyIndex, float confidence)
     {
+        if (shouldCancel())
+            return;
+
         auto cb   = callback;
         auto hash = contentHash;
         juce::MessageManager::callAsync ([cb, hash, keyIndex, confidence]()
@@ -433,10 +441,17 @@ private:
         });
     }
 
+    bool shouldCancel() const
+    {
+        return shouldExit()
+            || (cancelFlag != nullptr && cancelFlag->load (std::memory_order_acquire));
+    }
+
     KeyDetectionAnalyzer& analyzer;
     juce::String          contentHash;
     juce::String          filePath;
     AudioBufferHolder::Ptr buffer;
+    CancellationFlag      cancelFlag;
     Callback              callback;
 };
 
@@ -457,9 +472,11 @@ KeyDetectionAnalyzer::~KeyDetectionAnalyzer()
 void KeyDetectionAnalyzer::analyze (const juce::String& contentHash,
                                      const juce::String& filePath,
                                      AudioBufferHolder::Ptr buffer,
-                                     Callback callback)
+                                     Callback callback,
+                                     CancellationFlag cancelFlag)
 {
     threadPool.addJob (new AnalysisJob (*this, contentHash, filePath,
-                                        std::move (buffer), std::move (callback)),
+                                        std::move (buffer), std::move (callback),
+                                        std::move (cancelFlag)),
                        true);
 }

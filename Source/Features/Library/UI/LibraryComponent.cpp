@@ -1,5 +1,6 @@
 #include "LibraryComponent.h"
 #include "LibraryPalette.h"
+#include "LibraryStatusText.h"
 #include <sqlite3.h>
 #include <algorithm>
 
@@ -29,6 +30,75 @@ int canonicalKeyToCamelotIndex (int canonicalKey)
 
     return isMajor ? number + 11 : number - 1;
 }
+
+class LibraryPopupLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    void drawPopupMenuBackground (juce::Graphics& g, int width, int height) override
+    {
+        g.fillAll (LibraryPalette::surface());
+
+        // JUCE owns the popup window chrome, so painting outside the menu bounds
+        // is not reliable. The dithered 2px offset shadow is drawn as an
+        // internal right/bottom band, preserving the 1-bit checker pattern.
+        g.setColour (LibraryPalette::primary());
+        for (int y = 2; y < height; ++y)
+            for (int x = juce::jmax (0, width - 2); x < width; ++x)
+                if (((x + y) & 1) == 0)
+                    g.fillRect (x, y, 1, 1);
+
+        for (int y = juce::jmax (0, height - 2); y < height; ++y)
+            for (int x = 2; x < width; ++x)
+                if (((x + y) & 1) == 0)
+                    g.fillRect (x, y, 1, 1);
+    }
+
+    void drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
+                            bool isSeparator, bool isActive, bool isHighlighted,
+                            bool isTicked, bool hasSubMenu, const juce::String& text,
+                            const juce::String& shortcutKeyText,
+                            const juce::Drawable* icon, const juce::Colour* textColour) override
+    {
+        juce::ignoreUnused (shortcutKeyText, icon, textColour);
+
+        if (isSeparator)
+        {
+            g.setColour (LibraryPalette::primary());
+            const auto y = area.getCentreY();
+            for (int x = area.getX() + 8; x < area.getRight() - 8; x += 2)
+                g.fillRect (x, y, 1, 1);
+            return;
+        }
+
+        const auto itemArea = area.reduced (2, 0);
+        const bool inverted = isActive && isHighlighted;
+        g.setColour (inverted ? LibraryPalette::primary() : LibraryPalette::surface());
+        g.fillRect (itemArea);
+
+        auto textColourToUse = inverted ? LibraryPalette::surface() : LibraryPalette::primary();
+        if (! isActive)
+            textColourToUse = LibraryPalette::containerHighest();
+
+        g.setColour (textColourToUse);
+        g.setFont (juce::Font (LibraryPalette::bodyFont (12.0f)));
+
+        auto textArea = itemArea.reduced (10, 0);
+        if (isTicked)
+            g.drawText ("*", textArea.removeFromLeft (12), juce::Justification::centred);
+        else
+            textArea.removeFromLeft (12);
+
+        if (hasSubMenu)
+        {
+            auto arrowArea = textArea.removeFromRight (14);
+            g.drawText (">", arrowArea, juce::Justification::centred);
+        }
+
+        g.drawText (text, textArea, juce::Justification::centredLeft, true);
+    }
+};
+
+LibraryPopupLookAndFeel libraryPopupLnf;
 }
 
 // =============================================================================
@@ -36,10 +106,11 @@ int canonicalKeyToCamelotIndex (int canonicalKey)
 // =============================================================================
 
 LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
-                                     TrackDatabase&   dbRef)
+                                     TrackDatabase&   dbRef,
+                                     LibraryAnalysisQueue& queueRef)
     : rootState (rootStateRef)
     , db        (dbRef)
-    , analysisService (dbRef)
+    , analysisQueue (queueRef)
 {
     currentSidebarContext = "collection";
 
@@ -204,6 +275,14 @@ LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
         movePlaylistEntry (entryId, newRowIndex);
     };
 
+    analysisQueue.setStatusCallback (
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        (const LibraryAnalysisQueue::StatusUpdate& update)
+        {
+            if (safeThis != nullptr)
+                safeThis->handleAnalysisQueueStatus (update);
+        });
+
     // ---- Query thread -------------------------------------------------------
     queryThread = std::make_unique<LibraryQueryThread> (db);
     queryThread->setResultCallback ([this] (std::vector<LibraryTrackRow> rows)
@@ -269,6 +348,7 @@ LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
 
 LibraryComponent::~LibraryComponent()
 {
+    analysisQueue.setStatusCallback (nullptr);
     rootState.removeListener (this);
     if (scanner != nullptr)
         scanner->removeListener (this);
@@ -848,134 +928,396 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
     if (rowIndex < 0 || rowIndex >= static_cast<int> (trackTable.resultBuffer.size()))
         return;
 
-    juce::PopupMenu menu;
+    auto selectedRows = trackTable.getSelectedRows();
+    if (selectedRows.empty()
+        || std::find (selectedRows.begin(), selectedRows.end(), rowIndex) == selectedRows.end())
+        selectedRows = { rowIndex };
 
-    // Dynamically list all decks present in the root ValueTree (AC-05, AC-19)
+    std::sort (selectedRows.begin(), selectedRows.end());
+    selectedRows.erase (std::unique (selectedRows.begin(), selectedRows.end()), selectedRows.end());
+
+    std::vector<LibraryTrackRow> rows;
+    rows.reserve (selectedRows.size());
+    for (auto selectedRow : selectedRows)
+        if (selectedRow >= 0 && selectedRow < static_cast<int> (trackTable.resultBuffer.size()))
+            rows.push_back (trackTable.resultBuffer[static_cast<size_t> (selectedRow)]);
+
+    if (rows.empty())
+        return;
+
+    constexpr int kRelocate = 10;
+    constexpr int kRemove = 11;
+    constexpr int kAnalyze = 12;
+    constexpr int kForceAnalyze = 13;
+    constexpr int kSeparateStems = 14;
+    constexpr int kPlaylistPreparation = 1001;
+    constexpr int kPlaylistNew = 1002;
+    constexpr int kPlaylistBase = 2000;
+    constexpr int kRatingBase = 3000;
+    constexpr int kDeckBase = 4000;
+
+    auto menu = std::make_shared<juce::PopupMenu>();
+    menu->setLookAndFeel (&libraryPopupLnf);
+
+    std::vector<int64_t> playlistIds;
+    auto addPlaylistSubMenu = [&]
+    {
+        juce::PopupMenu playlistMenu;
+        playlistMenu.setLookAndFeel (&libraryPopupLnf);
+        playlistMenu.addItem (kPlaylistPreparation, "Preparation List");
+
+        playlistIds.clear();
+        for (const auto& playlist : playlistCache)
+        {
+            if (! playlist.isNormal())
+                continue;
+
+            const int itemId = kPlaylistBase + static_cast<int> (playlistIds.size());
+            playlistIds.push_back (playlist.id);
+            playlistMenu.addItem (itemId, playlist.name);
+        }
+
+        playlistMenu.addSeparator();
+        playlistMenu.addItem (kPlaylistNew, "New Playlist...");
+        menu->addSubMenu ("Add to Playlist...", playlistMenu);
+    };
+
+    auto addRatingSubMenu = [&]
+    {
+        juce::PopupMenu ratingMenu;
+        ratingMenu.setLookAndFeel (&libraryPopupLnf);
+        for (int rating = 1; rating <= 5; ++rating)
+            ratingMenu.addItem (kRatingBase + rating,
+                                juce::String (rating) + (rating == 1 ? " Star" : " Stars"));
+        menu->addSubMenu ("Rate...", ratingMenu);
+    };
+
+    std::vector<juce::String> deckIds;
     auto decksNode = rootState.getChildWithName (IDs::Decks);
-    const int numDecks = decksNode.getNumChildren();
-    for (int i = 0; i < numDecks; ++i)
+    for (int i = 0; i < decksNode.getNumChildren(); ++i)
+        deckIds.push_back (decksNode.getChild (i).getProperty (IDs::id).toString());
+
+    if (rows.size() == 1 && rows.front().isMissing != 0)
     {
-        const auto dId = decksNode.getChild (i).getProperty (IDs::id).toString();
-        menu.addItem (i + 1, "Load to Deck " + dId);
+        menu->addItem (kRelocate, "Relocate File...");
+        menu->addItem (kRemove, "Remove from Library");
     }
-
-    menu.addSeparator();
-    juce::PopupMenu addToPlaylistMenu;
-    addToPlaylistMenu.addItem (1001, "Preparation List");
-    bool hasNormalPlaylists = false;
-    for (const auto& playlist : playlistCache)
+    else if (rows.size() == 1)
     {
-        if (!playlist.isNormal())
-            continue;
+        const auto& row = rows.front();
+        for (int i = 0; i < static_cast<int> (deckIds.size()); ++i)
+            menu->addItem (kDeckBase + i, "Load to Deck " + juce::String (i + 1));
 
-        hasNormalPlaylists = true;
-        addToPlaylistMenu.addItem (static_cast<int> (2000 + playlist.id), playlist.name);
+        menu->addSeparator();
+        const bool analyzed = isRowAnalyzed (row);
+        menu->addItem (kAnalyze, "Analyze Track", ! analyzed);
+        if (analyzed)
+            menu->addItem (kForceAnalyze, "Force Re-analyze");
+
+        const bool stemsExist = row.contentHash.isNotEmpty() && db.hasStemRecord (row.contentHash);
+        menu->addItem (kSeparateStems, "Separate Stems", ! stemsExist);
+        addPlaylistSubMenu();
+        addRatingSubMenu();
+        menu->addSeparator();
+        menu->addItem (kRemove, "Remove from Library");
     }
-    if (hasNormalPlaylists)
-        addToPlaylistMenu.addSeparator();
-    addToPlaylistMenu.addItem (1002, "New Playlist From Selection");
-    menu.addSubMenu ("Add to Playlist", addToPlaylistMenu);
+    else
+    {
+        const int count = static_cast<int> (rows.size());
+        const bool allAnalyzed = std::all_of (rows.begin(), rows.end(), isRowAnalyzed);
+        menu->addItem (kAnalyze, "Analyze Tracks (" + juce::String (count) + ")", ! allAnalyzed);
+        if (allAnalyzed)
+            menu->addItem (kForceAnalyze, "Force Re-analyze (" + juce::String (count) + ")");
 
-    const bool inNormalPlaylist = currentSidebarContext.contains (":normal");
-    const bool inPreparationList = currentSidebarContext == "preparation";
-    menu.addItem (numDecks + 1, "Analyze Track");
-    menu.addItem (numDecks + 2, "Separate Stems");
-    if (inNormalPlaylist)
-        menu.addItem (numDecks + 4, "Remove from Playlist");
-    if (inPreparationList)
-        menu.addItem (numDecks + 5, "Remove from Preparation List");
-    menu.addSeparator();
-    menu.addItem (numDecks + 3, "Remove from Library");
+        menu->addItem (kSeparateStems, "Separate Stems (" + juce::String (count) + ")");
+        addPlaylistSubMenu();
+        addRatingSubMenu();
+        menu->addSeparator();
+        menu->addItem (kRemove, "Remove from Library (" + juce::String (count) + ")");
+    }
 
     const auto targetArea = juce::Rectangle<int> { screenPos.x, screenPos.y, 1, 1 };
     juce::Component::SafePointer<LibraryComponent> safeThis (this);
 
-    menu.showMenuAsync (
+    menu->showMenuAsync (
         juce::PopupMenu::Options{}.withTargetScreenArea (targetArea),
-        [safeThis, rowIndex, numDecks] (int choice)
+        [safeThis, menu, rows = std::move (rows), rowIndex, deckIds = std::move (deckIds),
+         playlistIds = std::move (playlistIds)] (int choice) mutable
         {
-            if (safeThis == nullptr) return;
+            menu->setLookAndFeel (nullptr);
+            if (safeThis == nullptr || choice == 0)
+                return;
 
-            // Load to deck N  (items 1 … numDecks)
-            if (choice >= 1 && choice <= numDecks)
+            if (choice >= kDeckBase && choice < kDeckBase + static_cast<int> (deckIds.size()))
             {
-                auto decks = safeThis->rootState.getChildWithName (IDs::Decks);
-                const int idx = choice - 1;
-                if (idx < decks.getNumChildren())
-                {
-                    const auto dId = decks.getChild (idx).getProperty (IDs::id).toString();
-                    safeThis->loadTrackToDeck (rowIndex, dId);
-                }
+                safeThis->loadTrackToDeck (rowIndex, deckIds[static_cast<size_t> (choice - kDeckBase)]);
                 return;
             }
 
-            if (choice == 1001)
+            if (choice == kAnalyze)
             {
-                safeThis->addSelectedRowsToPreparation();
+                safeThis->queueAnalysisRows (rows, false);
                 return;
             }
 
-            if (choice == 1002)
+            if (choice == kForceAnalyze)
+            {
+                safeThis->queueAnalysisRows (rows, true);
+                return;
+            }
+
+            if (choice == kSeparateStems)
+            {
+                safeThis->queueStemRows (rows);
+                return;
+            }
+
+            if (choice == kRelocate && rows.size() == 1)
+            {
+                safeThis->relocateTrackFile (rows.front().id, rows.front().filePath);
+                return;
+            }
+
+            if (choice == kRemove)
+            {
+                std::vector<int64_t> ids;
+                ids.reserve (rows.size());
+                for (const auto& row : rows)
+                    ids.push_back (row.id);
+                safeThis->removeTracksFromLibrary (ids);
+                return;
+            }
+
+            if (choice == kPlaylistPreparation)
+            {
+                for (const auto& row : rows)
+                    safeThis->preparationTrackIds.push_back (row.id);
+                safeThis->sidebar.setPreparationCount (static_cast<int> (safeThis->preparationTrackIds.size()));
+                if (safeThis->currentSidebarContext == "preparation")
+                    safeThis->dispatchCurrentQuery (true);
+                return;
+            }
+
+            if (choice == kPlaylistNew)
             {
                 safeThis->pendingCreatePlaylistTrackIds.clear();
-                auto selectedRows = safeThis->trackTable.getSelectedRows();
-                if (selectedRows.empty())
-                    selectedRows.push_back (rowIndex);
-
-                for (auto selectedRow : selectedRows)
-                    if (selectedRow >= 0
-                        && selectedRow < static_cast<int> (safeThis->trackTable.resultBuffer.size()))
-                        safeThis->pendingCreatePlaylistTrackIds.push_back (
-                            safeThis->trackTable.resultBuffer[static_cast<size_t> (selectedRow)].id);
-
+                for (const auto& row : rows)
+                    safeThis->pendingCreatePlaylistTrackIds.push_back (row.id);
                 safeThis->sidebar.beginCreatePlaylist();
                 return;
             }
 
-            if (choice >= 2000)
+            if (choice >= kPlaylistBase && choice < kPlaylistBase + static_cast<int> (playlistIds.size()))
             {
-                safeThis->addSelectedRowsToPlaylist (choice - 2000);
-                return;
-            }
-
-            // Remove from Library
-            if (choice == numDecks + 1)
-            {
-                safeThis->analyzeTrack (rowIndex);
-                return;
-            }
-
-            if (choice == numDecks + 4)
-            {
-                safeThis->removeSelectedPlaylistEntries();
-                return;
-            }
-
-            if (choice == numDecks + 5)
-            {
-                safeThis->removeSelectedPreparationEntries();
-                return;
-            }
-
-            if (choice == numDecks + 3)
-            {
-                if (rowIndex >= static_cast<int> (safeThis->trackTable.resultBuffer.size()))
+                if (safeThis->queryThread == nullptr)
                     return;
-                const int64_t trackId = safeThis->trackTable.resultBuffer[static_cast<size_t> (rowIndex)].id;
-                auto* handle = safeThis->db.getDbHandle();
-                sqlite3_stmt* stmt = nullptr;
-                if (sqlite3_prepare_v2 (handle,
-                        "DELETE FROM library_tracks WHERE id=?",
-                        -1, &stmt, nullptr) == SQLITE_OK)
-                {
-                    sqlite3_bind_int64 (stmt, 1, trackId);
-                    sqlite3_step       (stmt);
-                    sqlite3_finalize   (stmt);
-                }
-                safeThis->refreshSidebarPlaylists();
-                safeThis->dispatchCurrentQuery (true);
+
+                std::vector<int64_t> ids;
+                ids.reserve (rows.size());
+                for (const auto& row : rows)
+                    ids.push_back (row.id);
+
+                const auto playlistId = playlistIds[static_cast<size_t> (choice - kPlaylistBase)];
+                safeThis->queryThread->addTracksToPlaylist (playlistId, std::move (ids),
+                    [safeThis] (bool ok, juce::String message, int64_t id)
+                    {
+                        if (safeThis != nullptr)
+                            safeThis->handlePlaylistMutationResult (ok, message, id);
+                    });
+                return;
             }
+
+            if (choice > kRatingBase && choice <= kRatingBase + 5)
+                safeThis->setTrackRatingForRows (rows, choice - kRatingBase);
         });
+}
+
+bool LibraryComponent::isRowAnalyzed (const LibraryTrackRow& row) noexcept
+{
+    return row.bpm > 0.0 && row.keyIndex >= 0;
+}
+
+juce::String LibraryComponent::statusTextForUpdate (const LibraryAnalysisQueue::StatusUpdate& update)
+{
+    return SonikLibraryUi::statusTextForUpdate (update);
+}
+
+void LibraryComponent::handleAnalysisQueueStatus (const LibraryAnalysisQueue::StatusUpdate& update)
+{
+    trackTable.setRowStatus (update.trackId, statusTextForUpdate (update));
+    trackTable.updateContent();
+
+    const bool terminal = update.status == LibraryAnalysisQueue::JobStatus::Complete
+                       || update.status == LibraryAnalysisQueue::JobStatus::Failed;
+    if (terminal)
+    {
+        activeAnalysisJobs = juce::jmax (0, activeAnalysisJobs - 1);
+        if (update.kind == LibraryAnalysisQueue::JobKind::Analysis
+            && update.status == LibraryAnalysisQueue::JobStatus::Complete)
+            dispatchCurrentQuery (true);
+    }
+
+    if (activeAnalysisJobs > 0)
+        scanProgressLabel.setText ("Analysis Queue: " + juce::String (activeAnalysisJobs) + " job(s)",
+                                   juce::dontSendNotification);
+
+    resized();
+}
+
+void LibraryComponent::queueAnalysisRows (const std::vector<LibraryTrackRow>& rows, bool force)
+{
+    if (rows.empty())
+        return;
+
+    for (const auto& row : rows)
+    {
+        if (force)
+            clearAnalysisCache (row);
+
+        trackTable.setRowStatus (row.id, "Queued");
+        analysisQueue.enqueueAnalysis (row.id, row.filePath, row.contentHash, true);
+        ++activeAnalysisJobs;
+    }
+
+    scanProgressLabel.setText ("Analysis Queue: " + juce::String (activeAnalysisJobs) + " job(s)",
+                               juce::dontSendNotification);
+    resized();
+}
+
+void LibraryComponent::queueStemRows (const std::vector<LibraryTrackRow>& rows)
+{
+    if (rows.empty())
+        return;
+
+    for (const auto& row : rows)
+    {
+        trackTable.setRowStatus (row.id, "Queued (Stems)");
+        analysisQueue.enqueueStemSeparation (row.id, row.filePath, row.contentHash, true);
+        ++activeAnalysisJobs;
+    }
+
+    scanProgressLabel.setText ("Analysis Queue: " + juce::String (activeAnalysisJobs) + " job(s)",
+                               juce::dontSendNotification);
+    resized();
+}
+
+void LibraryComponent::relocateTrackFile (int64_t trackId, const juce::String& currentPath)
+{
+    auto chooser = std::make_shared<juce::FileChooser> (
+        "Relocate Track",
+        juce::File{},
+        "*.mp3;*.flac;*.wav;*.aiff;*.aif;*.ogg;*.m4a");
+
+    chooser->launchAsync (
+        juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this), trackId, currentPath, chooser]
+        (const juce::FileChooser& fc)
+        {
+            if (safeThis == nullptr)
+                return;
+
+            const auto result = fc.getResult();
+            if (! result.existsAsFile())
+                return;
+
+            const auto ext = result.getFileExtension().toLowerCase();
+            const bool supported = ext == ".mp3" || ext == ".flac" || ext == ".wav"
+                                || ext == ".aiff" || ext == ".aif" || ext == ".ogg" || ext == ".m4a";
+            if (! supported)
+                return;
+
+            auto* handle = safeThis->db.getDbHandle();
+            sqlite3_stmt* stmt = nullptr;
+            if (sqlite3_prepare_v2 (handle,
+                    "UPDATE library_tracks SET file_path=?, is_missing=0 WHERE id=?",
+                    -1, &stmt, nullptr) == SQLITE_OK)
+            {
+                const auto newPath = result.getFullPathName();
+                sqlite3_bind_text  (stmt, 1, newPath.toRawUTF8(), -1, SQLITE_TRANSIENT);
+                sqlite3_bind_int64 (stmt, 2, trackId);
+                sqlite3_step (stmt);
+                sqlite3_finalize (stmt);
+            }
+
+            juce::ignoreUnused (currentPath);
+            safeThis->dispatchCurrentQuery (true);
+        });
+}
+
+void LibraryComponent::removeTracksFromLibrary (const std::vector<int64_t>& trackIds)
+{
+    if (trackIds.empty())
+        return;
+
+    auto* handle = db.getDbHandle();
+    bool ok = sqlite3_exec (handle, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    sqlite3_stmt* deletePlaylist = nullptr;
+    sqlite3_stmt* deleteTrack = nullptr;
+
+    ok = ok && sqlite3_prepare_v2 (handle,
+                                   "DELETE FROM playlist_tracks WHERE track_id=?",
+                                   -1, &deletePlaylist, nullptr) == SQLITE_OK;
+    ok = ok && sqlite3_prepare_v2 (handle,
+                                   "DELETE FROM library_tracks WHERE id=?",
+                                   -1, &deleteTrack, nullptr) == SQLITE_OK;
+
+    for (auto trackId : trackIds)
+    {
+        if (! ok)
+            break;
+
+        sqlite3_reset (deletePlaylist);
+        sqlite3_clear_bindings (deletePlaylist);
+        sqlite3_bind_int64 (deletePlaylist, 1, trackId);
+        ok = sqlite3_step (deletePlaylist) == SQLITE_DONE;
+
+        sqlite3_reset (deleteTrack);
+        sqlite3_clear_bindings (deleteTrack);
+        sqlite3_bind_int64 (deleteTrack, 1, trackId);
+        ok = ok && sqlite3_step (deleteTrack) == SQLITE_DONE;
+
+        trackTable.setRowStatus (trackId, {});
+    }
+
+    if (deletePlaylist != nullptr)
+        sqlite3_finalize (deletePlaylist);
+    if (deleteTrack != nullptr)
+        sqlite3_finalize (deleteTrack);
+
+    if (ok)
+        ok = sqlite3_exec (handle, "COMMIT;", nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    if (! ok)
+        sqlite3_exec (handle, "ROLLBACK;", nullptr, nullptr, nullptr);
+
+    std::set<int64_t> removedIds (trackIds.begin(), trackIds.end());
+    preparationTrackIds.erase (
+        std::remove_if (preparationTrackIds.begin(), preparationTrackIds.end(),
+                        [&removedIds] (int64_t id) { return removedIds.count (id) > 0; }),
+        preparationTrackIds.end());
+
+    refreshSidebarPlaylists();
+    sidebar.setPreparationCount (static_cast<int> (preparationTrackIds.size()));
+    dispatchCurrentQuery (true);
+}
+
+void LibraryComponent::setTrackRatingForRows (const std::vector<LibraryTrackRow>& rows, int newRating)
+{
+    for (const auto& row : rows)
+    {
+        setTrackRating (row.id, newRating);
+        for (auto& bufferedRow : trackTable.resultBuffer)
+            if (bufferedRow.id == row.id)
+                bufferedRow.rating = newRating;
+    }
+
+    trackTable.updateContent();
+}
+
+void LibraryComponent::clearAnalysisCache (const LibraryTrackRow& row)
+{
+    SonikLibraryUi::clearAnalysisCache (db, row.filePath, row.contentHash);
 }
 
 void LibraryComponent::promptForPlaylistName (const juce::String& title,
@@ -1465,34 +1807,6 @@ void LibraryComponent::previewPlaylistEntryMove (int64_t entryId, int newRowInde
 
     trackTable.updateContent();
     trackTable.selectRow (juce::jlimit (0, static_cast<int> (rows.size()) - 1, clampedIndex));
-}
-
-void LibraryComponent::analyzeTrack (int rowIndex)
-{
-    if (rowIndex < 0 || rowIndex >= static_cast<int> (trackTable.resultBuffer.size()))
-        return;
-
-    const auto row = trackTable.resultBuffer[static_cast<size_t> (rowIndex)];
-    const auto displayName = row.title.isNotEmpty()
-        ? row.title
-        : juce::File (row.filePath).getFileNameWithoutExtension();
-
-    ++activeAnalysisJobs;
-    scanProgressLabel.setText ("Analyzing: " + displayName.substring (0, 64),
-                                juce::dontSendNotification);
-    resized();
-
-    analysisService.analyzeTrack (row.filePath, row.contentHash,
-        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
-        (const juce::String&, bool)
-        {
-            if (safeThis == nullptr)
-                return;
-
-            safeThis->activeAnalysisJobs = juce::jmax (0, safeThis->activeAnalysisJobs - 1);
-            safeThis->dispatchCurrentQuery (true);
-            safeThis->resized();
-        });
 }
 
 // ---- Play count DB write ---------------------------------------------------

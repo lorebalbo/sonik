@@ -6,7 +6,9 @@
 #include "Features/KeyDetection/KeyDetectionAnalyzer.h"
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
+#include <atomic>
 #include <functional>
+#include <memory>
 
 /// Library-owned one-shot analysis service for context-menu analysis.
 /// Decoding happens on a private background pool; BPM/key DSP reuse the existing
@@ -14,7 +16,9 @@
 class LibraryAnalysisService final
 {
 public:
-    using CompletionCallback = std::function<void (const juce::String& filePath, bool changed)>;
+    using CompletionCallback = std::function<void (const juce::String& filePath, bool succeeded)>;
+    using CancellationFlag = std::shared_ptr<std::atomic<bool>>;
+    using ProgressCallback = std::function<void (int percent)>;
 
     explicit LibraryAnalysisService (TrackDatabase& database);
     ~LibraryAnalysisService();
@@ -26,6 +30,12 @@ public:
                        const juce::String& contentHash,
                        CompletionCallback callback);
 
+    void analyzeTrack (const juce::String& filePath,
+                       const juce::String& contentHash,
+                       CompletionCallback callback,
+                       CancellationFlag cancelFlag,
+                       ProgressCallback progressCallback);
+
 private:
     class DecodeJob;
     struct AnalysisState;
@@ -33,7 +43,9 @@ private:
     void runAnalyzers (const juce::String& filePath,
                        const juce::String& contentHash,
                        AudioBufferHolder::Ptr holder,
-                       CompletionCallback callback);
+                       CompletionCallback callback,
+                       CancellationFlag cancelFlag,
+                       ProgressCallback progressCallback);
 
     TrackDatabase&       db;
     BeatGridAnalyzer     beatGridAnalyzer;

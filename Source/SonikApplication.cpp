@@ -1,5 +1,76 @@
 #include "SonikApplication.h"
 
+namespace
+{
+struct AsyncCompletion final
+{
+    juce::WaitableEvent event;
+    std::atomic<bool> finished { false };
+    std::atomic<bool> success  { false };
+};
+
+bool waitForAsyncCompletion (const LibraryAnalysisQueue::JobContext& ctx,
+                             const std::shared_ptr<AsyncCompletion>& completion)
+{
+    while (! completion->finished.load (std::memory_order_acquire))
+    {
+        if (ctx.shouldExit && ctx.shouldExit())
+        {
+            if (ctx.sharedCancel != nullptr)
+                ctx.sharedCancel->store (true, std::memory_order_release);
+            return false;
+        }
+
+        completion->event.wait (100);
+    }
+
+    return completion->success.load (std::memory_order_acquire);
+}
+
+LibraryAnalysisQueue::JobExecutor makeAnalysisExecutor (LibraryAnalysisService& analysisService)
+{
+    return [&analysisService] (const LibraryAnalysisQueue::JobContext& ctx)
+    {
+        auto completion = std::make_shared<AsyncCompletion>();
+        auto progressFn = ctx.progress;
+
+        analysisService.analyzeTrack (ctx.filePath, ctx.contentHash,
+            [completion] (const juce::String&, bool succeeded)
+            {
+                completion->success.store (succeeded, std::memory_order_release);
+                completion->finished.store (true, std::memory_order_release);
+                completion->event.signal();
+            },
+            ctx.sharedCancel,
+            [progressFn = std::move (progressFn)] (int percent) mutable
+            {
+                if (progressFn)
+                    progressFn (percent);
+            });
+
+        return waitForAsyncCompletion (ctx, completion);
+    };
+}
+
+LibraryAnalysisQueue::JobExecutor makeStemExecutor (StemSeparationManager& stemManager)
+{
+    return [&stemManager] (const LibraryAnalysisQueue::JobContext& ctx)
+    {
+        auto completion = std::make_shared<AsyncCompletion>();
+
+        stemManager.startSeparationForFile (ctx.filePath, ctx.contentHash, ctx.sharedCancel,
+            [completion] (bool success)
+            {
+                completion->success.store (success, std::memory_order_release);
+                completion->finished.store (true, std::memory_order_release);
+                completion->event.signal();
+            });
+
+        return waitForAsyncCompletion (ctx, completion);
+    };
+}
+} // namespace
+
 void SonikApplication::initialise (const juce::String& /*commandLine*/)
 {
     auto dbPath = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -82,10 +153,15 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
             }
         });
 
+    libraryAnalysisService = std::make_unique<LibraryAnalysisService> (*trackDatabase);
+    libraryAnalysisQueue = std::make_unique<LibraryAnalysisQueue> (
+        makeAnalysisExecutor (*libraryAnalysisService),
+        makeStemExecutor (*stemSeparationManager));
+
     mainWindow = std::make_unique<MainWindow> (
         *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager,
         *beatGridManager, *stemSeparationManager, *masterClockManager,
-        *trackDatabase);
+        *libraryAnalysisQueue, *trackDatabase);
 
     // Create the watch-folder scanner (PRD-0031) and kick off the startup scan.
     // Constructed after trackDatabase is ready; destroyed in shutdown() before
@@ -102,6 +178,9 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
 
 void SonikApplication::shutdown()
 {
+    if (libraryAnalysisQueue != nullptr)
+        libraryAnalysisQueue->cancelAllJobs();
+
     if (deckStateManager != nullptr)
         deckStateManager->saveSession();
 
@@ -120,6 +199,9 @@ void SonikApplication::shutdown()
 
     // Stop beat grid manager before engine
     beatGridManager.reset();
+
+    libraryAnalysisQueue.reset();
+    libraryAnalysisService.reset();
 
     // Stop stem separation manager before model manager
     stemSeparationManager.reset();

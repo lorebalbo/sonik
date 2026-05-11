@@ -12,7 +12,7 @@
 // Library-internal headers (module boundary: only DeckIdentifiers.h crosses
 // into another feature)
 #include "../LibraryQueryThread.h"   // LibraryTrackRow, QueryParams, DeckAwareFilterState
-#include "../LibraryAnalysisService.h"
+#include "../LibraryAnalysisQueue.h"
 #include "../WatchFolderScanner.h"   // WatchFolderScanner::Listener
 #include "Features/Deck/DeckIdentifiers.h"
 
@@ -23,7 +23,7 @@
 // TrackDatabase is available transitively via LibraryQueryThread.h.
 
 /// Organism: top-level Library UI component.
-/// Constructor takes exactly juce::ValueTree& rootState and TrackDatabase& db.
+/// Constructor receives the root state, database, and injected analysis queue.
 /// All deck state is observed exclusively via ValueTree::Listener.
 class LibraryComponent final : public juce::Component,
                                 public juce::ValueTree::Listener,
@@ -31,7 +31,7 @@ class LibraryComponent final : public juce::Component,
                                 public WatchFolderScanner::Listener
 {
 public:
-    LibraryComponent (juce::ValueTree& rootState, TrackDatabase& db);
+    LibraryComponent (juce::ValueTree& rootState, TrackDatabase& db, LibraryAnalysisQueue& queue);
     ~LibraryComponent() override;
 
     void paint   (juce::Graphics& g) override;
@@ -69,6 +69,13 @@ private:
     QueryParams buildQueryParams () const;
 
     void showContextMenu (int rowIndex, juce::Point<int> screenPos);
+    void handleAnalysisQueueStatus (const LibraryAnalysisQueue::StatusUpdate& update);
+    void queueAnalysisRows (const std::vector<LibraryTrackRow>& rows, bool force);
+    void queueStemRows (const std::vector<LibraryTrackRow>& rows);
+    void relocateTrackFile (int64_t trackId, const juce::String& currentPath);
+    void removeTracksFromLibrary (const std::vector<int64_t>& trackIds);
+    void setTrackRatingForRows (const std::vector<LibraryTrackRow>& rows, int newRating);
+    void clearAnalysisCache (const LibraryTrackRow& row);
     void promptForPlaylistName (const juce::String& title,
                                 const juce::String& initialName,
                                 std::function<void(const juce::String&)> onSubmit,
@@ -89,14 +96,16 @@ private:
     void loadTrackToDeck (int rowIndex, const juce::String& deckId);
     void doLoadToDeck    (int rowIndex, const juce::String& deckId);
     void loadFocusedDeckTrack (int rowIndex);
-    void analyzeTrack (int rowIndex);
     void setTrackRating  (int64_t trackId, int newRating);
     void incrementPlayCount (const juce::String& filePath);
+
+    static bool isRowAnalyzed (const LibraryTrackRow& row) noexcept;
+    static juce::String statusTextForUpdate (const LibraryAnalysisQueue::StatusUpdate& update);
 
     // ---- members -----------------------------------------------------------
     juce::ValueTree              rootState;
     TrackDatabase&               db;
-    LibraryAnalysisService       analysisService;
+    LibraryAnalysisQueue&        analysisQueue;
     WatchFolderScanner*          scanner = nullptr;
 
     std::unique_ptr<LibraryQueryThread> queryThread;

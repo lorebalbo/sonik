@@ -13,6 +13,8 @@
 #include "Features/StemSeparation/StemSeparationManager.h"
 #include "Features/Sync/MasterClockPublisher.h"
 #include "Features/Sync/MasterClockManager.h"
+#include "Features/Library/LibraryAnalysisService.h"
+#include "Features/Library/LibraryAnalysisQueue.h"
 #include "Features/Library/WatchFolderScanner.h"
 #include <memory>
 
@@ -22,14 +24,16 @@ public:
     MainWindow (AudioFileLoader& loader, DeckStateManager& deckState,
                 AudioEngine& engine, WaveformManager& waveformMgr,
                 BeatGridManager& beatGridMgr, StemSeparationManager& stemMgr,
-                MasterClockManager& clockMgr, TrackDatabase& trackDb)
+                MasterClockManager& clockMgr, LibraryAnalysisQueue& analysisQueue,
+                TrackDatabase& trackDb)
         : DocumentWindow ("Sonik",
                           juce::Colour (0xfff9f9f9),
                           DocumentWindow::allButtons)
     {
         setUsingNativeTitleBar (true);
         setContentOwned (new MainContentComponent (deckState, engine, loader, waveformMgr,
-                                                    beatGridMgr, stemMgr, clockMgr, trackDb),
+                                beatGridMgr, stemMgr, clockMgr,
+                                analysisQueue, trackDb),
                           true);
         setResizable (true, true);
         setResizeLimits (1120, 600, 3840, 2160);
@@ -76,6 +80,8 @@ private:
     std::unique_ptr<KeyDetectionManager> keyDetectionManager;
     std::unique_ptr<ModelManager>          modelManager;
     std::unique_ptr<StemSeparationManager> stemSeparationManager;
+    std::unique_ptr<LibraryAnalysisService> libraryAnalysisService;
+    std::unique_ptr<LibraryAnalysisQueue>   libraryAnalysisQueue;
     std::unique_ptr<WatchFolderScanner>    watchFolderScanner;
     std::unique_ptr<MainWindow>            mainWindow;
     bool                                   quitSaveActive = false;

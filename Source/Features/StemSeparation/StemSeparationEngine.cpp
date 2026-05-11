@@ -11,7 +11,8 @@ StemSeparationEngine::StemSeparationEngine (const juce::String& deckId_,
                                              const juce::String& pythonPath_,
                                              const juce::File& scriptPath_,
                                              const juce::File& modelDir_,
-                                             CompletionCallback callback)
+                                             CompletionCallback callback,
+                                             std::function<bool()> shouldCancelCallback)
     : juce::ThreadPoolJob ("StemSep_" + deckId_),
       deckId (deckId_),
       contentHash (contentHash_),
@@ -22,7 +23,8 @@ StemSeparationEngine::StemSeparationEngine (const juce::String& deckId_,
       pythonPath (pythonPath_),
       scriptPath (scriptPath_),
       modelDir (modelDir_),
-      completionCallback (std::move (callback))
+    completionCallback (std::move (callback)),
+    externalShouldCancel (std::move (shouldCancelCallback))
 {
 }
 
@@ -40,7 +42,7 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
     stemCache.insertPendingRecord (contentHash,
                                     juce::String (ModelManager::getModelVersion()));
 
-    if (shouldExit())
+    if (shouldCancel())
     {
         stemCache.deletePartialFiles (contentHash);
         return jobHasFinished;
@@ -51,7 +53,7 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
     if (! resampleToModelRate (modelRateBuffer))
         return jobHasFinished;
 
-    if (shouldExit())
+    if (shouldCancel())
     {
         stemCache.deletePartialFiles (contentHash);
         return jobHasFinished;
@@ -69,7 +71,7 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
     if (! writeSourceToWav (modelRateBuffer, inputWav))
         return jobHasFinished;
 
-    if (shouldExit())
+    if (shouldCancel())
     {
         tempDir.deleteRecursively();
         stemCache.deletePartialFiles (contentHash);
@@ -90,7 +92,7 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
         return jobHasFinished;
     }
 
-    if (shouldExit())
+    if (shouldCancel())
     {
         tempDir.deleteRecursively();
         stemCache.deletePartialFiles (contentHash);
@@ -110,7 +112,7 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
         return jobHasFinished;
     }
 
-    if (shouldExit())
+    if (shouldCancel())
     {
         tempDir.deleteRecursively();
         stemCache.deletePartialFiles (contentHash);
@@ -161,7 +163,7 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
         }
     }
 
-    if (shouldExit())
+    if (shouldCancel())
     {
         tempDir.deleteRecursively();
         stemCache.deletePartialFiles (contentHash);
@@ -186,7 +188,7 @@ StemSeparationEngine::JobStatus StemSeparationEngine::runJob()
     // Clean up temp files
     tempDir.deleteRecursively();
 
-    if (shouldExit())
+    if (shouldCancel())
         return jobHasFinished;
 
     reportProgress (1.0f);
@@ -301,7 +303,7 @@ bool StemSeparationEngine::runPythonSeparation (const juce::File& inputWav,
     // Check shouldExit periodically
     while (process.isRunning())
     {
-        if (shouldExit())
+        if (shouldCancel())
         {
             process.kill();
             stemCache.deletePartialFiles (contentHash);
@@ -469,5 +471,10 @@ void StemSeparationEngine::reportError (const juce::String& message)
         }
         cb (dk, nullptr, message);
     });
+}
+
+bool StemSeparationEngine::shouldCancel() const
+{
+    return shouldExit() || (externalShouldCancel && externalShouldCancel());
 }
 

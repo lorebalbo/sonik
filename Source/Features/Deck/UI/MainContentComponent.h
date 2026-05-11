@@ -28,6 +28,7 @@ public:
                           BeatGridManager& beatGridMgr,
                           StemSeparationManager& stemMgr,
                           MasterClockManager& clockMgr,
+                          LibraryAnalysisQueue& analysisQueue,
                           TrackDatabase& trackDb)
         : deckStateManager (deckState),
           audioEngine (engine),
@@ -35,7 +36,7 @@ public:
           rootState (deckState.getStateTree()),
           toolbar (deckState),
           layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr, clockMgr),
-          libraryComponent (std::make_unique<LibraryComponent> (rootState, trackDb))
+          libraryComponent (std::make_unique<LibraryComponent> (rootState, trackDb, analysisQueue))
     {
         setOpaque (true);
         setWantsKeyboardFocus (true);

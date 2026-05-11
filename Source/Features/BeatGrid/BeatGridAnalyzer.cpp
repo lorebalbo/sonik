@@ -35,17 +35,22 @@ public:
                  const juce::String& hash,
                  const juce::String& path,
                  AudioBufferHolder::Ptr buf,
-                 Callback cb)
+                 Callback cb,
+                 CancellationFlag cancel)
         : juce::ThreadPoolJob ("BeatGridAnalysis_" + hash),
           analyzer (owner),
           contentHash (hash),
           filePath (path),
           buffer (std::move (buf)),
+          cancelFlag (std::move (cancel)),
           callback (std::move (cb))
     {}
 
     JobStatus runJob() override
     {
+        if (shouldCancel())
+            return jobHasFinished;
+
         // 1. Check SQLite cache
         auto cached = analyzer.db.loadTrackData (filePath, contentHash);
         if (cached.has_value() && cached->beatgridJson.isNotEmpty())
@@ -58,12 +63,12 @@ public:
             }
         }
 
-        if (shouldExit())
+        if (shouldCancel())
             return jobHasFinished;
 
         // 2. Run DSP analysis
         auto data = analyzeBuffer();
-        if (data == nullptr || shouldExit())
+        if (data == nullptr || shouldCancel())
         {
             deliverResult (nullptr);
             return jobHasFinished;
@@ -96,7 +101,7 @@ public:
             }
 
             // Only cache results with valid BPM
-            if (data->bpm > 0.0)
+            if (data->bpm > 0.0 && ! shouldCancel())
             {
                 analyzer.db.saveTrackData (filePath, contentHash,
                                            cuePointsJson, data->toJson(),
@@ -130,7 +135,7 @@ private:
         for (int64_t i = 0; i < numFrames; ++i)
             mono[static_cast<size_t> (i)] = (channelL[i] + channelR[i]) * 0.5f;
 
-        if (shouldExit())
+        if (shouldCancel())
             return nullptr;
 
         // ================================================================
@@ -159,7 +164,7 @@ private:
             signal = std::move (mono);
         }
 
-        if (signal.empty() || shouldExit())
+        if (signal.empty() || shouldCancel())
             return nullptr;
 
         // ================================================================
@@ -200,7 +205,7 @@ private:
             rhythmExtractor->compute();
         }
 
-        if (shouldExit())
+        if (shouldCancel())
             return nullptr;
 
         // ================================================================
@@ -316,6 +321,9 @@ private:
 
     void deliverResult (BeatGridData::Ptr data)
     {
+        if (shouldCancel())
+            return;
+
         auto cb   = callback;
         auto hash = contentHash;
         juce::MessageManager::callAsync ([cb, hash, data]()
@@ -325,10 +333,17 @@ private:
         });
     }
 
+    bool shouldCancel() const
+    {
+        return shouldExit()
+            || (cancelFlag != nullptr && cancelFlag->load (std::memory_order_acquire));
+    }
+
     BeatGridAnalyzer&      analyzer;
     juce::String           contentHash;
     juce::String           filePath;
     AudioBufferHolder::Ptr buffer;
+    CancellationFlag       cancelFlag;
     Callback               callback;
 };
 
@@ -349,8 +364,10 @@ BeatGridAnalyzer::~BeatGridAnalyzer()
 void BeatGridAnalyzer::analyze (const juce::String& contentHash,
                                 const juce::String& filePath,
                                 AudioBufferHolder::Ptr buffer,
-                                Callback callback)
+                                Callback callback,
+                                CancellationFlag cancelFlag)
 {
-    auto* job = new AnalysisJob (*this, contentHash, filePath, std::move (buffer), std::move (callback));
+    auto* job = new AnalysisJob (*this, contentHash, filePath, std::move (buffer),
+                                 std::move (callback), std::move (cancelFlag));
     threadPool.addJob (job, true);
 }

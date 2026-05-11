@@ -9,8 +9,10 @@
 #include "../AudioEngine/AudioEngine.h"
 #include <juce_data_structures/juce_data_structures.h>
 #include <juce_core/juce_core.h>
+#include <atomic>
 #include <map>
 #include <functional>
+#include <memory>
 
 /// Orchestrates stem separation for all decks.
 ///
@@ -47,6 +49,15 @@ public:
     /// Requires a loaded track and a ready model.
     void startSeparation (const juce::String& deckId);
 
+    void startSeparationForFile (const juce::String& filePath,
+                                 const juce::String& contentHash,
+                                 std::function<void(bool success)> completion);
+
+    void startSeparationForFile (const juce::String& filePath,
+                                 const juce::String& contentHash,
+                                 std::shared_ptr<std::atomic<bool>> cancelFlag,
+                                 std::function<void(bool success)> completion);
+
     /// Cancel an in-progress separation for a deck.
     void cancelSeparation (const juce::String& deckId);
 
@@ -60,6 +71,8 @@ public:
     void setStemReadyCallback (StemReadyCallback callback);
 
 private:
+    class FileSeparationJob;
+
     // ValueTree::Listener
     void valueTreePropertyChanged (juce::ValueTree& tree,
                                    const juce::Identifier& property) override;

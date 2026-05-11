@@ -40,7 +40,8 @@ public:
                            const juce::String& pythonPath,
                            const juce::File& scriptPath,
                            const juce::File& modelDir,
-                           CompletionCallback callback);
+                           CompletionCallback callback,
+                           std::function<bool()> shouldCancelCallback = {});
 
     ~StemSeparationEngine() override = default;
 
@@ -63,6 +64,7 @@ private:
 
     void reportProgress (float prog);
     void reportError (const juce::String& message);
+    bool shouldCancel() const;
 
     static constexpr double kModelSampleRate = 44100.0;
 
@@ -76,6 +78,7 @@ private:
     juce::File           scriptPath;
     juce::File           modelDir;
     CompletionCallback   completionCallback;
+    std::function<bool()> externalShouldCancel;
 
     double               lastProgressTime = 0.0;
 

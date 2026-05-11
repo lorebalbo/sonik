@@ -34,6 +34,7 @@ TrackTableMolecule::TrackTableMolecule()
     hdr.addColumn ("DURATION", ColDuration,  72,   40,  120, df);
     hdr.addColumn ("RATING",   ColRating,    80,   80,   80, ns);
     hdr.addColumn ("PLAYS",    ColPlayed,    48,   48,   80, df);
+    hdr.addColumn ("STATUS",   ColStatus,    96,   80,  140, ns);
 
     hdr.addListener (this);
 
@@ -89,6 +90,25 @@ void TrackTableMolecule::updateContent()
     currentSelection = tableBox.getSelectedRows();
     selectionBeforeLastChange = currentSelection;
     repaint();
+}
+
+void TrackTableMolecule::setRowStatus (int64_t trackId, juce::String status)
+{
+    if (trackId <= 0)
+        return;
+
+    if (status.isEmpty())
+    {
+        rowStatusOverride.erase (trackId);
+        repaint();
+        return;
+    }
+
+    if (! isAllowedStatus (status))
+        return;
+
+    rowStatusOverride[trackId] = std::move (status);
+    tableBox.repaint();
 }
 
 int TrackTableMolecule::getSelectedRow() const
@@ -282,6 +302,18 @@ void TrackTableMolecule::paintCell (juce::Graphics& g,
             break;
         }
 
+        case ColStatus:
+        {
+            juce::String status;
+            if (auto it = rowStatusOverride.find (row.id); it != rowStatusOverride.end())
+                status = it->second;
+            else
+                status = (row.bpm > 0.0 && row.keyIndex >= 0) ? "Complete" : "Unanalyzed";
+
+            g.drawText (status, padded, juce::Justification::centredLeft, true);
+            break;
+        }
+
         default:
             break;
     }
@@ -423,4 +455,22 @@ juce::String TrackTableMolecule::formatDuration (double seconds)
         return juce::String::formatted ("%d:%02d:%02d", hours, mins, secs);
 
     return juce::String::formatted ("%d:%02d", mins, secs);
+}
+
+bool TrackTableMolecule::isAllowedStatus (const juce::String& status)
+{
+    if (status == "Unanalyzed" || status == "Queued" || status == "Queued (Stems)"
+        || status == "Complete" || status == "Stem Complete" || status == "Failed"
+        || status == "Stem Failed")
+        return true;
+
+    if (status.startsWith ("Analyzing ") && status.endsWithChar ('%'))
+        return status.fromFirstOccurrenceOf ("Analyzing ", false, false)
+                     .dropLastCharacters (1).getIntValue() >= 0;
+
+    if (status.startsWith ("Separating Stems ") && status.endsWithChar ('%'))
+        return status.fromFirstOccurrenceOf ("Separating Stems ", false, false)
+                     .dropLastCharacters (1).getIntValue() >= 0;
+
+    return false;
 }

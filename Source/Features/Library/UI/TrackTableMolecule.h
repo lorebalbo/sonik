@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
 #include <set>
+#include <unordered_map>
 #include <vector>
 #include "RatingAtom.h"
 #include "../LibraryQueryThread.h"
@@ -20,6 +21,7 @@ public:
     std::vector<LibraryTrackRow> resultBuffer;
     juce::String                 playingFilePath;
     std::set<juce::String>       playedThisSession;
+    std::unordered_map<int64_t, juce::String> rowStatusOverride;
     int                          activeSortColumn = 0;
     bool                         sortAscending    = true;
 
@@ -40,7 +42,8 @@ public:
         ColKey       = 5,
         ColDuration  = 6,
         ColRating    = 7,
-        ColPlayed    = 8
+        ColPlayed    = 8,
+        ColStatus    = 9
     };
 
     TrackTableMolecule();
@@ -52,6 +55,7 @@ public:
 
     void setPlayingTrack (const juce::String& path);
     void updateContent   ();
+    void setRowStatus    (int64_t trackId, juce::String status);
     int  getSelectedRow  () const;
     std::vector<int> getSelectedRows () const;
     void selectRow       (int row);
@@ -86,6 +90,7 @@ public:
 
 private:
     static juce::String formatDuration (double seconds);
+    static bool isAllowedStatus (const juce::String& status);
 
     juce::TableListBox tableBox;
     juce::SparseSet<int> selectionBeforeLastChange;

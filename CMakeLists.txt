@@ -196,6 +196,8 @@ target_sources(Sonik PRIVATE
     Source/Features/Library/WatchFolderScanner.cpp
     Source/Features/Library/LibraryAnalysisService.h
     Source/Features/Library/LibraryAnalysisService.cpp
+    Source/Features/Library/LibraryAnalysisQueue.h
+    Source/Features/Library/LibraryAnalysisQueue.cpp
     Source/Features/Library/LibraryQueryThread.h
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/UI/LibraryPalette.h
@@ -213,6 +215,8 @@ target_sources(Sonik PRIVATE
     Source/Features/Library/UI/TrackTableMolecule.cpp
     Source/Features/Library/UI/LibraryComponent.h
     Source/Features/Library/UI/LibraryComponent.cpp
+    Source/Features/Library/UI/LibraryStatusText.h
+    Source/Features/Library/UI/LibraryStatusText.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -281,12 +285,16 @@ add_executable(SonikTests
     Tests/LibraryDatabaseSchemaTests.cpp
     Tests/WatchFolderScannerTests.cpp
     Tests/LibraryQueryThreadTests.cpp
+    Tests/LibraryAnalysisQueueTests.cpp
+    Tests/LibraryContextMenuTests.cpp
     Tests/SidebarMoleculeTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
+    Source/Features/Library/LibraryAnalysisQueue.cpp
     Source/Features/Library/WatchFolderScanner.cpp
     Source/Features/Library/UI/SidebarItemAtom.cpp
     Source/Features/Library/UI/SidebarMolecule.cpp
+    Source/Features/Library/UI/LibraryStatusText.cpp
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.cpp
