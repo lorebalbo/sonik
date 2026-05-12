@@ -99,6 +99,10 @@ private:
     /// Persist the current in-memory beatgrid to SQLite, preserving other fields.
     void persistBeatGridToDb();
 
+    /// Toggles visibility of the stems sidebar overlay (SEPARATE button) vs
+    /// the VOC/INST toggles based on the current stem-separation status.
+    void updateStemsSidebarVisibility();
+
     // ---- Track loading via pendingLoadPath (PRD-0034) ----------------------
     /// Entry point: validates the path, checks file existence and format,
     /// auto-disengages SYNC, fires AudioFileLoader, sets loadedFilePath.
@@ -159,32 +163,51 @@ private:
     void updateLoopControlState();
 
     // -----------------------------------------------------------------------
-    // Layout constants matching Figma Deck frame (592 x 505, padding 20)
+    // Layout constants matching Figma Deck frame (594 x 361, padding 20)
+    //
+    // Row order (top → bottom):
+    //   1. Header                                (kHeaderH)
+    //   2. MASTER / SYNC / QUANT / SLIP + KEY   (kControlRowH)
+    //   3. Stems sidebar | Waveform | Pitch      (kMainH)
+    //   ── kBelowFrameGap (12px) ──
+    //   4. Controller Widget / LOOP strip        (kControllerH)
+    //   ── kBelowFrameGap (12px) ──
+    //   5. Hot Cue pads 1-9 | CUE label         (kCuePadsH)
     // -----------------------------------------------------------------------
     static constexpr int kPad              = 20;   // outer padding
-    static constexpr int kGap              = 12;   // gap between rows
+    static constexpr int kGap              = 8;    // gap within Frame 50 rows
+    static constexpr int kBelowFrameGap    = 12;   // gap between Frame 50 and rows below
     static constexpr int kHeaderH          = 59;   // Deck Header height
-    static constexpr int kStemsH           = 23;   // Stems row height
-    static constexpr int kMainH            = 226;  // Waveform + Pitch section height
-    static constexpr int kControlRowH      = 23;   // SYNC / QUANT / SLIP row height
-    static constexpr int kControllerH      = 86;   // Controller Widget height
+    static constexpr int kControlRowH      = 23;   // MASTER / SYNC / QUANT / SLIP row height
+    static constexpr int kMainH            = 113;  // Stems / Waveform / Pitch section height
+    static constexpr int kControllerH      = 23;   // LOOP strip height (was 86)
+    static constexpr int kCuePadsH         = 23;   // Hot cue pads row height
+    static constexpr int kStemsSidebarW    = 23;   // Vertical stems sidebar width
     static constexpr int kPitchSidebarW    = 70;   // Time & Pitch section width
-    static constexpr int kPanelW           = 474;  // Waveform / panel width (Figma 592px deck)
     static constexpr int kSidebarGap       = 8;    // gap between panel and sidebar
 
-    // Dynamic panel width — adapts to the actual component width.
-    // When the deck is exactly 592 px wide this equals kPanelW (474).
-    int getPanelW() const noexcept
+    // Width of the left panel that contains MASTER row, stems sidebar + waveform,
+    // and the Controller Widget's main panel (everything except the pitch sidebar).
+    int getLeftPanelW() const noexcept
     {
         return juce::jmax (1, getWidth() - 2 * kPad - kSidebarGap - kPitchSidebarW);
     }
 
+    // Waveform width — sits between the stems sidebar and the pitch sidebar.
+    int getWaveformW() const noexcept
+    {
+        return juce::jmax (1, getLeftPanelW() - kStemsSidebarW - kSidebarGap);
+    }
+
+    // Painted bounds of the CUE label in the cue pads row (right side, 70px)
+    juce::Rectangle<int> cueLabelBounds;
+
     // Minimum deck height derived from above constants
-    static constexpr int kMinDeckH = kPad + kHeaderH + kGap
-                                   + kStemsH  + kGap
-                                   + kMainH   + kGap
-                                   + kControlRowH + kGap
-                                   + kControllerH + kPad;
+    static constexpr int kMinDeckH = kPad + kHeaderH         + kGap
+                                   + kControlRowH            + kGap
+                                   + kMainH                  + kBelowFrameGap
+                                   + kControllerH            + kBelowFrameGap
+                                   + kCuePadsH               + kPad;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckShellComponent)
 };

@@ -11,18 +11,21 @@
 // ---------------------------------------------------------------------------
 // ControllerWidget
 //
-// Tabbed panel at the bottom of the deck UI.
-// Matches the Figma "Controller Widget" component with 4 variants:
-//   LOOP (Default)  – LoopControlComponent
-//   CUE  (Variant2) – HotCuePadComponent
-//   JUMP (Variant3) – transport controls + BeatJumpComponent
-//   GRID (Variant4) – beatgrid editor (BPM / SET / DEL / << < > >>)
+// Compact 23px controller row between the waveform and the cue-pads row.
 //
-// Panel width : 474 px   Tabs width : 70 px   Gap : 8 px
-// Total height: 86 px (panel + 2px border)
+// Layout:
+//   LEFT  — transport: [CUE 50px][● 36px][▶ 36px]  (left-aligned)
+//   RIGHT — mode btn:  [LOOP/JUMP/GRID 50px]        (right-aligned, dark)
+//   MID   — mode-specific controls (right-aligned, left of mode btn):
+//             LOOP / JUMP:  [< 25px][2 38px][4 38px][8 38px][16 38px][> 25px]
+//             GRID:         [SET 50px][DEL 50px][<< 38px][< 25px][> 25px][>> 38px]
+//
+// Clicking the mode button opens a PopupMenu to switch between LOOP/JUMP/GRID.
+// All buttons are painted; no child components are rendered by this widget.
 // ---------------------------------------------------------------------------
+
 class ControllerWidget final : public juce::Component,
-                                private juce::ValueTree::Listener
+                               private juce::ValueTree::Listener
 {
 public:
     class BpmInputFilter final : public juce::TextEditor::InputFilter
@@ -41,52 +44,33 @@ public:
     };
 
     // -----------------------------------------------------------------------
-    // Constructor — takes non-owning pointers to the three main subcomponents
+    // Constructor — takes non-owning pointers (kept for API compatibility;
+    // child components are NOT rendered inside this widget in the new design)
     // -----------------------------------------------------------------------
     ControllerWidget (juce::ValueTree deckTree,
                       LoopControlComponent* loopCtrl,
                       HotCuePadComponent*  cuePads,
                       BeatJumpComponent*   beatJump)
-        : tree (deckTree),
+        : tree        (deckTree),
           loopControl (loopCtrl),
           hotCuePads  (cuePads),
           beatJumpCtrl (beatJump)
     {
+        // Normalise: "cue" tab removed in new design — fall back to "loop"
         activeTab = tree.getProperty (IDs::controllerTab, "loop").toString();
+        if (activeTab == "cue")
+            activeTab = "loop";
 
-        if (loopControl  != nullptr) addAndMakeVisible (*loopControl);
-        if (hotCuePads   != nullptr) addAndMakeVisible (*hotCuePads);
-        if (beatJumpCtrl != nullptr) addAndMakeVisible (*beatJumpCtrl);
-
-        bpmEditor = std::make_unique<juce::TextEditor>();
-        bpmEditor->setMultiLine (false);
-        bpmEditor->setReturnKeyStartsNewLine (false);
-        bpmEditor->setScrollbarsShown (false);
-        bpmEditor->setFont (juce::FontOptions (
-            juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-        bpmEditor->setColour (juce::TextEditor::backgroundColourId,
-                              juce::Colour (0xFFF9F9F9));
-        bpmEditor->setColour (juce::TextEditor::textColourId,
-                              juce::Colour (0xFF2D2D2D));
-        bpmEditor->setColour (juce::TextEditor::outlineColourId,
-                              juce::Colours::transparentBlack);
-        bpmEditor->setColour (juce::TextEditor::focusedOutlineColourId,
-                              juce::Colours::transparentBlack);
-        bpmEditor->setColour (juce::TextEditor::highlightColourId,
-                              juce::Colour (0xFF2D2D2D));
-        bpmEditor->setColour (juce::TextEditor::highlightedTextColourId,
-                              juce::Colour (0xFFF9F9F9));
-        bpmEditor->setJustification (juce::Justification::centred);
-        bpmEditor->setBorder ({ 2, 4, 2, 4 });
+        // bpmEditor kept for callback wiring; never shown in compact layout
+        bpmEditor       = std::make_unique<juce::TextEditor>();
         bpmEditorFilter = std::make_unique<BpmInputFilter>();
         bpmEditor->setInputFilter (bpmEditorFilter.get(), false);
         bpmEditor->onReturnKey = [this]() { commitBpmEdit(); };
         bpmEditor->onEscapeKey = [this]() { revertBpmEdit(); };
         bpmEditor->onFocusLost = [this]() { revertBpmEdit(); };
-        addChildComponent (*bpmEditor);
+        addChildComponent (*bpmEditor);   // invisible
 
         tree.addListener (this);
-        updateTabVisibility();
     }
 
     ~ControllerWidget() override
@@ -95,345 +79,264 @@ public:
     }
 
     // -----------------------------------------------------------------------
-    // Callbacks wired from DeckShellComponent for transport (JUMP tab)
+    // Transport callbacks (wired by DeckShellComponent)
     // -----------------------------------------------------------------------
-    std::function<void()> onCuePress;     // set/go-to temp cue
-    std::function<void()> onStopPress;    // stop + go to cue
-    std::function<void()> onPlayPress;    // toggle play/pause
+    std::function<void()>       onCuePress;
+    std::function<void()>       onStopPress;
+    std::function<void()>       onPlayPress;
 
-    // Callbacks for beatgrid editor (GRID tab)
-    std::function<void()> onGridSet;      // set anchor at playhead
-    std::function<void()> onGridDelete;   // reset/delete beatgrid
-    std::function<void (int)> onGridNudge; // nudge anchor: -2, -1, +1, +2
+    // -----------------------------------------------------------------------
+    // Loop callbacks
+    // -----------------------------------------------------------------------
+    std::function<void (float)> onAutoLoop;    // size button in LOOP mode
+    std::function<void()>       onLoopHalve;   // < in LOOP mode
+    std::function<void()>       onLoopDouble;  // > in LOOP mode
 
-    // Returns current BPM string for GRID tab display
+    // -----------------------------------------------------------------------
+    // Jump callbacks
+    // -----------------------------------------------------------------------
+    std::function<void()>       onJumpForward;   // > in JUMP mode
+    std::function<void()>       onJumpBackward;  // < in JUMP mode
+
+    // -----------------------------------------------------------------------
+    // Beatgrid callbacks (GRID mode)
+    // -----------------------------------------------------------------------
+    std::function<void()>         onGridSet;
+    std::function<void()>         onGridDelete;
+    std::function<void (int)>     onGridNudge;
+
     std::function<juce::String()> getBpmString;
+    std::function<void (double)>  onBpmSave;
 
-    std::function<void (double)> onBpmSave;
+    // -----------------------------------------------------------------------
+    // Called by DeckShellComponent when the active auto-loop size changes
+    // -----------------------------------------------------------------------
+    void setActiveAutoLoopBeats (float beats)
+    {
+        activeLoopBeats = beats;
+        repaint();
+    }
 
     // -----------------------------------------------------------------------
     // Component overrides
     // -----------------------------------------------------------------------
     void paint (juce::Graphics& g) override
     {
-        // NOTE: No outer widget border here — the panel and each tab draw their
-        // own 2px borders.  An extra outer border would create a connecting line
-        // across the top and bottom that the design intentionally avoids.
+        const bool isPlaying = tree.getProperty (IDs::playbackStatus).toString() == "playing";
 
-        // Tab column background
-        auto tabColumnArea = getTabColumnBounds();
-        g.setColour (juce::Colour (0xFFE5E5E5));
-        g.fillRect (tabColumnArea);
+        // Transport buttons — left-aligned, always visible
+        drawBtn (g, getTransportBtnBounds (0), "CUE",   false,    hoveredBtn == 0);
+        drawBtn (g, getTransportBtnBounds (1), nullptr, false,    hoveredBtn == 1, true,  false); // ●
+        drawBtn (g, getTransportBtnBounds (2), nullptr, isPlaying, hoveredBtn == 2, false, true); // ▶
 
-        // Draw tabs with -2px gap (adjacent tabs share a single 2px border)
-        // With tabH = 23 and -2px overlap: total visual height = 4*23 - 3*2 = 86px = kControllerH
-        const juce::StringArray tabNames { "LOOP", "CUE", "JUMP", "GRID" };
-        const int tabH     = 23;
-        const int tabStride = tabH - 2; // each tab starts 2px before the previous one ends
-        int ty = tabColumnArea.getY();
-
-        for (int i = 0; i < 4; ++i)
+        // Mode-specific controls — right-aligned, left of mode button
+        if (activeTab == "loop" || activeTab == "jump")
         {
-            juce::Rectangle<int> tabRect (tabColumnArea.getX(), ty + i * tabStride,
-                                          tabColumnArea.getWidth(), tabH);
+            static constexpr double kSizes[] = { 2.0, 4.0, 8.0, 16.0 };
+            const char* labels[] = { "<", "2", "4", "8", "16", ">" };
 
-            bool isActive = (tabNames[i].toLowerCase() == activeTab);
+            double activeSize = (activeTab == "jump")
+                ? static_cast<double> (tree.getProperty (IDs::beatJumpSize, 4.0))
+                : static_cast<double> (activeLoopBeats);
 
-            g.setColour (isActive ? juce::Colour (0xFF2D2D2D) : juce::Colour (0xFFF9F9F9));
-            g.fillRect (tabRect);
-
-            g.setColour (juce::Colour (0xFF2D2D2D));
-            g.drawRect (tabRect, 2);
-
-            g.setColour (isActive ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF2D2D2D));
-            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-            g.drawText (tabNames[i], tabRect, juce::Justification::centred);
+            for (int i = 0; i < 6; ++i)
+            {
+                const bool active = (i >= 1 && i <= 4) && (kSizes[i - 1] == activeSize);
+                drawBtn (g, getSizeBtnBounds (i), labels[i], active, hoveredBtn == 10 + i);
+            }
+        }
+        else if (activeTab == "grid")
+        {
+            const char* labels[] = { "SET", "DEL", "<<", "<", ">", ">>" };
+            for (int i = 0; i < 6; ++i)
+                drawBtn (g, getGridBtnBounds (i), labels[i], false, hoveredBtn == 20 + i);
         }
 
-        // Panel background
-        auto panelArea = getPanelBounds();
-        g.setColour (juce::Colour (0xFFF9F9F9));
-        g.fillRect (panelArea);
-        g.setColour (juce::Colour (0xFF2D2D2D));
-        g.drawRect (panelArea, 2);
-
-        // Render tab-specific content that is painted directly (JUMP transport, GRID)
-        if (activeTab == "jump")
-            paintJumpTransport (g, panelArea.reduced (10));
-        else if (activeTab == "grid")
-            paintGridEditor (g, panelArea.reduced (10));
+        // Mode button — always dark-filled, right edge
+        drawBtn (g, getModeBtnBounds(), activeTab.toUpperCase().toUTF8(), true, false);
     }
 
-    void resized() override
+    void resized() override {}   // pure-paint component; nothing to lay out
+
+    void mouseDown (const juce::MouseEvent& e) override
     {
-        auto panelArea = getPanelBounds().reduced (10);
+        const int mx = e.x, my = e.y;
 
-        if (activeTab == "loop" && loopControl != nullptr)
-            loopControl->setBounds (panelArea);
+        // Transport
+        if (getTransportBtnBounds (0).contains (mx, my)) { if (onCuePress)  onCuePress();  return; }
+        if (getTransportBtnBounds (1).contains (mx, my)) { if (onStopPress) onStopPress(); return; }
+        if (getTransportBtnBounds (2).contains (mx, my)) { if (onPlayPress) onPlayPress(); return; }
 
-        if (activeTab == "cue" && hotCuePads != nullptr)
-            hotCuePads->setBounds (panelArea);
+        // Mode button
+        if (getModeBtnBounds().contains (mx, my)) { showModePopup(); return; }
 
-        if (activeTab == "jump" && beatJumpCtrl != nullptr)
+        // Mode-specific
+        if (activeTab == "loop" || activeTab == "jump")
         {
-            // Position beat jump component to the right of the centred transport group.
-            // BeatJumpComponent self-centres both axes within its own bounds.
-            const int contentX = jumpContentX (panelArea);
-            beatJumpCtrl->setBounds (contentX + kJumpTransportW + kJumpGroupGap,
-                                     panelArea.getY(),
-                                     kJumpBeatW,
-                                     panelArea.getHeight());
+            for (int i = 0; i < 6; ++i)
+            {
+                if (getSizeBtnBounds (i).contains (mx, my))
+                {
+                    if (activeTab == "loop") handleLoopSizeClick (i);
+                    else                     handleJumpSizeClick (i);
+                    return;
+                }
+            }
         }
-
-        if (bpmEditor != nullptr)
+        else if (activeTab == "grid")
         {
-            const int btnH = 46;
-            int centreY = panelArea.getCentreY();
-            int btnY = centreY - btnH / 2;
-            int x = gridContentX (panelArea);
-            bpmEditor->setBounds (x, btnY + 23, 60, 23);
+            for (int i = 0; i < 6; ++i)
+            {
+                if (getGridBtnBounds (i).contains (mx, my))
+                {
+                    handleGridBtnClick (i);
+                    return;
+                }
+            }
         }
     }
 
     void mouseMove (const juce::MouseEvent& e) override
     {
-        if (activeTab != "grid" || ! isGridEnabled())
-        {
-            if (hoveredGridButton != -1)
-            {
-                hoveredGridButton = -1;
-                repaint();
-                setMouseCursor (juce::MouseCursor::NormalCursor);
-            }
-            return;
-        }
-
-        int newHover = getGridButtonAt (e.x, e.y);
-        if (newHover != hoveredGridButton)
-        {
-            hoveredGridButton = newHover;
-            repaint();
-            setMouseCursor (newHover >= 0 ? juce::MouseCursor::PointingHandCursor
-                                          : juce::MouseCursor::NormalCursor);
-        }
+        const int newHover = getButtonAt (e.x, e.y);
+        if (newHover != hoveredBtn) { hoveredBtn = newHover; repaint(); }
     }
 
     void mouseExit (const juce::MouseEvent&) override
     {
-        if (hoveredGridButton != -1)
-        {
-            hoveredGridButton = -1;
-            repaint();
-            setMouseCursor (juce::MouseCursor::NormalCursor);
-        }
+        hoveredBtn = -1;
+        repaint();
     }
 
-    void paintOverChildren (juce::Graphics& g) override
-    {
-        if (activeTab == "grid" && bpmEditor != nullptr && bpmEditor->isVisible())
-        {
-            g.setColour (juce::Colour (0xFF2D2D2D));
-            g.drawRect (bpmEditor->getBounds(), 2);
-        }
-    }
-
-    void mouseDown (const juce::MouseEvent& e) override
-    {
-        // Tab clicks
-        auto tabColumn = getTabColumnBounds();
-        if (tabColumn.contains (e.x, e.y))
-        {
-// Tab hit-testing: use the same tabH and stride as paint()
-        const int tabH     = 23;
-        const int tabStride = tabH - 2;
-        int relY     = e.y - tabColumn.getY();
-        int tabIndex = relY / tabStride;
-
-            const juce::StringArray tabNames { "loop", "cue", "jump", "grid" };
-            if (juce::isPositiveAndBelow (tabIndex, 4))
-            {
-                activeTab = tabNames[tabIndex];
-                tree.setProperty (IDs::controllerTab, activeTab, nullptr);
-                updateTabVisibility();
-                resized();
-                repaint();
-            }
-            return;
-        }
-
-        // JUMP tab transport button clicks
-        if (activeTab == "jump")
-        {
-            handleJumpTransportClick (e.x, e.y);
-            return;
-        }
-
-        // GRID tab button clicks
-        if (activeTab == "grid" && isGridEnabled())
-        {
-            handleGridEditorClick (e.x, e.y);
-        }
-    }
+    void paintOverChildren (juce::Graphics&) override {}
 
 private:
     // -----------------------------------------------------------------------
-    // Layout helpers
+    // Layout constants  (all heights adapt to getHeight() = 23px)
     // -----------------------------------------------------------------------
-    static constexpr int kPanelW   = 474;
-    static constexpr int kTabW     = 70;
-    static constexpr int kGap      = 8;
-    static constexpr int kTabCount = 4;
+    static constexpr int kBorderW  = 2;   // shared border between adjacent buttons
+    static constexpr int kCueBtnW  = 50;  // CUE, SET, DEL transport buttons
+    static constexpr int kIconBtnW = 50;  // ● and ▶  (matches CUE width)
+    static constexpr int kSizeBtnW = 50;  // 2 4 8 16 and << >>
+    static constexpr int kArrowW   = 50;  // < and >   (matches other buttons)
+    static constexpr int kModeBtnW = 70;  // LOOP / JUMP / GRID  (matches CUE label below)
+    static constexpr int kModeGap  = 8;   // gap between controls and mode button
 
-    // Dynamic panel width: the widget is sized to (panelW + kGap + kTabW) by the
-    // parent, so we derive panelW from the actual component width rather than the
-    // Figma-fixed kPanelW constant.  This ensures the panel always stretches to
-    // match the waveform area and the tab column stays flush with the KEY button.
-    int dynamicPanelW() const noexcept
-    {
-        return juce::jmax (1, getWidth() - kGap - kTabW);
-    }
+    // < + [2+4+8+16 with shared borders] + >:
+    // 50 + (50-2)*4 + (50-2) = 50 + 192 + 48 = 290
+    static constexpr int kSizeCtrlW = kArrowW
+                                    + (kSizeBtnW - kBorderW) * 4
+                                    + (kArrowW   - kBorderW);   // 290
 
-    juce::Rectangle<int> getPanelBounds() const
-    {
-        return getLocalBounds().withWidth (dynamicPanelW());
-    }
-
-    juce::Rectangle<int> getTabColumnBounds() const
-    {
-        return getLocalBounds().withTrimmedLeft (dynamicPanelW() + kGap);
-    }
-
-    // -----------------------------------------------------------------------
-    // JUMP and GRID centering constants
-    // All buttons match the GRID section size (50 × 46 px).
-    // Arrow buttons (< >) are half-width (25 px).
-    // -----------------------------------------------------------------------
-    // JUMP: transport group (CUE+STOP+PLAY=146) + 8px gap + beat-jump group (240)
-    static constexpr int kJumpTransportW = 3 * 50 - 2 * 2;           // 146
-    static constexpr int kJumpBeatW      = 2 * 25 + 4 * 50 - 5 * 2; // 240
-    static constexpr int kJumpGroupGap   = 8;
-    static constexpr int kJumpTotalW     = kJumpTransportW + kJumpGroupGap + kJumpBeatW; // 394
-
-    // GRID: BPM(60)+sep+gap(10)+SET+DEL(2x48)+gap(8)+nudges(194)=378
-    static constexpr int kGridContentW  = 378;
-
-    // Return the starting X for content centred inside the given panel inner area.
-    static int jumpContentX (juce::Rectangle<int> inner) noexcept
-    {
-        return inner.getX() + juce::jmax (0, (inner.getWidth() - kJumpTotalW) / 2);
-    }
-    static int gridContentX (juce::Rectangle<int> inner) noexcept
-    {
-        return inner.getX() + juce::jmax (0, (inner.getWidth() - kGridContentW) / 2);
-    }
+    // SET + DEL + << + < + > + >> with shared borders:
+    // 50 + (50-2)*5 = 50 + 240 = 290
+    static constexpr int kGridCtrlW = kCueBtnW
+                                    + (kCueBtnW  - kBorderW)
+                                    + (kSizeBtnW - kBorderW)
+                                    + (kArrowW   - kBorderW)
+                                    + (kArrowW   - kBorderW)
+                                    + (kSizeBtnW - kBorderW);   // 290
 
     // -----------------------------------------------------------------------
-    // Visibility management
+    // Geometry helpers
     // -----------------------------------------------------------------------
-    void updateTabVisibility()
+    juce::Rectangle<int> getTransportBtnBounds (int idx) const noexcept
     {
-        if (loopControl  != nullptr) loopControl->setVisible  (activeTab == "loop");
-        if (hotCuePads   != nullptr) hotCuePads->setVisible   (activeTab == "cue");
-        if (beatJumpCtrl != nullptr) beatJumpCtrl->setVisible (activeTab == "jump");
-
-        if (bpmEditor != nullptr)
+        const int h = getHeight();
+        switch (idx)
         {
-            const bool showEditor = (activeTab == "grid");
-            bpmEditor->setVisible (showEditor);
-            if (showEditor)
-            {
-                bpmEditor->setReadOnly (! isGridEnabled());
-                updateBpmEditorText();
-            }
+            case 0: return { 0,                                        0, kCueBtnW,  h }; // CUE
+            case 1: return { kCueBtnW - kBorderW,                     0, kIconBtnW, h }; // ●
+            case 2: return { kCueBtnW + kIconBtnW - 2 * kBorderW,     0, kIconBtnW, h }; // ▶
+            default: break;
         }
+        return {};
+    }
+
+    juce::Rectangle<int> getModeBtnBounds() const noexcept
+    {
+        return { getWidth() - kModeBtnW, 0, kModeBtnW, getHeight() };
+    }
+
+    // idx: 0=< 1=2 2=4 3=8 4=16 5=>   (LOOP and JUMP modes share this layout)
+    juce::Rectangle<int> getSizeBtnBounds (int idx) const noexcept
+    {
+        const int groupRight = getWidth() - kModeBtnW - kModeGap;
+        const int groupLeft  = groupRight - kSizeCtrlW;
+        const int h          = getHeight();
+        static constexpr int widths[] = { kArrowW, kSizeBtnW, kSizeBtnW, kSizeBtnW, kSizeBtnW, kArrowW };
+        int x = groupLeft;
+        for (int i = 0; i < idx; ++i)
+            x += widths[i] - kBorderW;
+        return { x, 0, widths[idx], h };
+    }
+
+    // idx: 0=SET 1=DEL 2=<< 3=< 4=> 5=>>   (GRID mode)
+    juce::Rectangle<int> getGridBtnBounds (int idx) const noexcept
+    {
+        const int groupRight = getWidth() - kModeBtnW - kModeGap;
+        const int groupLeft  = groupRight - kGridCtrlW;
+        const int h          = getHeight();
+        static constexpr int widths[] = { kCueBtnW, kCueBtnW, kSizeBtnW, kArrowW, kArrowW, kSizeBtnW };
+        int x = groupLeft;
+        for (int i = 0; i < idx; ++i)
+            x += widths[i] - kBorderW;
+        return { x, 0, widths[idx], h };
+    }
+
+    int getButtonAt (int mx, int my) const noexcept
+    {
+        for (int i = 0; i < 3; ++i)
+            if (getTransportBtnBounds (i).contains (mx, my)) return i;
+        if (getModeBtnBounds().contains (mx, my)) return 100;
+        if (activeTab == "loop" || activeTab == "jump")
+        {
+            for (int i = 0; i < 6; ++i)
+                if (getSizeBtnBounds (i).contains (mx, my)) return 10 + i;
+        }
+        else if (activeTab == "grid")
+        {
+            for (int i = 0; i < 6; ++i)
+                if (getGridBtnBounds (i).contains (mx, my)) return 20 + i;
+        }
+        return -1;
     }
 
     // -----------------------------------------------------------------------
-    // JUMP tab – painted transport controls (CUE / STOP / PLAY)
+    // Drawing helper
     // -----------------------------------------------------------------------
-    void paintJumpTransport (juce::Graphics& g, juce::Rectangle<int> area)
+    void drawBtn (juce::Graphics& g, juce::Rectangle<int> r, const char* label,
+                  bool active, bool hovered,
+                  bool stopIcon = false, bool playIcon = false)
     {
-        const int btnW = 50;
-        const int btnH = 46;
-        // Centre the transport group horizontally inside the area.
-        int startX  = jumpContentX (area);
-        int centreY = area.getCentreY();
-        int btnY    = centreY - btnH / 2;
-
-        // CUE button
-        drawSquareButton (g, startX,                btnY, btnW, btnH, "CUE",           false, false);
-        // STOP button (filled-square icon)
-        drawSquareButton (g, startX + btnW - 2,     btnY, btnW, btnH, nullptr,         false, false, true);
-        // PLAY button
-        drawSquareButton (g, startX + 2*(btnW - 2), btnY, btnW, btnH, "\xe2\x96\xb6", false, false);
-    }
-
-    void paintGridEditor (juce::Graphics& g, juce::Rectangle<int> area)
-    {
-        const int btnW = 50;
-        const int btnH = 46;
-        int centreY = area.getCentreY();
-        int btnY    = centreY - btnH / 2;
-        // Centre the entire GRID content block horizontally inside the area.
-        int x       = gridContentX (area);
-
-        const bool enabled = isGridEnabled();
-
-        auto monoFont = juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain);
-        g.setFont (monoFont);
-        g.setColour (juce::Colour (0xFF2D2D2D));
-
-        juce::Rectangle<int> bpmLabelRect (x, btnY, 60, 23);
-        g.drawText ("BPM", bpmLabelRect, juce::Justification::centredLeft);
-
-        // Separator line
-        int sepX = x + 70;
-        g.setColour (juce::Colour (0xFF2D2D2D));
-        g.drawVerticalLine (sepX, static_cast<float> (btnY), static_cast<float> (btnY + btnH));
-
-        // SET / DEL buttons
-        int bx = sepX + 10;
-        drawSquareButton (g, bx,          btnY, btnW, btnH, "SET", false, false);
-        drawSquareButton (g, bx + btnW - 2, btnY, btnW, btnH, "DEL", false, false);
-
-        // Nudge buttons: << < > >>
-        int nx = bx + 2 * (btnW - 2) + 8;
-        drawSquareButton (g, nx,                 btnY, btnW, btnH, "<<", false, false, false,
-                          enabled && hoveredGridButton == 0);
-        drawSquareButton (g, nx +   (btnW - 2),  btnY, btnW, btnH, "<",  false, false, false,
-                          enabled && hoveredGridButton == 1);
-        drawSquareButton (g, nx + 2*(btnW - 2),  btnY, btnW, btnH, ">",  false, false, false,
-                          enabled && hoveredGridButton == 2);
-        drawSquareButton (g, nx + 3*(btnW - 2),  btnY, btnW, btnH, ">>", false, false, false,
-                          enabled && hoveredGridButton == 3);
-    }
-
-    /// Draw a Figma-style square button (border-2, no border-radius)
-    static void drawSquareButton (juce::Graphics& g, int x, int y, int w, int h,
-                                  const char* label, bool active, bool /*disabled*/,
-                                  bool stopIcon = false, bool hovered = false)
-    {
-        juce::Rectangle<int> r (x, y, w, h);
-
-        juce::Colour fill = active ? juce::Colour (0xFF2D2D2D)
-                                   : (hovered ? juce::Colour (0xFFE2E2E2)
-                                              : juce::Colour (0xFFF9F9F9));
+        const juce::Colour fill = active   ? juce::Colour (0xFF2D2D2D)
+                                : hovered  ? juce::Colour (0xFFE2E2E2)
+                                           : juce::Colour (0xFFF9F9F9);
         g.setColour (fill);
         g.fillRect (r);
         g.setColour (juce::Colour (0xFF2D2D2D));
-        g.drawRect (r, 2);
+        g.drawRect (r, kBorderW);
 
-        juce::Colour fg = active ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF2D2D2D);
+        const juce::Colour fg = active ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF2D2D2D);
 
         if (stopIcon)
         {
-            // Draw a filled square (■) as the stop icon
-            int iconSize = 10;
-            juce::Rectangle<int> icon (r.getCentreX() - iconSize / 2,
-                                       r.getCentreY() - iconSize / 2,
-                                       iconSize, iconSize);
+            constexpr int s = 8;
             g.setColour (fg);
-            g.fillRect (icon);
+            g.fillRect (juce::Rectangle<int> (r.getCentreX() - s / 2,
+                                              r.getCentreY() - s / 2, s, s));
+        }
+        else if (playIcon)
+        {
+            const float cx = static_cast<float> (r.getCentreX());
+            const float cy = static_cast<float> (r.getCentreY());
+            constexpr float sz = 7.0f;
+            juce::Path tri;
+            tri.addTriangle (cx - sz * 0.55f, cy - sz,
+                             cx - sz * 0.55f, cy + sz,
+                             cx + sz * 0.85f, cy);
+            g.setColour (fg);
+            g.fillPath (tri);
         }
         else if (label != nullptr)
         {
@@ -444,61 +347,57 @@ private:
     }
 
     // -----------------------------------------------------------------------
-    // Hit-test helpers for JUMP and GRID tab interactive areas
+    // Action handlers
     // -----------------------------------------------------------------------
-    void handleJumpTransportClick (int mx, int my)
+    void showModePopup()
     {
-        auto panelArea = getPanelBounds().reduced (10);
-        const int btnW = 50;
-        const int btnH = 46;
-        int startX  = jumpContentX (panelArea);
-        int centreY = panelArea.getCentreY();
-        int btnY    = centreY - btnH / 2;
+        juce::PopupMenu menu;
+        menu.addItem (1, "LOOP", true, activeTab == "loop");
+        menu.addItem (2, "JUMP", true, activeTab == "jump");
+        menu.addItem (3, "GRID", true, activeTab == "grid");
 
-        juce::Rectangle<int> cueRect  (startX,               btnY, btnW, btnH);
-        juce::Rectangle<int> stopRect (startX + btnW - 2,    btnY, btnW, btnH);
-        juce::Rectangle<int> playRect (startX + 2*(btnW-2),  btnY, btnW, btnH);
-
-        if (cueRect.contains (mx, my))
-        {
-            if (onCuePress) onCuePress();
-        }
-        else if (stopRect.contains (mx, my))
-        {
-            if (onStopPress) onStopPress();
-        }
-        else if (playRect.contains (mx, my))
-        {
-            if (onPlayPress) onPlayPress();
-        }
+        menu.showMenuAsync (
+            juce::PopupMenu::Options().withTargetComponent (this),
+            [safeThis = juce::Component::SafePointer<ControllerWidget> (this)] (int result)
+            {
+                if (safeThis == nullptr) return;
+                juce::String newTab;
+                if      (result == 1) newTab = "loop";
+                else if (result == 2) newTab = "jump";
+                else if (result == 3) newTab = "grid";
+                else return;
+                safeThis->tree.setProperty (IDs::controllerTab, newTab, nullptr);
+            });
     }
 
-    void handleGridEditorClick (int mx, int my)
+    void handleLoopSizeClick (int idx)
     {
-        auto panelArea = getPanelBounds().reduced (10);
-        const int btnW = 50;
-        const int btnH = 46;
-        int centreY  = panelArea.getCentreY();
-        int btnY     = centreY - btnH / 2;
-        // Use the same centred starting X as paintGridEditor.
-        int x        = gridContentX (panelArea);
-        int sepX     = x + 70;
-        int bx       = sepX + 10;
-        int nx       = bx + 2 * (btnW - 2) + 8;
+        static constexpr float kSizes[] = { 2.0f, 4.0f, 8.0f, 16.0f };
+        if      (idx == 0) { if (onLoopHalve)  onLoopHalve();             }
+        else if (idx == 5) { if (onLoopDouble) onLoopDouble();             }
+        else               { if (onAutoLoop)   onAutoLoop (kSizes[idx-1]); }
+    }
 
-        juce::Rectangle<int> setRect (bx,           btnY, btnW, btnH);
-        juce::Rectangle<int> delRect (bx + btnW - 2, btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeLL (nx,                 btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeL  (nx +   (btnW-2),   btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeR  (nx + 2*(btnW-2),   btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeRR (nx + 3*(btnW-2),   btnY, btnW, btnH);
+    void handleJumpSizeClick (int idx)
+    {
+        static constexpr double kSizes[] = { 2.0, 4.0, 8.0, 16.0 };
+        if      (idx == 0) { if (onJumpBackward) onJumpBackward(); }
+        else if (idx == 5) { if (onJumpForward)  onJumpForward();  }
+        else               { tree.setProperty (IDs::beatJumpSize, kSizes[idx - 1], nullptr); }
+    }
 
-        if (setRect.contains (mx, my))       { if (onGridSet)   onGridSet(); }
-        else if (delRect.contains (mx, my))  { if (onGridDelete) onGridDelete(); }
-        else if (nudgeLL.contains (mx, my))  { if (onGridNudge) onGridNudge (-2); }
-        else if (nudgeL.contains  (mx, my))  { if (onGridNudge) onGridNudge (-1); }
-        else if (nudgeR.contains  (mx, my))  { if (onGridNudge) onGridNudge (+1); }
-        else if (nudgeRR.contains (mx, my))  { if (onGridNudge) onGridNudge (+2); }
+    void handleGridBtnClick (int idx)
+    {
+        switch (idx)
+        {
+            case 0: if (onGridSet)    onGridSet();       break;  // SET
+            case 1: if (onGridDelete) onGridDelete();    break;  // DEL
+            case 2: if (onGridNudge)  onGridNudge (-2);  break;  // <<
+            case 3: if (onGridNudge)  onGridNudge (-1);  break;  // <
+            case 4: if (onGridNudge)  onGridNudge (+1);  break;  // >
+            case 5: if (onGridNudge)  onGridNudge (+2);  break;  // >>
+            default: break;
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -510,161 +409,74 @@ private:
         if (changedTree == tree && property == IDs::controllerTab)
         {
             juce::String newTab = changedTree[property].toString();
+            if (newTab == "cue") newTab = "loop";
             if (newTab != activeTab)
             {
                 activeTab = newTab;
                 juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
                 {
                     if (safeThis != nullptr)
-                    {
-                        safeThis->updateTabVisibility();
-                        safeThis->resized();
                         safeThis->repaint();
-                    }
                 });
             }
         }
 
-        if (changedTree.hasType (IDs::BeatGrid) && changedTree.getParent() == tree)
+        if (changedTree == tree && property == IDs::beatJumpSize)
         {
-            if (property == IDs::bpm || property == IDs::analysisStatus
-                || property == IDs::manuallyAdjusted)
+            juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
             {
-                juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
-                {
-                    if (safeThis != nullptr)
-                    {
-                        safeThis->updateBpmEditorText();
-                        if (safeThis->bpmEditor != nullptr)
-                            safeThis->bpmEditor->setReadOnly (! safeThis->isGridEnabled());
-                    }
-                });
-            }
+                if (safeThis != nullptr)
+                    safeThis->repaint();
+            });
         }
+    }
+
+    void valueTreeChildAdded (juce::ValueTree&, juce::ValueTree&) override {}
+    void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override {}
+    void valueTreeChildOrderChanged (juce::ValueTree&, int, int) override {}
+    void valueTreeParentChanged (juce::ValueTree&) override {}
+
+    // -----------------------------------------------------------------------
+    // BPM editor — kept for callback wiring only; never shown in compact layout
+    // -----------------------------------------------------------------------
+    void commitBpmEdit()
+    {
+        if (bpmEditor == nullptr) return;
+        const double bpm = bpmEditor->getText().trim().getDoubleValue();
+        if (bpm >= 20.0 && bpm <= 300.0)
+        {
+            if (onBpmSave) onBpmSave (bpm);
+        }
+        bpmEditor->giveAwayKeyboardFocus();
+    }
+
+    void revertBpmEdit()
+    {
+        if (bpmEditor != nullptr)
+            bpmEditor->giveAwayKeyboardFocus();
+    }
+
+    bool isGridEnabled() const
+    {
+        auto bg = tree.getChildWithName (IDs::BeatGrid);
+        return bg.isValid() && static_cast<double> (bg.getProperty (IDs::bpm, 0.0)) > 0.0;
     }
 
     // -----------------------------------------------------------------------
     // Data
     // -----------------------------------------------------------------------
     juce::ValueTree tree;
-    juce::String    activeTab { "loop" };
+    juce::String    activeTab      { "loop" };
+    float           activeLoopBeats = 0.0f;
+    int             hoveredBtn      = -1;
 
     std::unique_ptr<juce::TextEditor> bpmEditor;
-    std::unique_ptr<BpmInputFilter> bpmEditorFilter;
-    int hoveredGridButton = -1;
+    std::unique_ptr<BpmInputFilter>   bpmEditorFilter;
 
     LoopControlComponent* loopControl  = nullptr;
     HotCuePadComponent*   hotCuePads   = nullptr;
     BeatJumpComponent*    beatJumpCtrl = nullptr;
 
-    bool isGridEnabled() const
-    {
-        auto bg = tree.getChildWithName (IDs::BeatGrid);
-        if (! bg.isValid())
-            return false;
-
-        return static_cast<double> (bg.getProperty (IDs::bpm, 0.0)) > 0.0;
-    }
-
-    int getGridButtonAt (int mx, int my) const
-    {
-        auto panelArea = getPanelBounds().reduced (10);
-        const int btnW = 50;
-        const int btnH = 46;
-        int centreY = panelArea.getCentreY();
-        int btnY = centreY - btnH / 2;
-        int x = gridContentX (panelArea);
-
-        int bx = x + 80;
-        int nx = bx + 2 * (btnW - 2) + 8;
-
-        juce::Rectangle<int> nudgeLL (nx,                  btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeL  (nx + (btnW - 2),     btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeR  (nx + 2 * (btnW - 2), btnY, btnW, btnH);
-        juce::Rectangle<int> nudgeRR (nx + 3 * (btnW - 2), btnY, btnW, btnH);
-
-        if (nudgeLL.contains (mx, my)) return 0;
-        if (nudgeL.contains (mx, my))  return 1;
-        if (nudgeR.contains (mx, my))  return 2;
-        if (nudgeRR.contains (mx, my)) return 3;
-        return -1;
-    }
-
-    void updateBpmEditorText()
-    {
-        if (bpmEditor == nullptr)
-            return;
-
-        auto bg = tree.getChildWithName (IDs::BeatGrid);
-        juce::String text { "--" };
-        if (bg.isValid())
-        {
-            const double bpm = static_cast<double> (bg.getProperty (IDs::bpm, 0.0));
-            if (bpm > 0.0)
-                text = juce::String (bpm, 2);
-        }
-
-        bpmEditor->setText (text, false);
-    }
-
-    void commitBpmEdit()
-    {
-        if (bpmEditor == nullptr || ! isGridEnabled())
-            return;
-
-        auto text = bpmEditor->getText().trim();
-        bool sawDot = false;
-        int decimals = 0;
-        bool valid = text.isNotEmpty();
-
-        for (int i = 0; i < text.length() && valid; ++i)
-        {
-            auto c = text[i];
-            if (c >= '0' && c <= '9')
-            {
-                if (sawDot)
-                    ++decimals;
-                continue;
-            }
-
-            if (c == '.' && ! sawDot)
-            {
-                sawDot = true;
-                continue;
-            }
-
-            valid = false;
-        }
-
-        if (! valid || decimals > 2)
-        {
-            revertBpmEdit();
-            return;
-        }
-
-        const double bpm = text.getDoubleValue();
-        if (bpm >= 20.0 && bpm <= 300.0)
-        {
-            if (onBpmSave)
-                onBpmSave (bpm);
-            bpmEditor->setText (juce::String (bpm, 2), false);
-        }
-        else
-        {
-            revertBpmEdit();
-        }
-
-        bpmEditor->giveAwayKeyboardFocus();
-    }
-
-    void revertBpmEdit()
-    {
-        if (bpmEditor == nullptr)
-            return;
-
-        updateBpmEditorText();
-        bpmEditor->giveAwayKeyboardFocus();
-    }
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ControllerWidget)
 };
+

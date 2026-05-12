@@ -29,17 +29,18 @@ static constexpr juce::uint32 palette[16] =
     0xFFA028E8  // 15: Purple (extra)
 };
 
-// Default color index for each pad A(0) through H(7)
-static constexpr int defaultColorForPad[8] =
+// Default color index for each pad 1(0) through 9(8)
+static constexpr int defaultColorForPad[9] =
 {
-    0,  // A: Cyan
-    1,  // B: Sky Blue
-    2,  // C: Blue
-    3,  // D: Deep Violet
-    4,  // E: Violet
-    5,  // F: Magenta
-    6,  // G: Pink
-    7   // H: Salmon
+    0,  // 1: Cyan
+    1,  // 2: Sky Blue
+    2,  // 3: Blue
+    3,  // 4: Deep Violet
+    4,  // 5: Violet
+    5,  // 6: Magenta
+    6,  // 7: Pink
+    7,  // 8: Salmon
+    8   // 9: Red
 };
 
 inline juce::Colour getColour (int colorIndex)

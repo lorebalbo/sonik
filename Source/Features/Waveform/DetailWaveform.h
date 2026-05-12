@@ -19,7 +19,7 @@ public:
     void setAudioState (DeckAudioState* state);
     void setTotalSamples (int64_t total);
     void setBeatGridData (BeatGridData::Ptr data);
-    void setHotCues (const std::array<HotCueInfo, 8>& cues);
+    void setHotCues (const std::array<HotCueInfo, 9>& cues);
     void setDeckAccentColour (juce::Colour colour) { deckAccentColour = colour; }
 
     // Returns the currently visible sample range (for overview viewport)
@@ -55,7 +55,7 @@ private:
     int64_t           totalSamples = 0;
 
     // Hot cue markers (PRD-0012)
-    std::array<HotCueInfo, 8> hotCues;
+    std::array<HotCueInfo, 9> hotCues;
 
     // Loop overlay colour (PRD-0014)
     juce::Colour deckAccentColour { juce::Colours::black };

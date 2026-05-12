@@ -771,6 +771,31 @@ void LibraryQueryThread::appendHistoryEntryForFilePath (juce::String filePathIn,
     });
 }
 
+void LibraryQueryThread::countMissingTracks (CountCallback callbackIn)
+{
+    if (! callbackIn)
+        return;
+
+    enqueueOperation ([cb = std::move (callbackIn)] (sqlite3* handle) mutable
+    {
+        int count = 0;
+        sqlite3_stmt* stmt = nullptr;
+        if (sqlite3_prepare_v2 (handle,
+                "SELECT COUNT(*) FROM library_tracks WHERE is_missing = 1;",
+                -1, &stmt, nullptr) == SQLITE_OK)
+        {
+            if (sqlite3_step (stmt) == SQLITE_ROW)
+                count = sqlite3_column_int (stmt, 0);
+            sqlite3_finalize (stmt);
+        }
+
+        juce::MessageManager::callAsync ([postedCb = std::move (cb), count]() mutable
+        {
+            postedCb (count);
+        });
+    });
+}
+
 // =============================================================================
 // Static: scope operator parser
 // =============================================================================
@@ -1067,6 +1092,12 @@ juce::String LibraryQueryThread::buildSql (const QueryParams& params, std::vecto
     {
         whereClauses.add ("lt.rating >= ?");
         binds.push_back (SqlBind::intValueOf (params.ratingMin));
+    }
+
+    // Missing-only filter (PRD-0039 AC-29)
+    if (params.showMissingOnly)
+    {
+        whereClauses.add ("lt.is_missing = 1");
     }
 
     // Deck-aware BPM windows (union)

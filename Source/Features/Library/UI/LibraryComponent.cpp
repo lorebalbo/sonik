@@ -4,9 +4,12 @@
 #include <sqlite3.h>
 #include <algorithm>
 
-static constexpr int kSidebarWidth  = 200;
-static constexpr int kFilterBarHeight = 40;
-static constexpr int kScanLabelHeight = 16;
+static constexpr int kSidebarWidth     = 200;
+static constexpr int kFilterBarHeight  = 23; // Figma: 23 px row, no outer frame
+static constexpr int kLibraryGap       = 12; // gap between filter bar / sidebar / table
+static constexpr int kLibraryPadding   = 12; // outer frame padding
+static constexpr int kLibraryMargin    = 8;  // gap between window edges and outer frame
+static constexpr int kScanLabelHeight  = 16;
 
 namespace
 {
@@ -191,9 +194,10 @@ LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
     filterBar.onSearchChanged = [this] (const juce::String& text)
     {
         QueryParams np = LibraryQueryThread::parseSearchString (text);
-        np.sortColumn    = currentParams.sortColumn;
-        np.sortAscending = currentParams.sortAscending;
-        currentParams    = std::move (np);
+        np.sortColumn      = currentParams.sortColumn;
+        np.sortAscending   = currentParams.sortAscending;
+        np.showMissingOnly = currentParams.showMissingOnly;
+        currentParams      = std::move (np);
         dispatchCurrentQuery (true);
     };
 
@@ -222,14 +226,9 @@ LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
         saveFilterState();
     };
 
-    filterBar.onHalfTimeToggled = [this] (bool enabled)
-    {
-        halfTimeEnabled = enabled;
-        rebuildDeckAwareFilter();
-        if (deckFilter.bpmMatchActive)
-            dispatchCurrentQuery (true);
-        saveFilterState();
-    };
+    // NOTE: 1/2 BPM and MISSING-only toggles were removed from the FilterBar per
+    // the Figma Library spec. The underlying state remains in this component so
+    // backend filtering logic is preserved; both flags simply stay defaulted off.
 
     // ---- TrackTable callbacks -----------------------------------------------
     trackTable.onRowDoubleClicked = [this] (int rowIndex)
@@ -259,6 +258,7 @@ LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
         {
             case TrackTableMolecule::ColTitle:    col = "title";            break;
             case TrackTableMolecule::ColArtist:   col = "artist";           break;
+            case TrackTableMolecule::ColAlbum:    col = "album";            break;
             case TrackTableMolecule::ColBpm:      col = "bpm";              break;
             case TrackTableMolecule::ColKey:      col = "key_index";        break;
             case TrackTableMolecule::ColDuration: col = "duration_seconds"; break;
@@ -334,6 +334,7 @@ LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
     // ---- Populate sidebar ---------------------------------------------------
     refreshSidebarFolders();
     refreshSidebarPlaylists();
+    refreshMissingCount();
 
     // ---- Initial query (full library, date_added DESC) ----------------------
     currentParams.sortColumn    = "date_added";
@@ -361,12 +362,23 @@ LibraryComponent::~LibraryComponent()
 
 void LibraryComponent::paint (juce::Graphics& g)
 {
-    g.fillAll (LibraryPalette::surface());
+    // Outer chassis fill (#e5e5e5) sits between the window edges and the
+    // outer Library frame border, and shows through the 12 px gaps between
+    // the filter bar / sidebar / table regions.
+    g.fillAll (LibraryPalette::chassis());
+
+    // Outer Library frame: 2px #2d2d2d border, inset by kLibraryMargin so it
+    // is not flush with the window edges.
+    g.setColour (LibraryPalette::primary());
+    g.drawRect (getLocalBounds().reduced (kLibraryMargin), 2);
 }
 
 void LibraryComponent::resized()
 {
-    auto b = getLocalBounds();
+    // 8 px breathing room between the window edges and the outer Library frame,
+    // then 12 px of padding inside the frame border.
+    auto b = getLocalBounds().reduced (kLibraryMargin)
+                             .reduced (kLibraryPadding, kLibraryPadding);
 
     if (scanning || activeAnalysisJobs > 0)
     {
@@ -378,10 +390,14 @@ void LibraryComponent::resized()
         scanProgressLabel.setVisible (false);
     }
 
+    // Figma Library layout: filter bar (framed) at the top, then 12 px gap,
+    // then sidebar (framed) on the left, 12 px gap, then table (framed) on the right.
+    filterBar.setBounds (b.removeFromTop (kFilterBarHeight));
+    b.removeFromTop (kLibraryGap);
+
     auto sidebarBounds = b.removeFromLeft (kSidebarWidth);
     sidebar.setBounds (sidebarBounds);
-
-    filterBar.setBounds (b.removeFromTop (kFilterBarHeight));
+    b.removeFromLeft (kLibraryGap);
 
     if (showingEmptyState)
     {
@@ -443,6 +459,17 @@ void LibraryComponent::setScanner (WatchFolderScanner& s)
 {
     scanner = &s;
     s.addListener (this);
+
+    // PRD-0039 AC-05: progressive UI updates as the reconciliation pass flips
+    // is_missing on individual rows. The callback fires on the Message Thread.
+    s.setReconciliationProgressCallback (
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
+        {
+            if (safeThis == nullptr)
+                return;
+            safeThis->refreshMissingCount();
+            safeThis->dispatchCurrentQuery (true);
+        });
 }
 
 void LibraryComponent::scanProgressUpdate (int filesScanned, int total,
@@ -462,6 +489,7 @@ void LibraryComponent::scanCompleted()
     resized();
     refreshSidebarFolders();
     refreshSidebarPlaylists();
+    refreshMissingCount();
     dispatchCurrentQuery (true);
 }
 
@@ -839,6 +867,19 @@ void LibraryComponent::refreshSidebarPlaylists()
         });
 }
 
+void LibraryComponent::refreshMissingCount()
+{
+    if (queryThread == nullptr)
+        return;
+
+    queryThread->countMissingTracks (
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this)] (int count)
+        {
+            if (safeThis != nullptr)
+                safeThis->sidebar.setMissingCount (count);
+        });
+}
+
 QueryParams LibraryComponent::buildQueryParams() const
 {
     QueryParams p  = currentParams;
@@ -999,8 +1040,28 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
 
     if (rows.size() == 1 && rows.front().isMissing != 0)
     {
+        // PRD-0039 AC-26 supersedes PRD-0038 AC-11: missing rows get Relocate
+        // and Remove at the TOP, then the standard single-row items below.
+        // "Load to Deck N" entries are shown but disabled — loading a missing
+        // file is invalid until the row is relocated.
+        const auto& row = rows.front();
         menu->addItem (kRelocate, "Relocate File...");
-        menu->addItem (kRemove, "Remove from Library");
+        menu->addItem (kRemove,   "Remove from Library");
+        menu->addSeparator();
+
+        for (int i = 0; i < static_cast<int> (deckIds.size()); ++i)
+            menu->addItem (kDeckBase + i, "Load to Deck " + juce::String (i + 1), false);
+
+        menu->addSeparator();
+        const bool analyzed = isRowAnalyzed (row);
+        menu->addItem (kAnalyze, "Analyze Track", ! analyzed);
+        if (analyzed)
+            menu->addItem (kForceAnalyze, "Force Re-analyze");
+
+        const bool stemsExist = row.contentHash.isNotEmpty() && db.hasStemRecord (row.contentHash);
+        menu->addItem (kSeparateStems, "Separate Stems", ! stemsExist);
+        addPlaylistSubMenu();
+        addRatingSubMenu();
     }
     else if (rows.size() == 1)
     {
@@ -1203,10 +1264,12 @@ void LibraryComponent::queueStemRows (const std::vector<LibraryTrackRow>& rows)
 
 void LibraryComponent::relocateTrackFile (int64_t trackId, const juce::String& currentPath)
 {
+    // PRD-0039 AC-15: no file format filter is applied — AudioFileLoader
+    // validates the format at dispatch time.
     auto chooser = std::make_shared<juce::FileChooser> (
-        "Relocate Track",
+        "Choose replacement file",
         juce::File{},
-        "*.mp3;*.flac;*.wav;*.aiff;*.aif;*.ogg;*.m4a");
+        juce::String());
 
     chooser->launchAsync (
         juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
@@ -1220,19 +1283,40 @@ void LibraryComponent::relocateTrackFile (int64_t trackId, const juce::String& c
             if (! result.existsAsFile())
                 return;
 
-            const auto ext = result.getFileExtension().toLowerCase();
-            const bool supported = ext == ".mp3" || ext == ".flac" || ext == ".wav"
-                                || ext == ".aiff" || ext == ".aif" || ext == ".ogg" || ext == ".m4a";
-            if (! supported)
-                return;
-
+            const auto newPath = result.getFullPathName();
             auto* handle = safeThis->db.getDbHandle();
+
+            // PRD-0039 AC-16 / AC-33: deduplication check against other rows.
+            {
+                sqlite3_stmt* dup = nullptr;
+                bool isDuplicate = false;
+                if (sqlite3_prepare_v2 (handle,
+                        "SELECT 1 FROM library_tracks WHERE file_path=? AND id<>? LIMIT 1;",
+                        -1, &dup, nullptr) == SQLITE_OK)
+                {
+                    sqlite3_bind_text  (dup, 1, newPath.toRawUTF8(), -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_int64 (dup, 2, trackId);
+                    isDuplicate = (sqlite3_step (dup) == SQLITE_ROW);
+                    sqlite3_finalize (dup);
+                }
+
+                if (isDuplicate)
+                {
+                    juce::AlertWindow::showMessageBoxAsync (
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Relocate Track",
+                        "This file is already in your library.",
+                        "OK",
+                        safeThis);
+                    return;
+                }
+            }
+
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2 (handle,
                     "UPDATE library_tracks SET file_path=?, is_missing=0 WHERE id=?",
                     -1, &stmt, nullptr) == SQLITE_OK)
             {
-                const auto newPath = result.getFullPathName();
                 sqlite3_bind_text  (stmt, 1, newPath.toRawUTF8(), -1, SQLITE_TRANSIENT);
                 sqlite3_bind_int64 (stmt, 2, trackId);
                 sqlite3_step (stmt);
@@ -1240,6 +1324,7 @@ void LibraryComponent::relocateTrackFile (int64_t trackId, const juce::String& c
             }
 
             juce::ignoreUnused (currentPath);
+            safeThis->refreshMissingCount();
             safeThis->dispatchCurrentQuery (true);
         });
 }
@@ -1249,57 +1334,97 @@ void LibraryComponent::removeTracksFromLibrary (const std::vector<int64_t>& trac
     if (trackIds.empty())
         return;
 
-    auto* handle = db.getDbHandle();
-    bool ok = sqlite3_exec (handle, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) == SQLITE_OK;
-
-    sqlite3_stmt* deletePlaylist = nullptr;
-    sqlite3_stmt* deleteTrack = nullptr;
-
-    ok = ok && sqlite3_prepare_v2 (handle,
-                                   "DELETE FROM playlist_tracks WHERE track_id=?",
-                                   -1, &deletePlaylist, nullptr) == SQLITE_OK;
-    ok = ok && sqlite3_prepare_v2 (handle,
-                                   "DELETE FROM library_tracks WHERE id=?",
-                                   -1, &deleteTrack, nullptr) == SQLITE_OK;
-
-    for (auto trackId : trackIds)
-    {
-        if (! ok)
+    // PRD-0039 AC-21 / AC-22: when the removal includes any missing rows, show
+    // a nested confirmation step before destructively deleting. This action
+    // also wipes playlist_tracks entries (AC-23), so the warning is required.
+    bool anyMissing = false;
+    for (const auto& row : trackTable.resultBuffer)
+        if (std::find (trackIds.begin(), trackIds.end(), row.id) != trackIds.end()
+            && row.isMissing != 0)
+        {
+            anyMissing = true;
             break;
+        }
 
-        sqlite3_reset (deletePlaylist);
-        sqlite3_clear_bindings (deletePlaylist);
-        sqlite3_bind_int64 (deletePlaylist, 1, trackId);
-        ok = sqlite3_step (deletePlaylist) == SQLITE_DONE;
+    auto performDeletion = [this, trackIds]
+    {
+        auto* handle = db.getDbHandle();
+        bool ok = sqlite3_exec (handle, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) == SQLITE_OK;
 
-        sqlite3_reset (deleteTrack);
-        sqlite3_clear_bindings (deleteTrack);
-        sqlite3_bind_int64 (deleteTrack, 1, trackId);
-        ok = ok && sqlite3_step (deleteTrack) == SQLITE_DONE;
+        sqlite3_stmt* deletePlaylist = nullptr;
+        sqlite3_stmt* deleteTrack = nullptr;
 
-        trackTable.setRowStatus (trackId, {});
+        ok = ok && sqlite3_prepare_v2 (handle,
+                                       "DELETE FROM playlist_tracks WHERE track_id=?",
+                                       -1, &deletePlaylist, nullptr) == SQLITE_OK;
+        ok = ok && sqlite3_prepare_v2 (handle,
+                                       "DELETE FROM library_tracks WHERE id=?",
+                                       -1, &deleteTrack, nullptr) == SQLITE_OK;
+
+        for (auto trackId : trackIds)
+        {
+            if (! ok)
+                break;
+
+            sqlite3_reset (deletePlaylist);
+            sqlite3_clear_bindings (deletePlaylist);
+            sqlite3_bind_int64 (deletePlaylist, 1, trackId);
+            ok = sqlite3_step (deletePlaylist) == SQLITE_DONE;
+
+            sqlite3_reset (deleteTrack);
+            sqlite3_clear_bindings (deleteTrack);
+            sqlite3_bind_int64 (deleteTrack, 1, trackId);
+            ok = ok && sqlite3_step (deleteTrack) == SQLITE_DONE;
+
+            trackTable.setRowStatus (trackId, {});
+        }
+
+        if (deletePlaylist != nullptr)
+            sqlite3_finalize (deletePlaylist);
+        if (deleteTrack != nullptr)
+            sqlite3_finalize (deleteTrack);
+
+        if (ok)
+            ok = sqlite3_exec (handle, "COMMIT;", nullptr, nullptr, nullptr) == SQLITE_OK;
+
+        if (! ok)
+            sqlite3_exec (handle, "ROLLBACK;", nullptr, nullptr, nullptr);
+
+        std::set<int64_t> removedIds (trackIds.begin(), trackIds.end());
+        preparationTrackIds.erase (
+            std::remove_if (preparationTrackIds.begin(), preparationTrackIds.end(),
+                            [&removedIds] (int64_t id) { return removedIds.count (id) > 0; }),
+            preparationTrackIds.end());
+
+        refreshSidebarPlaylists();
+        refreshMissingCount();
+        sidebar.setPreparationCount (static_cast<int> (preparationTrackIds.size()));
+        dispatchCurrentQuery (true);
+    };
+
+    if (! anyMissing)
+    {
+        performDeletion();
+        return;
     }
 
-    if (deletePlaylist != nullptr)
-        sqlite3_finalize (deletePlaylist);
-    if (deleteTrack != nullptr)
-        sqlite3_finalize (deleteTrack);
+    auto options = juce::MessageBoxOptions()
+        .withIconType (juce::MessageBoxIconType::WarningIcon)
+        .withTitle ("Remove from Library")
+        .withMessage ("This will also remove the track from all playlists. "
+                      "This action cannot be undone.")
+        .withButton ("Confirm Remove")
+        .withButton ("Cancel")
+        .withAssociatedComponent (this);
 
-    if (ok)
-        ok = sqlite3_exec (handle, "COMMIT;", nullptr, nullptr, nullptr) == SQLITE_OK;
-
-    if (! ok)
-        sqlite3_exec (handle, "ROLLBACK;", nullptr, nullptr, nullptr);
-
-    std::set<int64_t> removedIds (trackIds.begin(), trackIds.end());
-    preparationTrackIds.erase (
-        std::remove_if (preparationTrackIds.begin(), preparationTrackIds.end(),
-                        [&removedIds] (int64_t id) { return removedIds.count (id) > 0; }),
-        preparationTrackIds.end());
-
-    refreshSidebarPlaylists();
-    sidebar.setPreparationCount (static_cast<int> (preparationTrackIds.size()));
-    dispatchCurrentQuery (true);
+    juce::AlertWindow::showAsync (options,
+        [safeThis = juce::Component::SafePointer<LibraryComponent> (this),
+         performDeletion = std::move (performDeletion)] (int result) mutable
+        {
+            if (safeThis == nullptr || result != 1)
+                return;
+            performDeletion();
+        });
 }
 
 void LibraryComponent::setTrackRatingForRows (const std::vector<LibraryTrackRow>& rows, int newRating)
@@ -1856,11 +1981,12 @@ void LibraryComponent::loadFilterState()
     deckFilter.bpmMatchActive = filterPropsFile->getBoolValue   ("bpmMatchActive", false);
     deckFilter.bpmVision      = filterPropsFile->getDoubleValue ("bpmVision",       6.0);
     halfTimeEnabled           = filterPropsFile->getBoolValue   ("halfTimeEnabled", false);
+    const bool missingOnly    = filterPropsFile->getBoolValue   ("showMissingOnly", false);
 
-    filterBar.setKeyMatchActive  (deckFilter.keyMatchActive);
-    filterBar.setBpmMatchActive  (deckFilter.bpmMatchActive);
-    filterBar.setBpmVisionValue  (deckFilter.bpmVision);
-    filterBar.setHalfTimeEnabled (halfTimeEnabled);
+    filterBar.setKeyMatchActive (deckFilter.keyMatchActive);
+    filterBar.setBpmMatchActive (deckFilter.bpmMatchActive);
+    filterBar.setBpmVisionValue (deckFilter.bpmVision);
+    currentParams.showMissingOnly = missingOnly;
 
     rebuildDeckAwareFilter();
 }
@@ -1873,5 +1999,6 @@ void LibraryComponent::saveFilterState()
     filterPropsFile->setValue ("bpmMatchActive", deckFilter.bpmMatchActive);
     filterPropsFile->setValue ("bpmVision",      deckFilter.bpmVision);
     filterPropsFile->setValue ("halfTimeEnabled", halfTimeEnabled);
+    filterPropsFile->setValue ("showMissingOnly", currentParams.showMissingOnly);
     filterPropsFile->saveIfNeeded();
 }

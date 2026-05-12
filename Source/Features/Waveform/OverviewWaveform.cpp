@@ -47,7 +47,7 @@ void OverviewWaveform::setVisibleRange (int64_t startSample, int64_t endSample)
     visibleEnd   = endSample;
 }
 
-void OverviewWaveform::setHotCues (const std::array<HotCueInfo, 8>& cues)
+void OverviewWaveform::setHotCues (const std::array<HotCueInfo, 9>& cues)
 {
     hotCues = cues;
     repaint();

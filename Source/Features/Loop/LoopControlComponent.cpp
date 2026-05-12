@@ -49,31 +49,32 @@ juce::Rectangle<int> LoopControlComponent::getButtonBounds (int index) const
     if (index < 0 || index >= numButtons)
         return {};
 
-    // Center the kTotalW × kBtnH content block within the component.
+    // Use actual component height so the strip adapts to 23px (compact) or 46px (tall) layouts.
+    const int btnH = getHeight();
     const int xOff = juce::jmax (0, (getWidth()  - kTotalW) / 2);
-    const int yOff = juce::jmax (0, (getHeight() - kBtnH)   / 2);
+    const int yOff = 0;
 
     // Group A: buttons 0-2 (IN, OUT, LOOP) — standard width, merged 2px borders.
     if (index < 3)
-        return { xOff + index * (kBtnW - kBorderW), yOff, kBtnW, kBtnH };
+        return { xOff + index * (kBtnW - kBorderW), yOff, kBtnW, btnH };
 
     // Group B starts after Group A + gap.
     const int xB = xOff + kGroupAW + kGroupGap;
 
     // index 3: < arrow (half-width)
     if (index == 3)
-        return { xB, yOff, kArrowW, kBtnH };
+        return { xB, yOff, kArrowW, btnH };
 
     // index 4-7: standard buttons (2, 4, 8, 16)
     if (index < 8)
     {
         const int stdIdx = index - 4;  // 0..3
         return { xB + (kArrowW - kBorderW) + stdIdx * (kBtnW - kBorderW),
-                 yOff, kBtnW, kBtnH };
+                 yOff, kBtnW, btnH };
     }
 
     // index 8: > arrow (half-width)
-    return { xB + (kArrowW - kBorderW) + 4 * (kBtnW - kBorderW), yOff, kArrowW, kBtnH };
+    return { xB + (kArrowW - kBorderW) + 4 * (kBtnW - kBorderW), yOff, kArrowW, btnH };
 }
 
 int LoopControlComponent::getButtonAt (int x, int y) const

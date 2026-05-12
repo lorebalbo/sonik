@@ -50,7 +50,7 @@ void DetailWaveform::setBeatGridData (BeatGridData::Ptr data)
     repaint();
 }
 
-void DetailWaveform::setHotCues (const std::array<HotCueInfo, 8>& cues)
+void DetailWaveform::setHotCues (const std::array<HotCueInfo, 9>& cues)
 {
     hotCues = cues;
     repaint();

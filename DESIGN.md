@@ -15,13 +15,13 @@ The system utilizes **Orthographic Layering**. Elements (Decks, Mixer, Library, 
 The palette is strictly monochrome. The illusion of gray and sonic depth is created solely through pixel density (dithering).
 
 * **Primary Palette:**
-  * `primary`: `#000000` (The ink, the data, the sound)
-  * `surface`: `#f9f9f9` (The chassis of the interface)
+  * `primary`: `#2d2d2d` (The ink, the data, the sound)
+  * `surface`: `#fdfdfd` (The chassis of the interface)
 * **The "No-Line" Rule for Modules:** Avoid using 1px solid dividers to separate Decks from the Mixer or Library. Instead, use background shifts. A `surface-container-low` (`#f3f3f4`) panel should sit on a `surface` background.
 * **Dithered Gradients (Audio Levels & VU Meters):** For VU meters and volume faders, do not use green/yellow/red gradients. Use dithering patterns (checkerboard pixels) that become progressively denser and darker as the volume rises toward the peak (clipping).
 * **Surface Hierarchy:**
   * `surface-container-highest` (`#e2e2e2`): Deck headers, transport bar (Play/Cue).
-  * `surface-container-lowest` (`#ffffff`): Text input areas (track search) or high-priority visual canvases (the Waveform display).
+  * `surface-container-lowest` (`#fdfdfd`): Text input areas (track search) or high-priority visual canvases (the Waveform display).
 
 ---
 
@@ -29,8 +29,8 @@ The palette is strictly monochrome. The illusion of gray and sonic depth is crea
 
 We utilize a sharp, pixel-aligned bitmap approach to maintain editorial clarity, which is essential when mixing live in low-light environments.
 
-* **Display (BPM & Time elapsed/remaining):** `spaceGrotesk` at massive scales (Display-LG: 3.5rem or higher). Numbers must be massive and brutalist. The contrast between giant BPMs and tiny track metadata labels creates the "Editorial" feel.
-* **Body (Track Library & Metadata):** `spaceGrotesk` (Body-MD: 0.875rem). The technical, geometric nature of this font mimics system characters while ensuring maximum legibility in dense lists.
+* **Display (BPM & Time elapsed/remaining):** `Space Mono Regular` at massive scales (Display-LG: 3.5rem or higher). Numbers must be massive and brutalist. The contrast between giant BPMs and tiny track metadata labels creates the "Editorial" feel.
+* **Body (Track Library & Metadata):** `Space Mono Regular` (Body-MD: 0.875rem). The monospaced, fixed-width nature of this font mimics system terminals while ensuring maximum legibility in dense lists.
 * **Visual Hierarchy for Controls:** Bold, all-caps labels (`label-md`) for EQ (HI, MID, LOW), Filters, and FX, to make them look like printed labels on hardware equipment.
 
 ---
@@ -40,7 +40,7 @@ We utilize a sharp, pixel-aligned bitmap approach to maintain editorial clarity,
 Depth is achieved through **Tonal Layering** and **Pixel Offset**, not simulated light sources.
 
 * **The Layering Principle:** The central Mixer should appear "lifted" relative to the side Decks using the surface scale.
-* **Ambient Shadows (The Dithered Drop):** Context menus (e.g., right-click on a track) or effect tooltips use a **Dithered Shadow**. Apply a 2px or 4px offset with a 50% checkerboard pattern of `#000000`. Zero blur.
+* **Ambient Shadows (The Dithered Drop):** Context menus (e.g., right-click on a track) or effect tooltips use a **Dithered Shadow**. Apply a 2px or 4px offset with a 50% checkerboard pattern of `#2d2d2d`. Zero blur.
 * **Zero Roundedness:** All `border-radius` tokens are strictly `0px`. Sharp corners are mandatory to maintain orthographic integrity.
 
 ---
@@ -54,9 +54,11 @@ Depth is achieved through **Tonal Layering** and **Pixel Offset**, not simulated
 
 ### Decks & Transport (Play, Cue, Sync)
 
-* **Tactile Buttons:** Massive squares. Solid `primary` (`#000000`) fill with `on-primary` (`#e2e2e2`) text.
+* **Tactile Buttons:** Massive squares. All buttons carry a mandatory `2px solid #2d2d2d` border at all times.
+  * **Active state:** `#2d2d2d` fill, `#fdfdfd` text, `2px solid #2d2d2d` border.
+  * **Inactive state:** `#fdfdfd` fill, `#2d2d2d` text, `2px solid #2d2d2d` border.
+  * No transition animations or fades — state changes are instant.
 * **Jog Wheels / Phase Meters:** Instead of simulating a round vinyl record, use 1-bit pixel arcs or a brutal, square linear phase indicator. If using a circular shape, apply a dithered shadow in the bottom-right quadrant.
-* **Active State:** The active "Play" button inverts instantly (White on Black \-\> Black on White). No transition animations or fades.
 
 ### Mixer: Knobs (EQ/Filter) & Faders (Line/Crossfader)
 

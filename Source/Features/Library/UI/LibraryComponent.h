@@ -66,6 +66,7 @@ private:
     void updatePlayingTrack ();
     void refreshSidebarFolders ();
     void refreshSidebarPlaylists ();
+    void refreshMissingCount ();
     QueryParams buildQueryParams () const;
 
     void showContextMenu (int rowIndex, juce::Point<int> screenPos);

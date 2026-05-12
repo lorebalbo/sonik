@@ -21,7 +21,7 @@ You are currently executing the PRD Workflow as a Senior Product Manager. Your g
     </step>
 
     <step id="2" name="Duplicate Check" mandatory="true" use_subagent=true>
-        <instruction>Before proceeding, scan the #file:../../docs/prd/ and #file:../../docs/adr/ directories to check whether the requested feature has already been documented.</instruction>
+        <instruction>Before proceeding, scan the #file:../../docs/prd/ directory to check whether the requested feature has already been documented.</instruction>
         <instruction>Read the files found and compare their content against the user's idea.</instruction>
         <condition if="a duplicate or substantially overlapping document is found">
             <instruction>Stop and inform the user clearly. Show the path(s) and briefly explain the overlap.</instruction>
@@ -40,7 +40,7 @@ You are currently executing the PRD Workflow as a Senior Product Manager. Your g
 
     <step id="4" name="Drafting the PRD & Gap Analysis" mandatory="true">
         <substep id="4.1" name="Deep Feature Analysis">
-            <instruction>Before blindly filling the template, deeply analyze the user's request. Identify features the user implicitly assumed but didn't mention, and potential edge cases (e.g., what happens to this feature if no track is loaded?).</instruction>
+            <instruction>Before blindly filling the template, deeply analyze the user's request. Identify features the user implicitly assumed but didn't mention, and potential edge cases (e.g., what happens to this feature if ...?).</instruction>
             <instruction>If you discover critical missing pieces, briefly ask the user for confirmation on how to handle them before you start writing.</instruction>
         </substep>
 

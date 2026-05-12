@@ -7,8 +7,8 @@
 /// SYNC latch button (PRD-0027).
 ///
 /// Visual states (DESIGN.md — strict monochrome, zero border-radius):
-///   Active   (isSynced=true):  fill #000000, text #f9f9f9, 1px #000000 border
-///   Inactive (isSynced=false): fill #f9f9f9, text #000000, 1px #000000 border
+///   Active   (isSynced=true):  fill #2d2d2d, text #fdfdfd, 2px #2d2d2d border
+///   Inactive (isSynced=false): fill #fdfdfd, text #2d2d2d, 2px #2d2d2d border
 ///
 /// clicked(): toggles IDs::isSynced on the deck's ValueTree (message thread only).
 /// Exception: if IDs::isMaster is true on this deck, click is a no-op.

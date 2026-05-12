@@ -6,6 +6,9 @@
 #include <juce_events/juce_events.h>
 #include "Features/Deck/Database/TrackDatabase.h"
 
+#include <functional>
+#include <mutex>
+
 struct sqlite3;
 
 /// Background watch-folder scanner and library track ingestor (PRD-0031).
@@ -81,6 +84,12 @@ public:
     /// then trigger startScan().
     void rescanFolder (const juce::File& folder);
 
+    /// Set a callback invoked on the Message Thread during the reconciliation
+    /// pass — fired after each batch of N row updates and once on completion.
+    /// LibraryComponent uses this to repaint affected rows progressively
+    /// (PRD-0039 AC-05).
+    void setReconciliationProgressCallback (std::function<void()> callback);
+
 private:
     // -------------------------------------------------------------------------
     // juce::Thread entry point
@@ -120,6 +129,9 @@ private:
     juce::File                   dbFile;          ///< Cached for background open
     juce::ListenerList<Listener> listeners;
     std::atomic<int>             filesScannedAtomic { 0 };
+
+    std::mutex                    reconciliationCallbackMutex;
+    std::function<void()>         reconciliationProgressCallback;
 
     JUCE_DECLARE_WEAK_REFERENCEABLE (WatchFolderScanner)
 };

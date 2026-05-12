@@ -8,8 +8,8 @@
 /// MASTER assignment button (PRD-0027).
 ///
 /// Visual states (DESIGN.md — strict monochrome, zero border-radius):
-///   Active   (isMaster=true):  fill #000000, text #f9f9f9, 1px #000000 border
-///   Inactive (isMaster=false): fill #f9f9f9, text #000000, 1px #000000 border
+///   Active   (isMaster=true):  fill #2d2d2d, text #fdfdfd, 2px #2d2d2d border
+///   Inactive (isMaster=false): fill #fdfdfd, text #2d2d2d, 2px #2d2d2d border
 ///
 /// clicked(): calls MasterClockManager::setMaster(deckIndex) on the message thread.
 /// No-op when this deck already has isMaster=true (pressing active MASTER button does nothing).

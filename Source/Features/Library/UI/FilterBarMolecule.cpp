@@ -17,10 +17,10 @@ void FilterBarMolecule::SquareToggle::paint (juce::Graphics& g)
         g.fillAll (LibraryPalette::surface().withAlpha (0.45f));
 
     g.setColour (LibraryPalette::primary());
-    g.drawRect (getLocalBounds(), 1);
+    g.drawRect (getLocalBounds(), 2);
 
     g.setColour (active && suspended ? LibraryPalette::primary().withAlpha (0.5f) : text);
-    g.setFont (LibraryPalette::boldLabelFont());
+    g.setFont (LibraryPalette::bodyFont (13.0f));
     g.drawText (label, getLocalBounds(), juce::Justification::centred, false);
 }
 
@@ -55,24 +55,19 @@ FilterBarMolecule::FilterBarMolecule()
     bpmMatchBtn.onClick = [this] { toggleBpmMatch(); };
     addAndMakeVisible (bpmMatchBtn);
 
-    // HALF TIME toggle (shown only when width >= 900)
-    halfTimeBtn.label   = "1/2 BPM";
-    halfTimeBtn.active  = false;
-    halfTimeBtn.onClick = [this] { toggleHalfTime(); };
-    addAndMakeVisible (halfTimeBtn);
-
-    // BPM Vision prefix
-    bpmPrefixLabel.setText ("+/-", juce::dontSendNotification);
-    bpmPrefixLabel.setFont (juce::Font (LibraryPalette::boldLabelFont()));
-    bpmPrefixLabel.setColour (juce::Label::textColourId, LibraryPalette::primary());
-    bpmPrefixLabel.setJustificationType (juce::Justification::centredRight);
+    // BPM Vision: "±" chip (inverted, filled #2d2d2d, text #fdfdfd), no gap to editor.
+    bpmPrefixLabel.setText (juce::CharPointer_UTF8 ("\xc2\xb1"), juce::dontSendNotification);
+    bpmPrefixLabel.setFont (juce::Font (LibraryPalette::bodyFont (13.0f)));
+    bpmPrefixLabel.setColour (juce::Label::backgroundColourId, LibraryPalette::primary());
+    bpmPrefixLabel.setColour (juce::Label::textColourId,       LibraryPalette::surface());
+    bpmPrefixLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (bpmPrefixLabel);
 
     // BPM Vision editor (float 0.0–30.0, 1 decimal)
     bpmVisionEditor.setMultiLine (false);
     bpmVisionEditor.setInputRestrictions (5, "0123456789.");
     bpmVisionEditor.setText (juce::String (bpmVision, 1), false);
-    bpmVisionEditor.setFont (juce::Font (LibraryPalette::boldLabelFont()));
+    bpmVisionEditor.setFont (juce::Font (LibraryPalette::bodyFont (13.0f)));
     bpmVisionEditor.setColour (juce::TextEditor::backgroundColourId,
                                 LibraryPalette::surface());
     bpmVisionEditor.setColour (juce::TextEditor::textColourId,
@@ -86,11 +81,12 @@ FilterBarMolecule::FilterBarMolecule()
     bpmVisionEditor.setJustification (juce::Justification::centred);
     addAndMakeVisible (bpmVisionEditor);
 
-    // BPM Vision suffix
+    // BPM Vision: "BPM" chip (inverted, filled #2d2d2d, text #fdfdfd), no gap to editor.
     bpmSuffixLabel.setText ("BPM", juce::dontSendNotification);
-    bpmSuffixLabel.setFont (juce::Font (LibraryPalette::boldLabelFont()));
-    bpmSuffixLabel.setColour (juce::Label::textColourId, LibraryPalette::primary());
-    bpmSuffixLabel.setJustificationType (juce::Justification::centredLeft);
+    bpmSuffixLabel.setFont (juce::Font (LibraryPalette::bodyFont (13.0f)));
+    bpmSuffixLabel.setColour (juce::Label::backgroundColourId, LibraryPalette::primary());
+    bpmSuffixLabel.setColour (juce::Label::textColourId,       LibraryPalette::surface());
+    bpmSuffixLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (bpmSuffixLabel);
 
     updateBpmVisionOpacity();
@@ -98,39 +94,44 @@ FilterBarMolecule::FilterBarMolecule()
 
 void FilterBarMolecule::paint (juce::Graphics& g)
 {
-    g.fillAll (LibraryPalette::surface());
+    // Transparent gaps between children must read as the outer chassis colour
+    // (#e5e5e5), so the filter bar paints the chassis fill rather than #fdfdfd.
+    g.fillAll (LibraryPalette::chassis());
+}
+
+void FilterBarMolecule::paintOverChildren (juce::Graphics& g)
+{
+    // 2px #2d2d2d border around the BPM Vision editor, dimmed when BPM MATCH
+    // is inactive (same alpha used by the editor/chip children).
+    const float alpha = bpmMatchActive ? 1.0f : 0.5f;
+    g.setColour (LibraryPalette::primary().withAlpha (alpha));
+    g.drawRect (bpmVisionEditor.getBounds(), 2);
 }
 
 void FilterBarMolecule::resized()
 {
-    auto b = getLocalBounds().reduced (2, 2);
-    const bool showExtended = (getWidth() >= 900);
+    // No outer frame padding: children fill the bar edge-to-edge.
+    auto b = getLocalBounds();
+    constexpr int kGap     = 12;
+    constexpr int kPrefixW = 22;
+    constexpr int kEditorW = 48;
+    constexpr int kSuffixW = 36;
 
-    if (showExtended)
-    {
-        bpmSuffixLabel.setBounds  (b.removeFromRight (32));
-        bpmVisionEditor.setBounds (b.removeFromRight (28));
-        bpmPrefixLabel.setBounds  (b.removeFromRight (24));
-        b.removeFromRight (4);
+    // ---- BPM Vision group (right side) -------------------------------------
+    // [ ± ][ editor ][ BPM ]   — no gap between elements within the group.
+    auto visionGroup = b.removeFromRight (kPrefixW + kEditorW + kSuffixW);
+    bpmSuffixLabel .setBounds (visionGroup.removeFromRight  (kSuffixW));
+    bpmVisionEditor.setBounds (visionGroup.removeFromRight  (kEditorW));
+    bpmPrefixLabel .setBounds (visionGroup.removeFromRight  (kPrefixW));
 
-        halfTimeBtn.setVisible (true);
-        halfTimeBtn.setBounds (b.removeFromRight (72));
-        b.removeFromRight (2);
-    }
-    else
-    {
-        bpmSuffixLabel.setBounds  ({});
-        bpmVisionEditor.setBounds ({});
-        bpmPrefixLabel.setBounds  ({});
-        halfTimeBtn.setVisible (false);
-        halfTimeBtn.setBounds ({});
-    }
+    // ---- Toggles ------------------------------------------------------------
+    b.removeFromRight (kGap);
+    bpmMatchBtn.setBounds (b.removeFromRight (88));
+    b.removeFromRight (kGap);
+    keyMatchBtn.setBounds (b.removeFromRight (88));
+    b.removeFromRight (kGap);
 
-    bpmMatchBtn.setBounds (b.removeFromRight (80));
-    b.removeFromRight (2);
-    keyMatchBtn.setBounds (b.removeFromRight (80));
-    b.removeFromRight (4);
-
+    // ---- Search bar fills remaining space ----------------------------------
     searchBar.setBounds (b);
 }
 
@@ -153,14 +154,6 @@ void FilterBarMolecule::toggleBpmMatch()
     if (onBpmMatchToggled) onBpmMatchToggled (bpmMatchActive);
 }
 
-void FilterBarMolecule::toggleHalfTime()
-{
-    halfTimeEnabled    = !halfTimeEnabled;
-    halfTimeBtn.active = halfTimeEnabled;
-    halfTimeBtn.repaint();
-    if (onHalfTimeToggled) onHalfTimeToggled (halfTimeEnabled);
-}
-
 void FilterBarMolecule::commitBpmVision()
 {
     const double val   = juce::jlimit (0.0, 30.0,
@@ -180,6 +173,7 @@ void FilterBarMolecule::updateBpmVisionOpacity()
     bpmPrefixLabel .setAlpha (alpha);
     bpmSuffixLabel .setAlpha (alpha);
     bpmVisionEditor.setEnabled (bpmMatchActive);
+    repaint(); // refresh the paintOverChildren border alpha
 }
 
 // ---- Programmatic setters --------------------------------------------------
@@ -197,13 +191,6 @@ void FilterBarMolecule::setBpmMatchActive (bool a)
     bpmMatchBtn.active = a;
     bpmMatchBtn.repaint();
     updateBpmVisionOpacity();
-}
-
-void FilterBarMolecule::setHalfTimeEnabled (bool e)
-{
-    halfTimeEnabled    = e;
-    halfTimeBtn.active = e;
-    halfTimeBtn.repaint();
 }
 
 void FilterBarMolecule::setBpmVisionValue (double v)

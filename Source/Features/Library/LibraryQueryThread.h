@@ -82,6 +82,7 @@ struct QueryParams
     std::vector<int64_t> preparationTrackIds;
     juce::String         sortColumn     = "date_added";
     bool                 sortAscending  = false;
+    bool                 showMissingOnly = false;
     DeckAwareFilterState deckFilter;
 };
 
@@ -105,6 +106,7 @@ public:
     using ResultCallback = std::function<void(std::vector<LibraryTrackRow>)>;
     using PlaylistListCallback = std::function<void(std::vector<PlaylistInfo>)>;
     using PlaylistMutationCallback = std::function<void(bool ok, juce::String message, int64_t playlistId)>;
+    using CountCallback = std::function<void(int)>;
 
     explicit LibraryQueryThread (TrackDatabase& db);
     ~LibraryQueryThread() override;
@@ -147,6 +149,10 @@ public:
                             PlaylistMutationCallback callback);
     void appendHistoryEntryForFilePath (juce::String filePath,
                                         PlaylistMutationCallback callback);
+
+    /// Count rows in library_tracks where is_missing = 1. Result posted to
+    /// callback on the Message Thread.
+    void countMissingTracks (CountCallback callback);
 
     // -------------------------------------------------------------------------
     // Parsing utilities (static — run on Message Thread before dispatch)

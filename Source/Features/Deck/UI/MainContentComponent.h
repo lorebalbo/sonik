@@ -48,17 +48,7 @@ public:
 
         addAndMakeVisible (toolbar);
         addAndMakeVisible (layoutManager);
-        addAndMakeVisible (divider);
         addAndMakeVisible (*libraryComponent);
-
-        divider.setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
-        divider.onDragDy = [this] (int dy)
-        {
-            libraryHeight = juce::jlimit (kMinLibraryHeight,
-                                          juce::jmax (kMinLibraryHeight, getHeight() - toolbarHeight - 80),
-                                          libraryHeight - dy);
-            resized();
-        };
 
         rootState.addListener (this);
     }
@@ -78,16 +68,16 @@ public:
         auto b = getLocalBounds();
         toolbar.setBounds (b.removeFromTop (toolbarHeight));
 
-        const int remaining = b.getHeight();
-        const int libH  = juce::jlimit (kMinLibraryHeight,
-                                         juce::jmax (kMinLibraryHeight, remaining - 80),
-                                         libraryHeight);
+        // Deck area: fixed height derived from the number of decks — never
+        // compressed, never stretched.  Horizontal margins only (no top/bottom).
+        const int deckH = layoutManager.getPreferredHeight();
+        auto deckArea = b.removeFromTop (deckH);
+        deckArea.removeFromLeft  (8);
+        deckArea.removeFromRight (8);
+        layoutManager.setBounds (deckArea);
 
-        libraryComponent->setBounds (b.removeFromBottom (libH));
-        divider.setBounds           (b.removeFromBottom (kDividerHeight));
-
-        b.reduce (8, 8);
-        layoutManager.setBounds (b);
+        // Library fills all remaining vertical space flush to the deck area.
+        libraryComponent->setBounds (b);
     }
 
     void registerScannerWithLibrary (WatchFolderScanner& scanner)
@@ -209,7 +199,10 @@ private:
             juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
             {
                 if (safeThis != nullptr)
+                {
                     safeThis->toolbar.updateButtons();
+                    safeThis->resized(); // re-layout when deck count changes
+                }
             });
         }
     }
@@ -223,41 +216,11 @@ private:
     DeckLayoutManager  layoutManager;
     juce::TooltipWindow tooltipWindow { this };
 
-    // ---- Library panel + drag divider --------------------------------------
-    struct DividerHandle final : public juce::Component
-    {
-        std::function<void (int dy)> onDragDy;
-
-        void paint (juce::Graphics& g) override
-        {
-            g.fillAll (juce::Colour (0xffe2e2e2));
-        }
-
-        void mouseDown (const juce::MouseEvent& e) override
-        {
-            lastScreenY = e.getScreenY();
-        }
-
-        void mouseDrag (const juce::MouseEvent& e) override
-        {
-            const int dy = e.getScreenY() - lastScreenY;
-            lastScreenY  = e.getScreenY();
-            if (dy != 0 && onDragDy)
-                onDragDy (dy);
-        }
-
-    private:
-        int lastScreenY = 0;
-    };
+    // ---- Library panel ----------------------------------------------------
 
     std::unique_ptr<LibraryComponent> libraryComponent;
-    DividerHandle                     divider;
-    int                               libraryHeight = kDefaultLibraryHeight;
 
-    static constexpr int toolbarHeight        = 40;
-    static constexpr int kDividerHeight       = 4;
-    static constexpr int kMinLibraryHeight    = 200;
-    static constexpr int kDefaultLibraryHeight = 280;
+    static constexpr int toolbarHeight = 40;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainContentComponent)
 };

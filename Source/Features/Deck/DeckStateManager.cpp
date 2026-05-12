@@ -348,9 +348,9 @@ juce::ValueTree DeckStateManager::createDeckTree (const juce::String& deckId) co
     tempCue.setProperty (IDs::position, (int64_t) -1, nullptr);
     deck.addChild (tempCue, -1, nullptr);
 
-    // CuePoints (8 slots)
+    // CuePoints (9 slots)
     juce::ValueTree cuePoints (IDs::CuePoints);
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 9; ++i)
     {
         juce::ValueTree cp (IDs::CuePoint);
         cp.setProperty (IDs::index,      i,          nullptr);

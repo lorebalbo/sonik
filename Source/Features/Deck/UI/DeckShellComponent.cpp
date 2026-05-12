@@ -122,19 +122,29 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     beatJumpComponent->onJumpForward  = [this] ()        { beatJumpEngine->jumpForward(); };
     beatJumpComponent->onJumpBackward = [this] ()        { beatJumpEngine->jumpBackward(); };
 
-    // ControllerWidget owns layout but not lifetime of subcomponents
+    // ControllerWidget owns layout but not lifetime of loopControl.
+    // hotCuePadComponent is managed directly by DeckShellComponent (Frame 55 row).
     controllerWidget = std::make_unique<ControllerWidget> (
         deckTree,
         loopControlComponent.get(),
-        hotCuePadComponent.get(),
+        nullptr,              // hotCuePads placed directly in DeckShellComponent
         beatJumpComponent.get());
 
-    // Wire transport callbacks for the JUMP tab
+    // Wire transport callbacks
     controllerWidget->onCuePress  = [this] { handleCuePress(); };
     controllerWidget->onStopPress = [this] { handleStopPress(); };
     controllerWidget->onPlayPress = [this] { handlePlayPress(); };
 
-    // Wire beatgrid callbacks for the GRID tab
+    // Wire loop callbacks (LOOP mode size buttons)
+    controllerWidget->onAutoLoop    = [this] (float b) { loopEngine->autoLoop (b); };
+    controllerWidget->onLoopHalve   = [this]            { loopEngine->loopHalve(); };
+    controllerWidget->onLoopDouble  = [this]            { loopEngine->loopDouble(); };
+
+    // Wire jump callbacks (JUMP mode arrows)
+    controllerWidget->onJumpForward  = [this] { beatJumpEngine->jumpForward(); };
+    controllerWidget->onJumpBackward = [this] { beatJumpEngine->jumpBackward(); };
+
+    // Wire beatgrid callbacks for the GRID mode
     controllerWidget->onGridSet    = [this] { handleGridSet(); };
     controllerWidget->onGridDelete = [this] { handleGridDelete(); };
     controllerWidget->onGridNudge  = [this] (int d) { handleGridNudge (d); };
@@ -148,6 +158,12 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
     };
 
     addAndMakeVisible (*controllerWidget);
+
+    // Hot cue pads — Frame 55, managed directly (not inside ControllerWidget)
+    addAndMakeVisible (*hotCuePadComponent);
+
+    // Initial stems sidebar overlay visibility
+    updateStemsSidebarVisibility();
 
     // -----------------------------------------------------------------------
     // State listeners
@@ -405,6 +421,28 @@ void DeckShellComponent::persistBeatGridToDb()
                       keyIndex, keyConf, keyManual);
 }
 
+// --- Stems sidebar overlay visibility ---
+
+void DeckShellComponent::updateStemsSidebarVisibility()
+{
+    // When stems are ready, hide the SEPARATE overlay and reveal the
+    // VOC/INST toggles beneath it.  In every other status (none, queued,
+    // separating, error, model_unavailable, loading_cached) the SEPARATE
+    // button takes over the whole sidebar so its state is visible.
+    auto stemsTree = deckTree.getChildWithName (IDs::Stems);
+    const auto status = stemsTree.isValid()
+                            ? stemsTree.getProperty (IDs::status, "none").toString()
+                            : juce::String ("none");
+
+    const bool stemsReady = (status == "ready");
+
+    if (stemSeparateButton != nullptr)
+        stemSeparateButton->setVisible (! stemsReady);
+
+    if (stemVocToggle  != nullptr) stemVocToggle->setVisible  (stemsReady);
+    if (stemInstToggle != nullptr) stemInstToggle->setVisible (stemsReady);
+}
+
 // --- Paint ---
 
 void DeckShellComponent::paint (juce::Graphics& g)
@@ -427,15 +465,17 @@ void DeckShellComponent::paint (juce::Graphics& g)
     }
 
     // Empty state hint overlaid on waveform area when no track loaded.
-    // Use the same dynamic panel width as the loaded waveform so all rows stay
-    // the same width regardless of whether a track is present.
+    // The waveform sits between the stems sidebar and the pitch sidebar in
+    // the main row (after header + control row).
     if (! isTrackLoaded())
     {
-        const int panelW = getPanelW();
+        const int waveformW = getWaveformW();
         auto contentBounds = getLocalBounds().reduced (kPad);
-        auto waveArea = contentBounds.withTrimmedTop (kHeaderH + kGap + kStemsH + kGap)
-                                     .withWidth (panelW)
-                                     .withHeight (kMainH);
+        auto waveArea = contentBounds
+                            .withTrimmedTop (kHeaderH + kGap + kControlRowH + kGap)
+                            .withTrimmedLeft (kStemsSidebarW + kSidebarGap)
+                            .withWidth (waveformW)
+                            .withHeight (kMainH);
         paintEmptyState (g, waveArea);
     }
 
@@ -445,6 +485,17 @@ void DeckShellComponent::paint (juce::Graphics& g)
         const auto headerBounds = getLocalBounds().reduced (kPad).withHeight (kHeaderH);
         g.setColour (juce::Colour (0xFF000000));
         g.fillRect (headerBounds);
+    }
+
+    // CUE label button — active/dark tab at right of Frame 55 row
+    if (! cueLabelBounds.isEmpty())
+    {
+        g.setColour (juce::Colour (0xFF2D2D2D));
+        g.fillRect (cueLabelBounds);
+        g.drawRect (cueLabelBounds, 2);
+        g.setColour (juce::Colour (0xFFF9F9F9));
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+        g.drawText ("CUE", cueLabelBounds, juce::Justification::centred);
     }
 }
 
@@ -469,109 +520,141 @@ void DeckShellComponent::paintEmptyState (juce::Graphics& g, juce::Rectangle<int
 
 void DeckShellComponent::resized()
 {
-    // Compute the actual panel width from the component's real size.
-    // When the deck is exactly 592 px wide this equals kPanelW (474);
-    // on wider decks it expands so every row stretches to the same width.
-    const int panelW = getPanelW();
+    // Width helpers — adapt to the actual component width.
+    // leftPanelW: MASTER row + (stems sidebar | waveform).  Matches Figma's
+    //             474 px panel when the deck is exactly 592 px wide.
+    // waveformW : waveform width inside the main row (between sidebars).
+    const int leftPanelW = getLeftPanelW();
+    const int waveformW  = getWaveformW();
 
     auto bounds = getLocalBounds().reduced (kPad);
 
-    // --- Row 1: Deck Header (always visible) ---
+    // --- Row 1: Deck Header (always visible, full content width) ---
     auto headerRow = bounds.removeFromTop (kHeaderH);
     if (trackInfoComponent != nullptr)
         trackInfoComponent->setBounds (headerRow);
 
     bounds.removeFromTop (kGap);
 
-    // --- Row 2: Stems section (3 buttons with 10px gaps, matching SYNC/Q/SLIP row) ---
-    auto stemsRow = bounds.removeFromTop (kStemsH);
+    // --- Row 2: MASTER / SYNC / QUANT / SLIP  |  KEY  (full content width) ---
+    // KEY sits at the right edge in the pitch-sidebar column, directly under
+    // the deck-identifier block in the header.
+    auto controlRowFull = bounds.removeFromTop (kControlRowH);
     {
-        const int stemsGap = 10;
-        const int bw       = (panelW - 2 * stemsGap) / 3;
-        const int lastW    = panelW - 2 * (bw + stemsGap); // absorbs rounding
-        const int x0 = stemsRow.getX();
-        const int y0 = stemsRow.getY();
+        auto keyArea     = controlRowFull.removeFromRight (kPitchSidebarW);
+        controlRowFull.removeFromRight (kSidebarGap);
+        auto controlRow  = controlRowFull;
 
-        if (stemSeparateButton != nullptr)
-            stemSeparateButton->setBounds (x0, y0, bw, kStemsH);
-
-        if (stemVocToggle != nullptr)
-            stemVocToggle->setBounds (x0 + bw + stemsGap, y0, bw, kStemsH);
-
-        if (stemInstToggle != nullptr)
-            stemInstToggle->setBounds (x0 + 2 * (bw + stemsGap), y0, lastW, kStemsH);
-    }
-
-    bounds.removeFromTop (kGap);
-
-    // --- Row 3: Waveform (474px) + Time&Pitch sidebar (70px) ---
-    auto mainRow = bounds.removeFromTop (kMainH);
-    {
-        auto sidebar = mainRow.removeFromRight (kPitchSidebarW);
-        mainRow.removeFromRight (kSidebarGap);
-
-        // Waveform fills left portion
-        if (waveformComponent != nullptr && isTrackLoaded())
-            waveformComponent->setBounds (mainRow);
-
-        // Time & Pitch sidebar layout
-        // Heights: KEY(23) + gap(12) + Stepper(23) + gap(12) + Fader(fill) + gap(12) + CycleBtn area
-        // We give the fader everything between the stepper and a bottom strip
-        const int btnH    = 23;
-        const int sideGap = 12;
-
-        if (keyLockButton != nullptr)
-            keyLockButton->setBounds (sidebar.removeFromTop (btnH));
-
-        sidebar.removeFromTop (sideGap);
-
-        if (keyStepperComponent != nullptr)
-            keyStepperComponent->setBounds (sidebar.removeFromTop (btnH));
-
-        sidebar.removeFromTop (sideGap);
-
-        // Pitch fader fills all remaining space; the ±% range button is rendered
-        // inside pitchFaderComponent at its bottom 23px (req 3, 4).
-        if (pitchFaderComponent != nullptr)
-            pitchFaderComponent->setBounds (sidebar);
-    }
-
-    bounds.removeFromTop (kGap);
-
-    // --- Row 4: Control row (MASTER / SYNC / QUANT / SLIP) ---
-    auto controlRow = bounds.removeFromTop (kControlRowH);
-    controlRow = controlRow.withWidth (panelW);
-    {
-        // Four buttons with three gaps of 10 px
-        const int ctrlGap  = 10;
-        const int availW   = controlRow.getWidth() - 3 * ctrlGap;
-        const int masterW_ = availW / 4;
-        const int syncW_   = availW / 4;
-        const int quantW_  = availW / 4;
-        const int slipW_   = availW - masterW_ - syncW_ - quantW_;
+        // Four buttons with three 10 px gaps (Figma spec)
+        const int ctrlGap = 10;
+        const int availW  = controlRow.getWidth() - 3 * ctrlGap;
+        const int btnW    = availW / 4;
+        const int lastBtnW = controlRow.getWidth() - 3 * (btnW + ctrlGap);
 
         if (masterButton != nullptr)
-            masterButton->setBounds (controlRow.removeFromLeft (masterW_));
+            masterButton->setBounds (controlRow.removeFromLeft (btnW));
         controlRow.removeFromLeft (ctrlGap);
 
         if (syncButton != nullptr)
-            syncButton->setBounds (controlRow.removeFromLeft (syncW_));
+            syncButton->setBounds (controlRow.removeFromLeft (btnW));
         controlRow.removeFromLeft (ctrlGap);
 
         if (quantizeButton != nullptr)
-            quantizeButton->setBounds (controlRow.removeFromLeft (quantW_));
+            quantizeButton->setBounds (controlRow.removeFromLeft (btnW));
         controlRow.removeFromLeft (ctrlGap);
 
         if (slipButton != nullptr)
-            slipButton->setBounds (controlRow.removeFromLeft (slipW_));
+            slipButton->setBounds (controlRow.removeFromLeft (lastBtnW));
+
+        if (keyLockButton != nullptr)
+            keyLockButton->setBounds (keyArea);
     }
 
     bounds.removeFromTop (kGap);
 
-    // --- Row 5: Controller Widget (474px panel + 8px gap + 70px tabs) ---
+    // --- Row 3: Stems sidebar (23) | Waveform | Pitch sidebar (70) ---
+    auto mainRow = bounds.removeFromTop (kMainH);
+    {
+        // Left: vertical stems sidebar (VOC top, INST bottom — rotated text)
+        auto stemsSidebar = mainRow.removeFromLeft (kStemsSidebarW);
+        mainRow.removeFromLeft (kSidebarGap);
+
+        {
+            // SeparateButton acts as a full-sidebar overlay; it lives in the
+            // same bounds as the VOC/INST stack and self-renders based on
+            // stem status (showing progress/state).  VOC + INST occupy the
+            // top and bottom halves respectively when stems are ready,
+            // separated by an 8 px gap.
+            static constexpr int kStemToggleGap = 8;
+            const int totalH = stemsSidebar.getHeight();
+            const int vocH   = (totalH - kStemToggleGap) / 2;
+            const int instH  = totalH - vocH - kStemToggleGap;
+
+            if (stemVocToggle != nullptr)
+                stemVocToggle->setBounds (stemsSidebar.getX(),
+                                          stemsSidebar.getY(),
+                                          kStemsSidebarW, vocH);
+
+            if (stemInstToggle != nullptr)
+                stemInstToggle->setBounds (stemsSidebar.getX(),
+                                           stemsSidebar.getY() + vocH + kStemToggleGap,
+                                           kStemsSidebarW,
+                                           instH);
+
+            // The Separate button overlays the sidebar.  When stems are ready
+            // it visually renders as "STEMS READY" (dark fill); while
+            // separating it shows a progress bar.  When not yet started it
+            // shows the prompt and is the only interactive element here.
+            if (stemSeparateButton != nullptr)
+                stemSeparateButton->setBounds (stemsSidebar);
+        }
+
+        // Right: pitch sidebar
+        auto pitchSidebar = mainRow.removeFromRight (kPitchSidebarW);
+        mainRow.removeFromRight (kSidebarGap);
+
+        // Middle: Waveform fills what's left
+        if (waveformComponent != nullptr && isTrackLoaded())
+            waveformComponent->setBounds (mainRow);
+
+        // Time & Pitch sidebar layout — KEY now lives in the control row
+        // above, so the sidebar only contains: stepper at top, then pitch
+        // fader filling all remaining space (with ±% button rendered inside
+        // pitchFaderComponent at its bottom 23 px).
+        const int btnH    = 23;
+        const int sideGap = 8;
+
+        if (keyStepperComponent != nullptr)
+            keyStepperComponent->setBounds (pitchSidebar.removeFromTop (btnH));
+
+        pitchSidebar.removeFromTop (sideGap);
+
+        if (pitchFaderComponent != nullptr)
+            pitchFaderComponent->setBounds (pitchSidebar);
+
+        juce::ignoreUnused (waveformW);  // already used implicitly via mainRow
+    }
+
+    bounds.removeFromTop (kBelowFrameGap);
+
+    // --- Row 4: Controller Widget — LOOP strip, full content width ---
     auto controllerRow = bounds.removeFromTop (kControllerH);
     if (controllerWidget != nullptr)
-        controllerWidget->setBounds (controllerRow.withWidth (panelW + kSidebarGap + kPitchSidebarW));
+        controllerWidget->setBounds (controllerRow.withWidth (leftPanelW + kSidebarGap + kPitchSidebarW));
+
+    bounds.removeFromTop (kBelowFrameGap);
+
+    // --- Row 5: Hot Cue Pads (1-9) | CUE label (Frame 55) ---
+    auto cuePadsRow = bounds.removeFromTop (kCuePadsH);
+    {
+        auto cueTab = cuePadsRow.removeFromRight (kPitchSidebarW);
+        cuePadsRow.removeFromRight (kSidebarGap);
+
+        if (hotCuePadComponent != nullptr)
+            hotCuePadComponent->setBounds (cuePadsRow);
+
+        cueLabelBounds = cueTab;
+    }
 }
 
 // --- Mouse ---
@@ -713,6 +796,19 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
         }
     }
 
+    // Stems status changed → toggle SEPARATE overlay vs VOC/INST toggles
+    if (tree.hasType (IDs::Stems) && property == IDs::status)
+    {
+        if (tree.getParent() == deckTree)
+        {
+            juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
+            {
+                if (safeThis != nullptr)
+                    safeThis->updateStemsSidebarVisibility();
+            });
+        }
+    }
+
     // Waveform analysis done
     if (tree.hasType (IDs::Waveform) && property == IDs::analysisStatus)
     {
@@ -846,6 +942,22 @@ void DeckShellComponent::handlePendingLoad (const juce::String& path)
         return;
     }
 
+    // PRD-0039 AC-11: the file is present on disk. If the DB still says it's
+    // missing (e.g. external drive reconnected during the session), reset the
+    // flag and proceed with dispatch. The UPDATE is a no-op when is_missing=0.
+    if (auto* dbHandle = deckStateManager.getDatabase().getDbHandle())
+    {
+        sqlite3_stmt* upd = nullptr;
+        if (sqlite3_prepare_v2 (dbHandle,
+                "UPDATE library_tracks SET is_missing=0 WHERE file_path=? AND is_missing=1;",
+                -1, &upd, nullptr) == SQLITE_OK)
+        {
+            sqlite3_bind_text (upd, 1, path.toRawUTF8(), -1, SQLITE_TRANSIENT);
+            sqlite3_step (upd);
+            sqlite3_finalize (upd);
+        }
+    }
+
     // Format check — reject unsupported extensions (AC-13)
     if (! AudioFileLoader::isSupportedExtension (file.getFileExtension()))
     {
@@ -875,10 +987,12 @@ void DeckShellComponent::handlePendingLoad (const juce::String& path)
 
 void DeckShellComponent::showRelocateDialog (const juce::String& originalPath)
 {
+    // PRD-0039 AC-15: no file format filter — AudioFileLoader validates at
+    // dispatch time.
     auto fc = std::make_shared<juce::FileChooser> (
-        "Relocate Track",
+        "Choose replacement file",
         juce::File{},
-        "*.mp3;*.flac;*.wav;*.aiff;*.aif;*.ogg;*.m4a");
+        juce::String());
 
     fc->launchAsync (
         juce::FileBrowserComponent::openMode
@@ -890,9 +1004,35 @@ void DeckShellComponent::showRelocateDialog (const juce::String& originalPath)
                 return;
 
             const juce::String newPath = result.getFullPathName();
+            auto* handle = safeThis->deckStateManager.getDatabase().getDbHandle();
+
+            // PRD-0039 AC-16 / AC-33: deduplication check against other rows.
+            {
+                sqlite3_stmt* dup = nullptr;
+                bool isDuplicate = false;
+                if (sqlite3_prepare_v2 (handle,
+                        "SELECT 1 FROM library_tracks WHERE file_path=? AND file_path<>? LIMIT 1;",
+                        -1, &dup, nullptr) == SQLITE_OK)
+                {
+                    sqlite3_bind_text (dup, 1, newPath.toRawUTF8(),       -1, SQLITE_TRANSIENT);
+                    sqlite3_bind_text (dup, 2, originalPath.toRawUTF8(),  -1, SQLITE_TRANSIENT);
+                    isDuplicate = (sqlite3_step (dup) == SQLITE_ROW);
+                    sqlite3_finalize (dup);
+                }
+
+                if (isDuplicate)
+                {
+                    juce::AlertWindow::showMessageBoxAsync (
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Relocate Track",
+                        "This file is already in your library.",
+                        "OK",
+                        safeThis);
+                    return;
+                }
+            }
 
             // Persist new path to DB (AC-11)
-            auto* handle = safeThis->deckStateManager.getDatabase().getDbHandle();
             sqlite3_stmt* stmt = nullptr;
             if (sqlite3_prepare_v2 (handle,
                     "UPDATE library_tracks SET file_path=?, is_missing=0 WHERE file_path=?",
@@ -913,18 +1053,69 @@ void DeckShellComponent::showRelocateDialog (const juce::String& originalPath)
 
 void DeckShellComponent::removeTrackFromLibrary (const juce::String& filePath)
 {
-    // AC-12: delete from library_tracks and do not load anything
-    auto* handle = deckStateManager.getDatabase().getDbHandle();
-    sqlite3_stmt* stmt = nullptr;
-    if (sqlite3_prepare_v2 (handle,
-            "DELETE FROM library_tracks WHERE file_path=?",
-            -1, &stmt, nullptr) == SQLITE_OK)
-    {
-        const std::string ps = filePath.toStdString();
-        sqlite3_bind_text (stmt, 1, ps.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_step      (stmt);
-        sqlite3_finalize  (stmt);
-    }
+    // PRD-0039 AC-21: nested confirmation before destructive delete.
+    auto options = juce::MessageBoxOptions()
+        .withIconType (juce::MessageBoxIconType::WarningIcon)
+        .withTitle ("Remove from Library")
+        .withMessage ("This will also remove the track from all playlists. "
+                      "This action cannot be undone.")
+        .withButton ("Confirm Remove")
+        .withButton ("Cancel")
+        .withAssociatedComponent (this);
+
+    juce::AlertWindow::showAsync (options,
+        [safeThis = juce::Component::SafePointer (this), filePath] (int result)
+        {
+            if (safeThis == nullptr || result != 1)
+                return;
+
+            // PRD-0039 AC-23: atomic transaction — delete playlist_tracks first
+            // then library_tracks. Both commit together or neither does.
+            auto* handle = safeThis->deckStateManager.getDatabase().getDbHandle();
+            const std::string ps = filePath.toStdString();
+
+            bool ok = sqlite3_exec (handle, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) == SQLITE_OK;
+
+            if (ok)
+            {
+                sqlite3_stmt* del = nullptr;
+                if (sqlite3_prepare_v2 (handle,
+                        "DELETE FROM playlist_tracks WHERE track_id IN "
+                        "(SELECT id FROM library_tracks WHERE file_path=?);",
+                        -1, &del, nullptr) == SQLITE_OK)
+                {
+                    sqlite3_bind_text (del, 1, ps.c_str(), -1, SQLITE_TRANSIENT);
+                    ok = (sqlite3_step (del) == SQLITE_DONE);
+                    sqlite3_finalize (del);
+                }
+                else
+                {
+                    ok = false;
+                }
+            }
+
+            if (ok)
+            {
+                sqlite3_stmt* del = nullptr;
+                if (sqlite3_prepare_v2 (handle,
+                        "DELETE FROM library_tracks WHERE file_path=?;",
+                        -1, &del, nullptr) == SQLITE_OK)
+                {
+                    sqlite3_bind_text (del, 1, ps.c_str(), -1, SQLITE_TRANSIENT);
+                    ok = (sqlite3_step (del) == SQLITE_DONE);
+                    sqlite3_finalize (del);
+                }
+                else
+                {
+                    ok = false;
+                }
+            }
+
+            if (ok)
+                sqlite3_exec (handle, "COMMIT;", nullptr, nullptr, nullptr);
+            else
+                sqlite3_exec (handle, "ROLLBACK;", nullptr, nullptr, nullptr);
+        });
 }
 
 // --- HotCueManager::Listener ---
@@ -954,5 +1145,7 @@ void DeckShellComponent::updateLoopControlState()
         auto info = loopEngine->getLoopInfo();
         loopControlComponent->setActiveAutoLoopBeats (info.activeAutoBeats);
         loopControlComponent->setPendingLoopIn (info.pendingIn);
+        if (controllerWidget != nullptr)
+            controllerWidget->setActiveAutoLoopBeats (info.activeAutoBeats);
     }
 }

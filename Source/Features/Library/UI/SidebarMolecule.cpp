@@ -9,7 +9,7 @@ SidebarMolecule::SidebarMolecule()
 
 void SidebarMolecule::paint (juce::Graphics& g)
 {
-    g.fillAll (LibraryPalette::containerLow());
+    g.fillAll (LibraryPalette::surface());
 
     if (dragHoverIndex >= 0)
     {
@@ -20,8 +20,18 @@ void SidebarMolecule::paint (juce::Graphics& g)
     }
 }
 
+void SidebarMolecule::paintOverChildren (juce::Graphics& g)
+{
+    // 2px #2d2d2d border drawn on top of children so selected/hovered items
+    // can never overpaint the sidebar frame.
+    g.setColour (LibraryPalette::primary());
+    g.drawRect (getLocalBounds(), 2);
+}
+
 void SidebarMolecule::resized()
 {
+    // Items span the full sidebar width so the active highlight reaches the
+    // frame border. Horizontal text padding is applied inside SidebarItemAtom.
     const auto b = getLocalBounds();
     for (size_t i = 0; i < items.size(); ++i)
     {
@@ -143,6 +153,14 @@ void SidebarMolecule::setPreparationCount (int count)
     repaint();
 }
 
+void SidebarMolecule::setMissingCount (int count)
+{
+    missingCount = juce::jmax (0, count);
+    rebuild();
+    resized();
+    repaint();
+}
+
 void SidebarMolecule::setActiveCollection()
 {
     activeSection      = ActiveSection::Collection;
@@ -255,6 +273,8 @@ void SidebarMolecule::rebuild()
     {
         auto item = std::make_unique<SidebarItemAtom>();
         item->label    = "COLLECTION";
+        if (missingCount > 0)
+            item->secondaryLabel = juce::String (missingCount);
         item->isActive = (activeSection == ActiveSection::Collection);
         item->onClick  = [this] { selectCollection(); };
         addItem (std::move (item));

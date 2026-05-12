@@ -898,7 +898,7 @@ public:
             DetailWaveform detail;
             detail.setSize (800, 100);
 
-            std::array<HotCueInfo, 8> cues {};
+            std::array<HotCueInfo, 9> cues {};
             cues[0].active = true;
             cues[0].positionSamples = 44100;
             cues[0].colorIndex = 1;
@@ -922,7 +922,7 @@ public:
             OverviewWaveform overview;
             overview.setSize (800, 60);
 
-            std::array<HotCueInfo, 8> cues {};
+            std::array<HotCueInfo, 9> cues {};
             cues[0].active = true;
             cues[0].positionSamples = 44100;
             cues[0].colorIndex = 1;
@@ -945,7 +945,7 @@ public:
             DetailWaveform detail;
             detail.setSize (800, 100);
 
-            std::array<HotCueInfo, 8> cues {}; // All inactive
+            std::array<HotCueInfo, 9> cues {}; // All inactive
             detail.setHotCues (cues);
 
             juce::Image img (juce::Image::ARGB, 800, 100, true);
@@ -960,7 +960,7 @@ public:
             overview.setSize (800, 60);
             overview.setTotalSamples (7938000);
 
-            std::array<HotCueInfo, 8> cues {};
+            std::array<HotCueInfo, 9> cues {};
             for (int i = 0; i < 8; ++i)
             {
                 cues[static_cast<size_t> (i)].active = true;

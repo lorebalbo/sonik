@@ -95,11 +95,11 @@ void PitchFaderComponent::paint (juce::Graphics& g)
     // 2px thick, drawn before handle. Topmost/bottommost pair aligned with
     // the 2px track border (req 2). Gap of 1px from track sides.
     {
-        constexpr int numTicks = 9;
+        constexpr int numTicks = 5;
         g.setColour (kDark);
         for (int i = 0; i < numTicks; ++i)
         {
-            // ty aligns tick[0] with top border, tick[8] with bottom border
+            // ty aligns tick[0] with top border, tick[4] with bottom border
             int ty = track.getY() + i * (track.getHeight() - 2) / (numTicks - 1);
             bool isCenter = (i == numTicks / 2);
             int  tw = isCenter ? 14 : 10;

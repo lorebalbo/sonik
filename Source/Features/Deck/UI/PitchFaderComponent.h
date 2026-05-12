@@ -55,7 +55,7 @@ private:
     static constexpr float deadZone        = 0.10f;
     static constexpr int   handleHeight    = 16;   // req 5: shorter handle
     static constexpr int   trackMarginTop  = handleHeight / 2; // half handle height so top isn't clipped
-    static constexpr int   trackMarginBot  = 35;   // 12px gap + 23px range button (req 3)
+    static constexpr int   trackMarginBot  = 31;   // 8px gap + 23px range button
 
     static const std::array<int, 4> ranges;
 

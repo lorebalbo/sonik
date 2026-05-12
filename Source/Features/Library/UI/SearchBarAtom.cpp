@@ -75,12 +75,14 @@ void SearchBarAtom::paint (juce::Graphics& g)
 {
     g.fillAll (LibraryPalette::containerLowest());
     g.setColour (LibraryPalette::primary());
-    g.drawRect (getLocalBounds(), 1);
+    g.drawRect (getLocalBounds(), 2);
 }
 
 void SearchBarAtom::resized()
 {
-    auto b = getLocalBounds().reduced (1);
+    // Inset by 2 px so the editor child (which fills its bounds with
+    // #fdfdfd) cannot paint over the 2 px #2d2d2d frame border.
+    auto b = getLocalBounds().reduced (2);
     const int btnW = b.getHeight();
 
     if (clearBtn != nullptr && clearBtn->isVisible())

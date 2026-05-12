@@ -288,6 +288,7 @@ add_executable(SonikTests
     Tests/LibraryAnalysisQueueTests.cpp
     Tests/LibraryContextMenuTests.cpp
     Tests/SidebarMoleculeTests.cpp
+    Tests/MissingFileTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
     Source/Features/Library/LibraryAnalysisQueue.cpp

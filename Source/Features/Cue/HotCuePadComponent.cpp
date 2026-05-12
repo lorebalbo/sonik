@@ -172,13 +172,15 @@ juce::Rectangle<int> HotCuePadComponent::getPadBounds (int padIndex) const
     if (padIndex < 0 || padIndex >= numPads)
         return {};
 
-    // Center the kTotalW × kPadH strip within the component bounds.
-    const int xOff = juce::jmax (0, (getWidth()  - kTotalW) / 2);
-    const int yOff = juce::jmax (0, (getHeight() - kPadH)   / 2);
-
-    // Adjacent pads share a single padBorderW border (merged — no visible gap).
-    const int x = xOff + padIndex * (kPadW - padBorderW);
-    return { x, yOff, kPadW, kPadH };
+    const int w = getWidth();
+    const int h = getHeight();
+    // Distribute w across numPads with shared padBorderW borders.
+    const int totalBorderSavings = (numPads - 1) * padBorderW;
+    const int padW = (w + totalBorderSavings) / numPads;
+    const int x    = padIndex * (padW - padBorderW);
+    // Last pad takes any remaining pixels to avoid rounding gaps.
+    const int actualW = (padIndex == numPads - 1) ? (w - x) : padW;
+    return { x, 0, actualW, h };
 }
 
 int HotCuePadComponent::getPadIndexAt (int x, int y) const
@@ -199,16 +201,17 @@ void HotCuePadComponent::paint (juce::Graphics& g)
 {
     bool empty = isDeckEmpty();
 
-    // Fixed per-pad fill colors when a cue is set (A–H)
-    static const juce::Colour padActiveColors[8] = {
-        juce::Colour (0xFF18FFFF), // A: Cyan
-        juce::Colour (0xFF00B0FF), // B: Sky Blue
-        juce::Colour (0xFF2979FF), // C: Blue
-        juce::Colour (0xFF651FFF), // D: Deep Violet
-        juce::Colour (0xFFD500F9), // E: Violet
-        juce::Colour (0xFFF50057), // F: Magenta
-        juce::Colour (0xFFFF4081), // G: Pink
-        juce::Colour (0xFFFF8A80), // H: Salmon
+    // Per-pad fill colors when a cue is set (pads 1–9)
+    static const juce::Colour padActiveColors[9] = {
+        juce::Colour (0xFF18FFFF), // 1: Cyan
+        juce::Colour (0xFF00B0FF), // 2: Sky Blue
+        juce::Colour (0xFF2979FF), // 3: Blue
+        juce::Colour (0xFF651FFF), // 4: Deep Violet
+        juce::Colour (0xFFD500F9), // 5: Violet
+        juce::Colour (0xFFF50057), // 6: Magenta
+        juce::Colour (0xFFFF4081), // 7: Pink
+        juce::Colour (0xFFFF8A80), // 8: Salmon
+        juce::Colour (0xFFFF1744), // 9: Red
     };
 
     for (int i = 0; i < numPads; ++i)
@@ -267,10 +270,10 @@ void HotCuePadComponent::paint (juce::Graphics& g)
         g.setColour (border);
         g.drawRect (bounds, padBorderW);
 
-        // Pad letter (A–H), Space Mono 10px
+        // Pad number (1–9), Space Mono 13px
         g.setColour (textColor);
         g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-        g.drawText (juce::String::charToString (padLetters[i]), bounds, juce::Justification::centred);
+        g.drawText (juce::String (i + 1), bounds, juce::Justification::centred);
     }
 }
 

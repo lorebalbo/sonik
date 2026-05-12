@@ -217,11 +217,11 @@ void HotCueManager::setLabel (int padIndex, const juce::String& label)
 // State access
 // ---------------------------------------------------------------------------
 
-std::array<HotCueInfo, 8> HotCueManager::getHotCues() const
+std::array<HotCueInfo, 9> HotCueManager::getHotCues() const
 {
-    std::array<HotCueInfo, 8> cues;
+    std::array<HotCueInfo, 9> cues;
 
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 9; ++i)
     {
         auto cp = cuePointsNode.getChild (i);
         cues[static_cast<size_t> (i)].padIndex        = i;
@@ -333,7 +333,7 @@ juce::String HotCueManager::serializeCuesToJson() const
 {
     juce::Array<juce::var> arr;
 
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 9; ++i)
     {
         auto cp = cuePointsNode.getChild (i);
         if (! static_cast<bool> (cp.getProperty (IDs::isValid, false)))
@@ -354,7 +354,7 @@ juce::String HotCueManager::serializeCuesToJson() const
 void HotCueManager::parseCuesFromJson (const juce::String& json, int64_t totalSamples)
 {
     // First reset all cue points to defaults
-    for (int i = 0; i < 8; ++i)
+    for (int i = 0; i < 9; ++i)
     {
         auto cp = cuePointsNode.getChild (i);
         cp.setProperty (IDs::position,   static_cast<int64_t> (-1), nullptr);
@@ -381,7 +381,7 @@ void HotCueManager::parseCuesFromJson (const juce::String& json, int64_t totalSa
             continue;
 
         int padIdx = static_cast<int> (obj->getProperty ("pad"));
-        if (padIdx < 0 || padIdx >= 8)
+        if (padIdx < 0 || padIdx >= 9)
             continue;
 
         int64_t pos = static_cast<int64_t> (static_cast<double> (obj->getProperty ("pos")));

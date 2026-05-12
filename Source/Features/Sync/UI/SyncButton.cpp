@@ -18,19 +18,24 @@ void SyncButton::paintButton (juce::Graphics& g, bool /*isMouseOver*/, bool /*is
 {
     const auto bounds = getLocalBounds();
 
-    // Strict monochrome: active=black bg, inactive=white bg
-    const juce::Colour fill   = isSynced_ ? juce::Colour (0xFF000000) : juce::Colour (0xFFF9F9F9);
-    const juce::Colour text   = isSynced_ ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF000000);
-    constexpr juce::uint32 borderArgb = 0xFF000000;
+    // DESIGN.md strict monochrome palette — matches QuantizeButtonComponent / KeyLockButton
+    const juce::Colour kInk     { 0xFF2D2D2D };
+    const juce::Colour kSurface { 0xFFF9F9F9 };
+
+    // Active: dark fill + light text.  Inactive: light fill + dark text.
+    const juce::Colour fill = isSynced_ ? kInk     : kSurface;
+    const juce::Colour text = isSynced_ ? kSurface : kInk;
 
     g.setColour (fill);
     g.fillRect (bounds);
 
-    g.setColour (juce::Colour (borderArgb));
-    g.drawRect (bounds, 1);
+    // Mandatory 2px solid #2d2d2d border (DESIGN.md §5 Decks & Transport)
+    g.setColour (kInk);
+    g.drawRect (bounds, 2);
 
+    // Font identical to QUANTIZE / KEY buttons
     g.setColour (text);
-    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
     g.drawText ("SYNC", bounds, juce::Justification::centred);
 }
 

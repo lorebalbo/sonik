@@ -5,8 +5,9 @@
 #include "SearchBarAtom.h"
 
 /// Molecule: fixed-height (40 px) bar containing SearchBarAtom, KEY MATCH
-/// toggle, BPM MATCH toggle, BPM VISION float input, and half-time toggle.
-/// All toggle state is binary-inversion only; no animations.
+/// toggle, BPM MATCH toggle, and a BPM VISION float input flanked by inverted
+/// "±" and "BPM" chips (rendered with no gap to the editor). All toggle state
+/// is binary inversion only; no animations.
 class FilterBarMolecule final : public juce::Component
 {
 public:
@@ -14,27 +15,25 @@ public:
     std::function<void (bool)>                onKeyMatchToggled;
     std::function<void (bool)>                onBpmMatchToggled;
     std::function<void (double)>              onBpmVisionChanged;
-    std::function<void (bool)>                onHalfTimeToggled;
 
     FilterBarMolecule();
 
-    void paint   (juce::Graphics& g) override;
-    void resized () override;
+    void paint             (juce::Graphics& g) override;
+    void paintOverChildren (juce::Graphics& g) override;
+    void resized           () override;
 
     void focusSearchBar () { searchBar.grabFocus(); }
     void clearSearchBar () { searchBar.clear(); }
 
-    bool   isKeyMatchActive  () const { return keyMatchActive;  }
-    bool   isBpmMatchActive  () const { return bpmMatchActive;  }
-    bool   isHalfTimeEnabled () const { return halfTimeEnabled; }
-    double getBpmVision      () const { return bpmVision;       }
-    juce::String getText     () const { return searchBar.getText(); }
+    bool   isKeyMatchActive () const { return keyMatchActive; }
+    bool   isBpmMatchActive () const { return bpmMatchActive; }
+    double getBpmVision     () const { return bpmVision;      }
+    juce::String getText    () const { return searchBar.getText(); }
 
     // Programmatic state setters (do NOT fire callbacks)
-    void setKeyMatchActive  (bool active);
-    void setBpmMatchActive  (bool active);
-    void setHalfTimeEnabled (bool enabled);
-    void setBpmVisionValue  (double value);
+    void setKeyMatchActive (bool active);
+    void setBpmMatchActive (bool active);
+    void setBpmVisionValue (double value);
 
     // Suspended: visually marks active toggles as stored-but-inactive
     void setSuspended (bool suspended);
@@ -55,14 +54,12 @@ private:
 
     void toggleKeyMatch         ();
     void toggleBpmMatch         ();
-    void toggleHalfTime         ();
     void commitBpmVision        ();
     void updateBpmVisionOpacity ();
 
     SearchBarAtom    searchBar;
     SquareToggle     keyMatchBtn;
     SquareToggle     bpmMatchBtn;
-    SquareToggle     halfTimeBtn;
 
     juce::Label      bpmPrefixLabel;
     juce::TextEditor bpmVisionEditor;
@@ -70,7 +67,6 @@ private:
 
     bool   keyMatchActive     = false;
     bool   bpmMatchActive     = false;
-    bool   halfTimeEnabled    = false;
     double bpmVision          = 6.0;
     double lastValidBpmVision = 6.0;
 

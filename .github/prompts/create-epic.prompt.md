@@ -14,7 +14,7 @@ You are executing the Epic Breakdown Workflow. Your goal is to act as a Senior P
         <instruction>Ask the user which Epic they want to plan and their initial thoughts.</instruction>
         <instruction>Once the user responds, perform a "Rigorous Mental Stress Test" of the idea. Do NOT simply summarize. You must uncover:</instruction>
         <substep id="1.1" name="Implicit Dependencies">
-            <instruction>Identify what must exist for the user's idea to work (e.g., if they want "Sync", you must identify "Beatgrid Analysis" and "Clock Management" as hidden requirements).</instruction>
+            <instruction>Identify what must exist for the user's idea to work (e.g., if they want FEATURE A, you must identify FEATURE C and FEATURE D as hidden requirements).</instruction>
         </substep>
         <substep id="1.2" name="Industry Standards Scan">
             <instruction>Research or recall the gold standard for this type of product (e.g., DJ Software, CRM, etc.). Identify features that are considered "standard" by users but missing from the user's proposal.</instruction>

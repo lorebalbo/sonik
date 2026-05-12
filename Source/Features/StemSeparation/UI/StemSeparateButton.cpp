@@ -214,34 +214,93 @@ void StemSeparateButton::paint (juce::Graphics& g)
         // Slightly lighter fill shows completed portion within dark background
         g.setColour (juce::Colour (0xFF505050));
         auto fillBounds = bounds.toFloat();
-        fillBounds = fillBounds.withWidth (animatedProgress * fillBounds.getWidth());
+        const bool vertical = bounds.getHeight() > bounds.getWidth();
+        if (vertical)
+        {
+            // Fill from the bottom up so progress reads naturally on a vertical bar
+            const float h = animatedProgress * fillBounds.getHeight();
+            fillBounds = fillBounds.withTop (fillBounds.getBottom() - h);
+        }
+        else
+        {
+            fillBounds = fillBounds.withWidth (animatedProgress * fillBounds.getWidth());
+        }
         g.fillRect (fillBounds);
 
         // Border
         g.setColour (kDark);
         g.drawRect (bounds, 2);
 
-        // Phase label (top line, smaller)
         const auto& labels = phaseLabels();
         juce::String label = labels[currentLabelIndex];
-        auto topHalf   = bounds.withHeight (bounds.getHeight() / 2);
-        auto bottomHalf = bounds.withTrimmedTop (bounds.getHeight() / 2);
+        juce::String pct = juce::String (juce::roundToInt (animatedProgress * 100)) + " %";
 
-        g.setColour (fg);
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.5f, juce::Font::plain));
-        g.drawText (label, topHalf.reduced (3, 0), juce::Justification::centredLeft, false);
+        if (vertical)
+        {
+            // Draw both lines rotated 90° CCW, centred in the bounds.
+            juce::Graphics::ScopedSaveState save (g);
+            const float cx = static_cast<float> (bounds.getCentreX());
+            const float cy = static_cast<float> (bounds.getCentreY());
+            g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, cx, cy));
 
-        // Percentage (bottom line, larger)
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.5f, juce::Font::bold));
-        g.drawText (juce::String (juce::roundToInt (animatedProgress * 100)) + " %",
-                    bottomHalf.reduced (3, 0), juce::Justification::centredLeft, false);
+            // Rotated rect: width ↔ height swapped around the centre.
+            juce::Rectangle<int> rotated (
+                static_cast<int> (cx) - bounds.getHeight() / 2,
+                static_cast<int> (cy) - bounds.getWidth()  / 2,
+                bounds.getHeight(),
+                bounds.getWidth());
+
+            auto leftHalf  = rotated.withWidth (rotated.getWidth() / 2);
+            auto rightHalf = rotated.withTrimmedLeft (rotated.getWidth() / 2);
+
+            g.setColour (fg);
+            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.5f, juce::Font::plain));
+            g.drawText (label, leftHalf.reduced (3, 0), juce::Justification::centredRight, false);
+
+            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.5f, juce::Font::bold));
+            g.drawText (pct, rightHalf.reduced (3, 0), juce::Justification::centredLeft, false);
+        }
+        else
+        {
+            // Phase label (top line, smaller)
+            auto topHalf    = bounds.withHeight (bounds.getHeight() / 2);
+            auto bottomHalf = bounds.withTrimmedTop (bounds.getHeight() / 2);
+
+            g.setColour (fg);
+            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.5f, juce::Font::plain));
+            g.drawText (label, topHalf.reduced (3, 0), juce::Justification::centredLeft, false);
+
+            // Percentage (bottom line, larger)
+            g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.5f, juce::Font::bold));
+            g.drawText (pct, bottomHalf.reduced (3, 0), juce::Justification::centredLeft, false);
+        }
         return;
     }
 
     // ── Label ─────────────────────────────────────────────────────────────
     g.setColour (fg);
     g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-    g.drawText (text, bounds.reduced (4, 0), juce::Justification::centred, false);
+
+    if (bounds.getHeight() > bounds.getWidth())
+    {
+        // Vertical sidebar: draw the label rotated 90° CCW so it reads bottom-to-top.
+        juce::Graphics::ScopedSaveState save (g);
+        const float cx = static_cast<float> (bounds.getCentreX());
+        const float cy = static_cast<float> (bounds.getCentreY());
+        g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, cx, cy));
+
+        juce::Rectangle<int> rotated (
+            static_cast<int> (cx) - bounds.getHeight() / 2,
+            static_cast<int> (cy) - bounds.getWidth()  / 2,
+            bounds.getHeight(),
+            bounds.getWidth());
+
+        g.drawText (text, rotated.reduced (4, 0), juce::Justification::centred, false);
+    }
+    else
+    {
+        g.drawText (text, bounds.reduced (4, 0), juce::Justification::centred, false);
+    }
 }
 // ---------------------------------------------------------------------------
 void StemSeparateButton::mouseDown (const juce::MouseEvent& /*e*/)

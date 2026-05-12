@@ -27,13 +27,15 @@ public:
 
     SidebarMolecule();
 
-    void paint   (juce::Graphics& g) override;
-    void resized () override;
+    void paint             (juce::Graphics& g) override;
+    void paintOverChildren (juce::Graphics& g) override;
+    void resized           () override;
 
     /// Called by LibraryComponent after querying the DB.
     void setFolders   (const juce::StringArray& paths);
     void setPlaylists (const std::vector<PlaylistInfo>& items);
     void setPreparationCount (int count);
+    void setMissingCount (int count);
 
     void setActiveCollection ();
     void setActiveFolder     (const juce::String& path);
@@ -74,6 +76,7 @@ private:
     juce::StringArray                          folderPaths;
     std::vector<PlaylistInfo>                  playlists;
     int                                        preparationCount = 0;
+    int                                        missingCount     = 0;
 
     ActiveSection activeSection   = ActiveSection::Collection;
     juce::String  activeFolder;

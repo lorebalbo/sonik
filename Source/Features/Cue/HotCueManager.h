@@ -33,7 +33,7 @@ public:
 
     // --- State access ---
 
-    std::array<HotCueInfo, 8> getHotCues() const;
+    std::array<HotCueInfo, 9> getHotCues() const;
 
     // --- Audio state (live playhead from audio thread) ---
 

@@ -173,6 +173,12 @@ void WatchFolderScanner::rescanFolder (const juce::File& folder)
     startScan();
 }
 
+void WatchFolderScanner::setReconciliationProgressCallback (std::function<void()> callback)
+{
+    std::lock_guard<std::mutex> lock (reconciliationCallbackMutex);
+    reconciliationProgressCallback = std::move (callback);
+}
+
 // =============================================================================
 // SHA-256 helper
 // =============================================================================
@@ -686,6 +692,27 @@ void WatchFolderScanner::runReconciliationPass (sqlite3* bgDb)
 {
     if (threadShouldExit()) return;
 
+    constexpr int kBatchSize = 25;
+    int           pendingFlips = 0;
+
+    auto firePendingProgress = [this]
+    {
+        std::function<void()> cb;
+        {
+            std::lock_guard<std::mutex> lock (reconciliationCallbackMutex);
+            cb = reconciliationProgressCallback;
+        }
+        if (! cb)
+            return;
+
+        juce::WeakReference<WatchFolderScanner> weakThis (this);
+        juce::MessageManager::callAsync ([weakThis, cb]()
+        {
+            if (weakThis.get() != nullptr)
+                cb();
+        });
+    };
+
     // ---- Mark currently-present records as missing if the file has gone ----
     {
         struct Row { int64_t id; juce::String path; };
@@ -723,6 +750,12 @@ void WatchFolderScanner::runReconciliationPass (sqlite3* bgDb)
                     sqlite3_bind_int64 (upd, 1, row.id);
                     sqlite3_step (upd);
                     sqlite3_finalize (upd);
+                }
+
+                if (++pendingFlips >= kBatchSize)
+                {
+                    firePendingProgress();
+                    pendingFlips = 0;
                 }
             }
         }
@@ -768,7 +801,16 @@ void WatchFolderScanner::runReconciliationPass (sqlite3* bgDb)
                     sqlite3_step (upd);
                     sqlite3_finalize (upd);
                 }
+
+                if (++pendingFlips >= kBatchSize)
+                {
+                    firePendingProgress();
+                    pendingFlips = 0;
+                }
             }
         }
     }
+
+    // Always fire one final progress callback so listeners catch the tail.
+    firePendingProgress();
 }

@@ -2,6 +2,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <functional>
+#include <memory>
 #include <set>
 #include <unordered_map>
 #include <vector>
@@ -43,7 +44,9 @@ public:
         ColDuration  = 6,
         ColRating    = 7,
         ColPlayed    = 8,
-        ColStatus    = 9
+        ColStatus    = 9,
+        ColPreview   = 10,
+        ColAlbum     = 11
     };
 
     TrackTableMolecule();
@@ -92,7 +95,10 @@ private:
     static juce::String formatDuration (double seconds);
     static bool isAllowedStatus (const juce::String& status);
 
+    class HeaderLnF; // Custom LookAndFeel for the table header (impl in .cpp).
+
     juce::TableListBox tableBox;
+    std::unique_ptr<juce::LookAndFeel> headerLnF;
     juce::SparseSet<int> selectionBeforeLastChange;
     juce::SparseSet<int> currentSelection;
     bool playlistReorderEnabled = false;

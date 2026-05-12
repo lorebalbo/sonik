@@ -6,20 +6,24 @@ void SidebarItemAtom::paint (juce::Graphics& g)
     const auto bg   = isActive ? LibraryPalette::primary() : LibraryPalette::surface();
     const auto text = isActive ? LibraryPalette::surface() : LibraryPalette::primary();
 
+    // Fill the full row so the active selection reaches the sidebar borders.
     g.fillAll (bg);
 
-    auto b = getLocalBounds();
+    // Inset only the TEXT content (left & right) so it sits inside the
+    // 8 px padding the molecule expects, without shrinking the highlight.
+    constexpr int kHPad = 8;
+    auto b = getLocalBounds().reduced (kHPad, 0);
     b.removeFromLeft (isIndented ? 20 : 6);
 
     g.setColour (text);
-    g.setFont (LibraryPalette::boldLabelFont());
+    g.setFont (LibraryPalette::bodyFont (13.0f));
 
     auto countArea = b.removeFromRight (secondaryLabel.isNotEmpty() ? 42 : 0);
     g.drawText (label.toUpperCase(), b, juce::Justification::centredLeft, true);
 
     if (secondaryLabel.isNotEmpty())
     {
-        g.setFont (LibraryPalette::bodyFont (10.0f));
+        g.setFont (LibraryPalette::bodyFont (13.0f));
         g.drawText (secondaryLabel, countArea.reduced (4, 0), juce::Justification::centredRight, true);
     }
 }

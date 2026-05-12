@@ -57,7 +57,7 @@ public:
         detail.setBeatGridData (std::move (data));
     }
 
-    void setHotCues (const std::array<HotCueInfo, 8>& cues)
+    void setHotCues (const std::array<HotCueInfo, 9>& cues)
     {
         overview.setHotCues (cues);
         detail.setHotCues (cues);
@@ -105,7 +105,7 @@ private:
     OverviewWaveform overview;
     DetailWaveform   detail;
 
-    static constexpr int overviewHeight = 60;
+    static constexpr int overviewHeight = 36;  // reduced by 40% (was 60)
     static constexpr int gap            = 2;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveformComponent)

@@ -28,7 +28,7 @@ You must strictly adhere to these patterns to ensure a scalable, "vibe-coded" ar
 
 **2.1. UI Design Language (Mandatory)**
 - All UI code **must** strictly conform to the design system defined in `DESIGN.md`. This is non-negotiable.
-- Key constraints from `DESIGN.md` to always enforce: strict monochrome palette (`#000000` / `#f9f9f9`), zero `border-radius`, dithered patterns instead of gradients, pixel-art icons, and tonal layering for depth.
+- Key constraints from `DESIGN.md` to always enforce: strict monochrome palette (`#2d2d2d` / `#fdfdfd`), `Space Mono Regular` font, `2px solid #2d2d2d` borders on all buttons with explicit active/inactive fill inversion, zero `border-radius`, dithered patterns instead of gradients, pixel-art icons, and tonal layering for depth.
 - Before writing any UI component, consult `DESIGN.md` for the relevant component specification (waveforms, knobs, faders, jog wheels, library, etc.).
 
 **3. State Management (Single Source of Truth)**

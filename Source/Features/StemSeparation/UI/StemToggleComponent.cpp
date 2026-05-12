@@ -94,7 +94,31 @@ void StemToggleComponent::paint (juce::Graphics& g)
     }
 
     g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-    g.drawText (labelText, bounds, juce::Justification::centred, false);
+
+    // When the cell is taller than wide (vertical stems sidebar) draw the
+    // label rotated 90° counter-clockwise so it reads bottom-to-top, matching
+    // the Figma deck spec.
+    if (bounds.getHeight() > bounds.getWidth())
+    {
+        juce::Graphics::ScopedSaveState save (g);
+        const float cx = static_cast<float> (bounds.getCentreX());
+        const float cy = static_cast<float> (bounds.getCentreY());
+        g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, cx, cy));
+
+        // After rotation, swap the rect's width/height around the centre so
+        // drawText centres correctly in the rotated coordinate system.
+        juce::Rectangle<int> rotated (
+            static_cast<int> (cx) - bounds.getHeight() / 2,
+            static_cast<int> (cy) - bounds.getWidth()  / 2,
+            bounds.getHeight(),
+            bounds.getWidth());
+
+        g.drawText (labelText, rotated, juce::Justification::centred, false);
+    }
+    else
+    {
+        g.drawText (labelText, bounds, juce::Justification::centred, false);
+    }
 }
 
 // ---------------------------------------------------------------------------
