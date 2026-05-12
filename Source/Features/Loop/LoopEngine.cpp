@@ -94,7 +94,7 @@ void LoopEngine::autoLoop (float beatCount)
     int64_t loopIn;
     if (quantize && beatGridData != nullptr && beatGridData->beatIntervalSamples > 0.0)
     {
-        loopIn = QuantizeService::getPreviousBeatBefore (
+        loopIn = QuantizeService::snapToNearestBeat (
             playhead, beatGridData->anchorSample, beatGridData->beatIntervalSamples);
     }
     else if (quantize && audioState != nullptr)
@@ -102,7 +102,7 @@ void LoopEngine::autoLoop (float beatCount)
         auto anchor   = audioState->beatgridAnchor.load (std::memory_order_relaxed);
         auto bgInt    = audioState->beatgridInterval.load (std::memory_order_relaxed);
         if (bgInt > 0.0)
-            loopIn = QuantizeService::getPreviousBeatBefore (playhead, anchor, bgInt);
+            loopIn = QuantizeService::snapToNearestBeat (playhead, anchor, bgInt);
         else
             loopIn = playhead;
     }

@@ -36,6 +36,13 @@ public:
                  float* const* output, int maxOutputSamples,
                  double timeRatio);
 
+    /// Set the pitch scale.  1.0 = no shift; 2.0 = one octave up; 0.5 = one octave down.
+    /// For semitone shifts, pass pow(2.0, semitones / 12.0).
+    /// Audio-thread safe in RealTime mode (no allocation, no locks).
+    /// The actual setPitchScale() call is only forwarded to RubberBand when the
+    /// value changes meaningfully, avoiding redundant internal phase resets.
+    void setPitchScale (double scale);
+
     /// Flush internal buffers. Call when loading a new track or seeking.
     /// Audio-thread safe in RealTime mode.
     void reset();
@@ -67,4 +74,5 @@ public:
 private:
     std::unique_ptr<RubberBand::RubberBandStretcher> stretcher;
     double lastTimeRatio = 1.0;
+    double lastPitchScale = 1.0;
 };

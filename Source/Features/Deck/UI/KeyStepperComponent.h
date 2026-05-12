@@ -7,6 +7,7 @@
 
 /// < KEY > stepper that shows the current Camelot key (adjusted by keyShift semitones)
 /// and lets the user nudge the key up or down by a semitone.
+/// Range is signed −12..+12 semitones with clamping (no wrap).
 /// Visual style: three adjacent cells separated by 2px borders:
 ///   [<] [A9] [>]  matching the Figma "Stepper" component.
 class KeyStepperComponent final : public juce::Component,
@@ -34,9 +35,14 @@ public:
         auto rightBtn = bounds.removeFromRight (arrowW);
         auto labelBox = bounds;
 
-        // Background for arrow buttons (light)
-        g.setColour (juce::Colour (0xFFF9F9F9));
+        // Background for arrow buttons.  When at the clamp edge, the arrow
+        // cell is filled with a mid-grey to communicate "disabled".
+        const juce::Colour arrowBg     (0xFFF9F9F9);
+        const juce::Colour arrowBgDim  (0xFFB0B0B0);
+
+        g.setColour (keyShift <= -12 ? arrowBgDim : arrowBg);
         g.fillRect (leftBtn);
+        g.setColour (keyShift >= 12 ? arrowBgDim : arrowBg);
         g.fillRect (rightBtn);
 
         // Background for label (dark — active display)
@@ -101,7 +107,8 @@ private:
 
     void refreshState()
     {
-        keyShift = static_cast<int> (tree.getProperty (IDs::keyShift, 0));
+        keyShift = juce::jlimit (-12, 12,
+                                  static_cast<int> (tree.getProperty (IDs::keyShift, 0)));
 
         auto keyTree = tree.getChildWithName (IDs::KeyInfo);
         if (keyTree.isValid())
@@ -112,7 +119,11 @@ private:
 
     void adjustShift (int delta)
     {
-        keyShift = (keyShift + delta + 24) % 24;  // wrap within 0..23
+        int newShift = juce::jlimit (-12, 12, keyShift + delta);
+        if (newShift == keyShift)
+            return;  // at clamp edge
+
+        keyShift = newShift;
         tree.setProperty (IDs::keyShift, keyShift, nullptr);
         repaint();
     }
@@ -120,8 +131,18 @@ private:
     juce::String getDisplayKey() const
     {
         if (baseKeyIndex < 0)
-            return "--";
-        int adjusted = (baseKeyIndex + keyShift) % 24;
+        {
+            // No key detected yet — show the signed semitone offset.
+            if (keyShift == 0)  return "--";
+            return (keyShift > 0 ? juce::String ("+") : juce::String())
+                   + juce::String (keyShift);
+        }
+
+        // Camelot wheel has 24 entries (12 keys × 2 modes major/minor).
+        // The key changes by one Camelot index per semitone within the same
+        // mode; mode (major/minor) does not change with pitch shift.
+        // Use positive modulo to handle negative shifts safely.
+        int adjusted = ((baseKeyIndex + keyShift) % 24 + 24) % 24;
         return KeyUtils::toCamelot (adjusted);
     }
 

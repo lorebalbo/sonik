@@ -1006,29 +1006,43 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
 
         // Check key lock state
         bool keyLockOn = audioState->keyLockEnabled.load (std::memory_order_relaxed);
-        auto* stretcher = source->timeStretcher.load (std::memory_order_acquire);
-        // Use the stretcher whenever key lock is on — even at speed=1.0 the
-        // stretcher runs in passthrough so its internal buffers stay warm.
-        // This prevents a cold-start click when the pitch fader first moves.
-        bool useStretcher = keyLockOn && stretcher != nullptr && speed > 0.01f;
 
-        // Detect key lock toggle — apply a short crossfade between
+        // PRD-0025: key stepper transposition in semitones (range −12..+12).
+        // The stretcher's pitch shift is computed as pow(2, semitones/12).
+        int keyShiftSemis = audioState->keyShiftSemitones.load (std::memory_order_relaxed);
+        const double pitchScale = (keyShiftSemis == 0)
+            ? 1.0
+            : std::pow (2.0, static_cast<double> (keyShiftSemis) / 12.0);
+
+        // The stretcher is "engaged" (its output replaces the vinyl path)
+        // whenever key lock is on OR a non-zero key shift is requested.
+        // The stretcher is always FED below if it exists so that toggling
+        // engaged/disengaged is gap-free.
+        const bool stretcherEngaged = keyLockOn || (keyShiftSemis != 0);
+
+        auto* stretcher = source->timeStretcher.load (std::memory_order_acquire);
+        bool useStretcher = stretcherEngaged && stretcher != nullptr && speed > 0.01f;
+
+        // Detect engagement transition — apply a short crossfade between
         // vinyl and stretched paths to avoid a click at the transition.
         // The stretcher runs continuously (always fed) so its output is
         // valid at all times, making the crossfade seamless.
-        if (keyLockOn != source->wasKeyLockEnabled)
+        if (stretcherEngaged != source->wasKeyLockEnabled)
         {
-            source->wasKeyLockEnabled = keyLockOn;
+            source->wasKeyLockEnabled = stretcherEngaged;
             source->keyLockFadeSamplesRemaining = DeckAudioSource::KEY_LOCK_FADE_LENGTH;
-            source->keyLockFadingIn  = keyLockOn;   // TO stretched
-            source->keyLockFadingOut = ! keyLockOn;  // FROM stretched
-            // No playhead adjustment needed: the stretcher is always pre-fed
-            // from (playheadAccumulator + stretcherLatency), so after
-            // stretcherLatency samples of pipeline delay its output already
-            // represents audio at playheadAccumulator — identical position to
-            // the vinyl path.  Any adjustment here would inject a false phase
-            // error that PhaseLockEngine would detect and try to correct,
-            // causing audible sync drift.
+            source->keyLockFadingIn  = stretcherEngaged;   // TO stretched
+            source->keyLockFadingOut = ! stretcherEngaged; // FROM stretched
+
+            // PRD-0011: Eliminate first-movement crackle.
+            //
+            // When the stretcher becomes engaged, snap smoothedTimeRatio to
+            // the current target instantly so the very first slider movement
+            // ramps from the correct baseline (1.0 / current speed) rather
+            // than from a stale 1.0.  The KEY_LOCK_FADE crossfade hides any
+            // discontinuity at the toggle itself.
+            if (stretcherEngaged && speed > 0.01f)
+                source->smoothedTimeRatio = 1.0 / static_cast<double> (speed);
         }
 
         // --- Time-stretched path ---
@@ -1045,6 +1059,18 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             // R3 engine's pipeline from destabilising (crackling) when the
             // pitch fader is moved while key lock is active.
             double targetTimeRatio = 1.0 / static_cast<double> (speed);
+
+            // PRD-0011: Keep R3 permanently in "active stretching" mode by
+            // never letting the target ratio settle at exactly 1.0.  R3 uses
+            // a different numerical path at ratio == 1.0 than at ratio != 1.0;
+            // the transition between those paths is what produces the
+            // first-movement crackle.  A bias of 1e-4 corresponds to ~0.002
+            // cent — three orders of magnitude below the threshold of human
+            // pitch perception — yet keeps R3 in active mode at all times.
+            constexpr double activeBias = 1.0e-4;
+            if (std::abs (targetTimeRatio - 1.0) < activeBias)
+                targetTimeRatio = 1.0 + activeBias;
+
             double& sRatio = source->smoothedTimeRatio;
             double delta = targetTimeRatio - sRatio;
             double maxD  = DeckAudioSource::STRETCH_RATIO_MAX_DELTA;
@@ -1104,6 +1130,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             const float* inPtrs[2] = { source->stretchInL, source->stretchInR };
             float* outPtrs[2] = { source->stretchOutL, source->stretchOutR };
 
+            // PRD-0025: apply key stepper pitch shift (semitone-based).
+            // setPitchScale is a no-op when the value hasn't changed.
+            stretcher->setPitchScale (pitchScale);
+
             stretchedAvail = stretcher->process (
                 inPtrs, sourceSamples, outPtrs, numSamples, sRatio);
         }
@@ -1139,7 +1169,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         bool useStemStretchers = false;
         int stemStretchedAvail[DeckAudioSource::NUM_STEMS] = {};
 
-        if (stemActive && keyLockOn && speed > 0.01f
+        if (stemActive && stretcherEngaged && speed > 0.01f
             && ! source->stemStretchDegraded.load (std::memory_order_relaxed))
         {
             auto* stemStr0 = source->stemTimeStretchers[0].load(std::memory_order_acquire);
@@ -1207,6 +1237,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
 
                     const float* inPtrs[2] = { source->stemStretchInL[s], source->stemStretchInR[s] };
                     float* outPtrs[2] = { source->stemStretchOutL[s], source->stemStretchOutR[s] };
+
+                    // PRD-0025: apply key stepper pitch shift to each stem stretcher.
+                    stemStretcher->setPitchScale (pitchScale);
 
                     stemStretchedAvail[s] = stemStretcher->process(inPtrs, sourceSamples, outPtrs, numSamples, timeRatio);
                 }

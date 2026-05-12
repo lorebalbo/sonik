@@ -28,6 +28,10 @@ struct DeckAudioState
     std::atomic<bool>     slipEnabled     { false };
     std::atomic<bool>     keyLockEnabled  { false };
 
+    // Key stepper transposition in semitones, range −12..+12 (PRD-0025).
+    // Audio thread reads, message thread writes via AudioStateSync.
+    std::atomic<int>      keyShiftSemitones { 0 };
+
     // BeatGrid parameters (PRD-0008/0013) – audio thread reads, message thread writes
     std::atomic<int64_t>  beatgridAnchor   { 0 };
     std::atomic<double>   beatgridInterval { 0.0 };
@@ -93,6 +97,13 @@ private:
                                 std::memory_order_relaxed);
         state.keyLockEnabled.store (static_cast<bool> (tree.getProperty (IDs::keyLockEnabled, false)),
                                    std::memory_order_relaxed);
+
+        // PRD-0025: key stepper transposition (semitones, clamped to −12..+12)
+        {
+            int shift = static_cast<int> (tree.getProperty (IDs::keyShift, 0));
+            shift = juce::jlimit (-12, 12, shift);
+            state.keyShiftSemitones.store (shift, std::memory_order_relaxed);
+        }
 
         auto playhead = tree.getChildWithName (IDs::Playhead);
         if (playhead.isValid())
@@ -198,6 +209,12 @@ private:
                 state.slipEnabled.store (static_cast<bool> (changedTree[property]), std::memory_order_relaxed);
             else if (property == IDs::keyLockEnabled)
                 state.keyLockEnabled.store (static_cast<bool> (changedTree[property]), std::memory_order_relaxed);
+            else if (property == IDs::keyShift)
+            {
+                int shift = static_cast<int> (changedTree[property]);
+                shift = juce::jlimit (-12, 12, shift);
+                state.keyShiftSemitones.store (shift, std::memory_order_relaxed);
+            }
         }
         else if (changedTree.hasType (IDs::Playhead) && property == IDs::position)
         {

@@ -970,9 +970,16 @@ void DeckShellComponent::handlePendingLoad (const juce::String& path)
         return;
     }
 
-    // Auto-disengage SYNC if the deck is currently playing (AC-15)
+    // Auto-disengage SYNC and force-stop a currently playing deck (AC-15).
+    // DeckStateManager::loadTrack refuses to write metadata while a deck is in
+    // the "playing" state, so without this stop the new title/artist/key/BPM
+    // never reach the ValueTree and the deck header keeps displaying the
+    // previous track's info.
     if (deckTree.getProperty (IDs::playbackStatus).toString() == "playing")
+    {
         deckTree.setProperty (IDs::syncEnabled, false, nullptr);
+        deckStateManager.setPlaybackStatus (deckId, "stopped");
+    }
 
     // Make this deck active
     deckStateManager.setActiveDeck (deckId);

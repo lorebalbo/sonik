@@ -56,10 +56,28 @@ int TimeStretcher::process (const float* const* input, int inputSamples,
     return toRetrieve;
 }
 
+void TimeStretcher::setPitchScale (double scale)
+{
+    if (stretcher == nullptr)
+        return;
+
+    // Clamp to a sensible range (one octave each direction is more than
+    // we need for a ±12-semitone key stepper; the upper bound is generous).
+    if (scale < 0.5)  scale = 0.5;
+    if (scale > 2.0)  scale = 2.0;
+
+    if (std::abs (scale - lastPitchScale) > 1.0e-9)
+    {
+        stretcher->setPitchScale (scale);
+        lastPitchScale = scale;
+    }
+}
+
 void TimeStretcher::reset()
 {
     stretcher->reset();
     lastTimeRatio = 1.0;
+    lastPitchScale = 1.0;
 }
 
 int TimeStretcher::getLatency() const
