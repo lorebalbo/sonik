@@ -217,6 +217,17 @@ target_sources(Sonik PRIVATE
     Source/Features/Library/UI/LibraryComponent.cpp
     Source/Features/Library/UI/LibraryStatusText.h
     Source/Features/Library/UI/LibraryStatusText.cpp
+    Source/Features/Midi/Sha1.h
+    Source/Features/Midi/MidiInboundEvent.h
+    Source/Features/Midi/MidiInputSubscriber.h
+    Source/Features/Midi/MidiOpenResult.h
+    Source/Features/Midi/MidiDeviceRecord.h
+    Source/Features/Midi/DeviceListChangeListener.h
+    Source/Features/Midi/MidiHostInterface.h
+    Source/Features/Midi/JuceMidiHost.h
+    Source/Features/Midi/JuceMidiHost.cpp
+    Source/Features/Midi/MidiDeviceManager.h
+    Source/Features/Midi/MidiDeviceManager.cpp
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -234,6 +245,8 @@ target_link_libraries(Sonik PRIVATE
     juce::juce_gui_extra
     juce::juce_audio_utils
     juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_audio_basics
     juce::juce_cryptography
     juce::juce_data_structures
     juce::juce_core
@@ -289,6 +302,7 @@ add_executable(SonikTests
     Tests/LibraryContextMenuTests.cpp
     Tests/SidebarMoleculeTests.cpp
     Tests/MissingFileTests.cpp
+    Tests/MidiDeviceManagerTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
     Source/Features/Library/LibraryAnalysisQueue.cpp
@@ -336,6 +350,8 @@ add_executable(SonikTests
     Source/Features/Sync/PhaseLockEngine.cpp
     Source/Features/Sync/UI/SyncButton.cpp
     Source/Features/Sync/UI/MasterButton.cpp
+    Source/Features/Midi/JuceMidiHost.cpp
+    Source/Features/Midi/MidiDeviceManager.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})
@@ -353,6 +369,8 @@ target_link_libraries(SonikTests PRIVATE
     juce::juce_gui_extra
     juce::juce_audio_utils
     juce::juce_audio_formats
+    juce::juce_audio_devices
+    juce::juce_audio_basics
     juce::juce_cryptography
     juce::juce_data_structures
     juce::juce_core

@@ -79,6 +79,30 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
                       .getChildFile ("sonik.db");
 
     trackDatabase    = std::make_unique<TrackDatabase> (dbPath);
+
+    // MIDI I/O subsystem (PRD-0040) — constructed before any feature that
+    // may later subscribe to MIDI events. Enumeration + hot-plug only;
+    // no devices are opened automatically at this stage.
+    midiHost          = std::make_unique<sonik::midi::JuceMidiHost>();
+    midiDeviceManager = std::make_unique<sonik::midi::MidiDeviceManager> (*midiHost);
+    midiDeviceManager->initialise();
+
+    // Attach diagnostic logger so manual hot-plug testing is observable.
+    midiDiagnosticLogger = std::make_unique<MidiDiagnosticLogger>();
+    midiDiagnosticLogger->manager = midiDeviceManager.get();
+    midiDeviceManager->addDeviceListChangeListener (midiDiagnosticLogger.get());
+    {
+        const auto initial = midiDeviceManager->getDevices();
+        DBG ("[MIDI] Startup enumeration: " << (int) initial.size() << " device(s)");
+        for (const auto& d : initial)
+            DBG ("[MIDI]   id=" << juce::String::toHexString ((juce::int64) d.deviceId)
+                 << "  " << (d.isInput ? "IN " : "OUT")
+                 << "  mfg='"   << d.manufacturer
+                 << "' name='" << d.productName
+                 << "' ordinal=" << d.ordinal
+                 << " connected=" << (d.isConnected ? 1 : 0));
+    }
+
     deckStateManager = std::make_unique<DeckStateManager> (*trackDatabase);
 
     deckStateManager->restoreSession();
@@ -218,6 +242,16 @@ void SonikApplication::shutdown()
     masterClockPublisher.reset();
 
     deckStateManager.reset();
+
+    // Tear down MIDI before the database (PRD-0040). Destruction stops the
+    // hot-plug timer and closes every open MIDI input/output on the Message
+    // thread.
+    if (midiDeviceManager != nullptr && midiDiagnosticLogger != nullptr)
+        midiDeviceManager->removeDeviceListChangeListener (midiDiagnosticLogger.get());
+    midiDiagnosticLogger.reset();
+    midiDeviceManager.reset();
+    midiHost.reset();
+
     trackDatabase.reset();
 }
 
@@ -243,4 +277,42 @@ void SonikApplication::systemRequestedQuit()
     }
 
     quit();
+}
+
+//==============================================================================
+// PRD-0040 diagnostic logger implementation
+namespace
+{
+    static juce::String midiDeviceDescription (sonik::midi::MidiDeviceManager& mgr, std::uint64_t id)
+    {
+        for (const auto& d : mgr.getDevices())
+            if (d.deviceId == id)
+                return juce::String (d.isInput ? "IN  " : "OUT ")
+                       + "'" + d.productName + "' (ordinal=" + juce::String (d.ordinal) + ")";
+        return juce::String ("<unknown>");
+    }
+}
+
+void SonikApplication::MidiDiagnosticLogger::midiDeviceAdded (std::uint64_t deviceId)
+{
+    if (manager != nullptr)
+        DBG ("[MIDI] +ADDED   id=" << juce::String::toHexString ((juce::int64) deviceId)
+             << "  " << midiDeviceDescription (*manager, deviceId));
+}
+
+void SonikApplication::MidiDiagnosticLogger::midiDeviceRemoved (std::uint64_t deviceId)
+{
+    if (manager != nullptr)
+        DBG ("[MIDI] -REMOVED id=" << juce::String::toHexString ((juce::int64) deviceId)
+             << "  " << midiDeviceDescription (*manager, deviceId));
+}
+
+void SonikApplication::MidiDiagnosticLogger::midiDeviceOpened (std::uint64_t deviceId)
+{
+    DBG ("[MIDI]  OPENED  id=" << juce::String::toHexString ((juce::int64) deviceId));
+}
+
+void SonikApplication::MidiDiagnosticLogger::midiDeviceClosed (std::uint64_t deviceId)
+{
+    DBG ("[MIDI]  CLOSED  id=" << juce::String::toHexString ((juce::int64) deviceId));
 }

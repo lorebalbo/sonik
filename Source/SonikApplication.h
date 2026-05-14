@@ -16,6 +16,8 @@
 #include "Features/Library/LibraryAnalysisService.h"
 #include "Features/Library/LibraryAnalysisQueue.h"
 #include "Features/Library/WatchFolderScanner.h"
+#include "Features/Midi/JuceMidiHost.h"
+#include "Features/Midi/MidiDeviceManager.h"
 #include <memory>
 
 class MainWindow final : public juce::DocumentWindow
@@ -70,6 +72,23 @@ public:
 
 private:
     std::unique_ptr<TrackDatabase>    trackDatabase;
+    std::unique_ptr<sonik::midi::JuceMidiHost>      midiHost;           // PRD-0040
+    std::unique_ptr<sonik::midi::MidiDeviceManager> midiDeviceManager;  // PRD-0040
+
+    // PRD-0040 diagnostic logger: prints device hot-plug events to the JUCE
+    // log (Console.app on macOS) so manual testing can observe enumeration
+    // and hot-plug without a dedicated UI. Will be replaced by the
+    // Settings → MIDI panel in a later PRD.
+    struct MidiDiagnosticLogger final : public sonik::midi::DeviceListChangeListener
+    {
+        sonik::midi::MidiDeviceManager* manager { nullptr };
+        void midiDeviceAdded   (std::uint64_t deviceId) override;
+        void midiDeviceRemoved (std::uint64_t deviceId) override;
+        void midiDeviceOpened  (std::uint64_t deviceId) override;
+        void midiDeviceClosed  (std::uint64_t deviceId) override;
+    };
+    std::unique_ptr<MidiDiagnosticLogger> midiDiagnosticLogger;
+
     std::unique_ptr<DeckStateManager> deckStateManager;
     std::unique_ptr<MasterClockPublisher> masterClockPublisher;  // PRD-0026
     std::unique_ptr<MasterClockManager>   masterClockManager;    // PRD-0026
