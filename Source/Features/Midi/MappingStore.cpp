@@ -18,6 +18,7 @@ namespace sonik::midi
     {
         constexpr int  kMaxFileSizeBytes = 1 * 1024 * 1024; // 1 MB
         const char*    kReloopId         = "reloop-contour-interface-edition";
+        const char*    kDdm4000Id        = "reloop-ddm4000";
         const char*    kGenericId        = "generic-midi";
 
         // Compile a pattern as std::regex, returning nullopt on bad syntax.
@@ -139,6 +140,8 @@ namespace sonik::midi
         const BundledRaw bundled[] = {
             { kReloopId,  BinaryData::reloopcontourinterfaceedition_json,
                           BinaryData::reloopcontourinterfaceedition_jsonSize },
+            { kDdm4000Id, BinaryData::reloopddm4000_json,
+                          BinaryData::reloopddm4000_jsonSize },
             { kGenericId, BinaryData::genericmidi_json,
                           BinaryData::genericmidi_jsonSize },
         };

@@ -151,12 +151,19 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
         *midiDeviceManager, *midiMessageBridge, *mappingStore, *compositeMidiHandler);
 
     // TODO: per-device opt-in auto-open policy belongs to a follow-up PRD.
-    // Until then, open every enumerated input so MIDI events actually flow.
+    // Until then, open every enumerated endpoint so inbound events flow and
+    // outbound LED feedback can reach hardware.
     for (const auto& dev : midiDeviceManager->getDevices())
     {
         if (dev.isInput)
             midiDeviceManager->openInput (dev.deviceId);
+        else
+            midiDeviceManager->openOutput (dev.deviceId);
     }
+
+    // PRD-0047 (slice 1): message-thread play LED feedback.
+    midiFeedbackEngine = std::make_unique<sonik::midi::MidiFeedbackEngine> (
+        deckStateManager->getStateTree(), *midiDeviceManager, *mappingStore);
 
     // Inject the master clock publisher into every deck slot (PRD-0026).
     audioEngine->setMasterClockPublisher (masterClockPublisher.get());
@@ -292,6 +299,7 @@ void SonikApplication::shutdown()
     libraryMidiHandler.reset();
     mixerMidiHandler.reset();
     deckMidiHandler.reset();
+    midiFeedbackEngine.reset(); // PRD-0047 (depends on mappingStore + device manager + state tree)
     softTakeoverManager.reset(); // PRD-0045 (depends on mappingStore + deckStateManager)
     mappingStore.reset();        // PRD-0043
     midiMessageBridge.reset();   // PRD-0041

@@ -339,10 +339,25 @@ namespace sonik::midi
     void MidiDeviceManager::sendOutput (std::uint64_t deviceId, const juce::MidiMessage& message)
     {
         JUCE_ASSERT_MESSAGE_THREAD;
+
+        DBG("[MidiDeviceManager::sendOutput] deviceId=" << static_cast<int>(deviceId) << " message size=" << message.getRawDataSize());
+
         auto* dev = findByIdAndDirection (deviceId, /*isInput*/ false);
-        if (dev == nullptr || dev->output == nullptr)
+        if (dev == nullptr)
+        {
+            DBG("[MidiDeviceManager::sendOutput] Device not found!");
             return;
+        }
+
+        if (dev->output == nullptr)
+        {
+            DBG("[MidiDeviceManager::sendOutput] Device found but output is nullptr!");
+            return;
+        }
+
+        DBG("[MidiDeviceManager::sendOutput] Sending message via " << dev->output->getName());
         dev->output->sendMessageNow (message);
+        DBG("[MidiDeviceManager::sendOutput] Message sent successfully");
     }
 
     // ---------------- Listeners ----------------------------------------------

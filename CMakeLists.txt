@@ -99,6 +99,7 @@ juce_add_gui_app(Sonik
 juce_add_binary_data(SonikBinaryData
     SOURCES
         Resources/MidiMappings/reloop-contour-interface-edition.json
+        Resources/MidiMappings/reloop-ddm4000.json
         Resources/MidiMappings/generic-midi.json
 )
 
@@ -251,6 +252,8 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/MappingSerializer.cpp
     Source/Features/Midi/MappingStore.h
     Source/Features/Midi/MappingStore.cpp
+    Source/Features/Midi/MidiFeedbackEngine.h
+    Source/Features/Midi/MidiFeedbackEngine.cpp
     Source/Features/Midi/MidiCommandHandler.h
     Source/Features/Midi/MidiInboundRouter.h
     Source/Features/Midi/MidiInboundRouter.cpp
@@ -402,6 +405,7 @@ add_executable(SonikTests
     Source/Features/Midi/BindingResolver.cpp
     Source/Features/Midi/MappingSerializer.cpp
     Source/Features/Midi/MappingStore.cpp
+    Source/Features/Midi/MidiFeedbackEngine.cpp
     Source/Features/Midi/MidiInboundRouter.cpp
     Source/Features/Midi/SoftTakeoverManager.cpp
     Source/MidiHandlers/DeckMidiHandler.cpp

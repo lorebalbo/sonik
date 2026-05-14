@@ -21,6 +21,7 @@
 #include "Features/Midi/MidiMessageBridge.h"
 #include "Features/Midi/MappingStore.h"
 #include "Features/Midi/MidiInboundRouter.h"
+#include "Features/Midi/MidiFeedbackEngine.h"
 #include "Features/Midi/SoftTakeoverManager.h"
 #include "MidiHandlers/DeckMidiHandler.h"
 #include "MidiHandlers/MixerMidiHandler.h"
@@ -84,6 +85,7 @@ private:
     std::unique_ptr<sonik::midi::MidiDeviceManager> midiDeviceManager;  // PRD-0040
     std::unique_ptr<sonik::midi::MidiMessageBridge> midiMessageBridge;  // PRD-0041
     std::unique_ptr<sonik::midi::MappingStore>      mappingStore;       // PRD-0043
+    std::unique_ptr<sonik::midi::MidiFeedbackEngine> midiFeedbackEngine; // PRD-0047 (slice 1)
     std::unique_ptr<sonik::midi::SoftTakeoverManager> softTakeoverManager; // PRD-0045
     std::unique_ptr<DeckMidiHandler>                deckMidiHandler;    // PRD-0044
     std::unique_ptr<MixerMidiHandler>               mixerMidiHandler;   // PRD-0044
