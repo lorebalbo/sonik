@@ -133,6 +133,25 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     // Constructor creates the user directory if it does not already exist.
     mappingStore = std::make_unique<sonik::midi::MappingStore> (*midiDeviceManager);
 
+    // PRD-0044: Inbound MIDI command dispatch. The router subscribes to
+    // MidiDeviceManager + MappingStore and forwards to the composite handler
+    // on the Message thread (audio-thread paths go via the bridge FIFO).
+    deckMidiHandler      = std::make_unique<DeckMidiHandler> (*deckStateManager);
+    mixerMidiHandler     = std::make_unique<MixerMidiHandler>();
+    libraryMidiHandler   = std::make_unique<LibraryMidiHandler>();
+    compositeMidiHandler = std::make_unique<CompositeMidiCommandHandler> (
+        *deckMidiHandler, *mixerMidiHandler, *libraryMidiHandler);
+    midiInboundRouter = std::make_unique<sonik::midi::MidiInboundRouter> (
+        *midiDeviceManager, *midiMessageBridge, *mappingStore, *compositeMidiHandler);
+
+    // TODO: per-device opt-in auto-open policy belongs to a follow-up PRD.
+    // Until then, open every enumerated input so MIDI events actually flow.
+    for (const auto& dev : midiDeviceManager->getDevices())
+    {
+        if (dev.isInput)
+            midiDeviceManager->openInput (dev.deviceId);
+    }
+
     // Inject the master clock publisher into every deck slot (PRD-0026).
     audioEngine->setMasterClockPublisher (masterClockPublisher.get());
 
@@ -262,6 +281,11 @@ void SonikApplication::shutdown()
     if (midiDeviceManager != nullptr && midiDiagnosticLogger != nullptr)
         midiDeviceManager->removeDeviceListChangeListener (midiDiagnosticLogger.get());
     midiDiagnosticLogger.reset();
+    midiInboundRouter.reset();   // PRD-0044 (unsubscribes from device manager, store, bridge)
+    compositeMidiHandler.reset();
+    libraryMidiHandler.reset();
+    mixerMidiHandler.reset();
+    deckMidiHandler.reset();
     mappingStore.reset();        // PRD-0043
     midiMessageBridge.reset();   // PRD-0041
     midiDeviceManager.reset();

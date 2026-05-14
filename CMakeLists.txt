@@ -251,6 +251,17 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/MappingSerializer.cpp
     Source/Features/Midi/MappingStore.h
     Source/Features/Midi/MappingStore.cpp
+    Source/Features/Midi/MidiCommandHandler.h
+    Source/Features/Midi/MidiInboundRouter.h
+    Source/Features/Midi/MidiInboundRouter.cpp
+    Source/MidiHandlers/DeckMidiHandler.h
+    Source/MidiHandlers/DeckMidiHandler.cpp
+    Source/MidiHandlers/MixerMidiHandler.h
+    Source/MidiHandlers/MixerMidiHandler.cpp
+    Source/MidiHandlers/LibraryMidiHandler.h
+    Source/MidiHandlers/LibraryMidiHandler.cpp
+    Source/MidiHandlers/CompositeMidiCommandHandler.h
+    Source/MidiHandlers/CompositeMidiCommandHandler.cpp
     Source/Features/AudioEngine/AudioEngineMidiBridge.h
 )
 
@@ -333,6 +344,7 @@ add_executable(SonikTests
     Tests/MappingParserTests.cpp
     Tests/BindingResolverTests.cpp
     Tests/MappingStoreTests.cpp
+    Tests/MidiInboundRouterTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
     Source/Features/Library/LibraryAnalysisQueue.cpp
@@ -387,6 +399,11 @@ add_executable(SonikTests
     Source/Features/Midi/BindingResolver.cpp
     Source/Features/Midi/MappingSerializer.cpp
     Source/Features/Midi/MappingStore.cpp
+    Source/Features/Midi/MidiInboundRouter.cpp
+    Source/MidiHandlers/DeckMidiHandler.cpp
+    Source/MidiHandlers/MixerMidiHandler.cpp
+    Source/MidiHandlers/LibraryMidiHandler.cpp
+    Source/MidiHandlers/CompositeMidiCommandHandler.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

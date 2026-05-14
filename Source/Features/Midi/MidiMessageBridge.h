@@ -30,6 +30,7 @@
 #include "MidiAudioEvent.h"
 #include "MidiMessageEvent.h"
 #include "MidiTargetCategory.h"
+#include "MappingTypes.h"
 
 #include <array>
 #include <atomic>
@@ -135,7 +136,8 @@ namespace sonik::midi
                                     std::uint8_t       deckIndex,
                                     float              normalisedValue,
                                     std::int16_t       intDelta,
-                                    std::uint64_t      deviceId) noexcept;
+                                    std::uint64_t      deviceId,
+                                    SoftTakeoverPolicy softTakeover = SoftTakeoverPolicy::Pickup) noexcept;
 
         // ---- Consumer (Audio thread) ---------------------------------------
         // Drains every ready event in FIFO order, including the wrap-around

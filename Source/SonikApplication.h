@@ -20,6 +20,11 @@
 #include "Features/Midi/MidiDeviceManager.h"
 #include "Features/Midi/MidiMessageBridge.h"
 #include "Features/Midi/MappingStore.h"
+#include "Features/Midi/MidiInboundRouter.h"
+#include "MidiHandlers/DeckMidiHandler.h"
+#include "MidiHandlers/MixerMidiHandler.h"
+#include "MidiHandlers/LibraryMidiHandler.h"
+#include "MidiHandlers/CompositeMidiCommandHandler.h"
 #include <memory>
 
 class MainWindow final : public juce::DocumentWindow
@@ -78,6 +83,11 @@ private:
     std::unique_ptr<sonik::midi::MidiDeviceManager> midiDeviceManager;  // PRD-0040
     std::unique_ptr<sonik::midi::MidiMessageBridge> midiMessageBridge;  // PRD-0041
     std::unique_ptr<sonik::midi::MappingStore>      mappingStore;       // PRD-0043
+    std::unique_ptr<DeckMidiHandler>                deckMidiHandler;    // PRD-0044
+    std::unique_ptr<MixerMidiHandler>               mixerMidiHandler;   // PRD-0044
+    std::unique_ptr<LibraryMidiHandler>             libraryMidiHandler; // PRD-0044
+    std::unique_ptr<CompositeMidiCommandHandler>    compositeMidiHandler; // PRD-0044
+    std::unique_ptr<sonik::midi::MidiInboundRouter> midiInboundRouter;  // PRD-0044
 
     // PRD-0040 diagnostic logger: prints device hot-plug events to the JUCE
     // log (Console.app on macOS) so manual testing can observe enumeration
