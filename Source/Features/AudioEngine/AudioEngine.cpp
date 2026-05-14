@@ -120,6 +120,25 @@ void AudioEngine::setMasterClockPublisher (MasterClockPublisher* publisher)
 }
 
 // ---------------------------------------------------------------------------
+// PRD-0041: MIDI bridge wiring (message thread) + audio-thread handler stub.
+// ---------------------------------------------------------------------------
+
+void AudioEngine::setMidiMessageBridge (sonik::midi::MidiMessageBridge* bridge)
+{
+    JUCE_ASSERT_MESSAGE_THREAD;
+    midiBridge.store (bridge, std::memory_order_release);
+}
+
+void AudioEngine::applyAudioMidiEvent (const sonik::midi::MidiAudioEvent& event) noexcept
+{
+    // The jog/scratch state-machine that consumes these events lives in
+    // PRD-0042/0044. PRD-0041 only guarantees the transport; this handler
+    // is intentionally a no-op until those PRDs land. It must remain
+    // noexcept, allocation-free, and lock-free.
+    juce::ignoreUnused (event);
+}
+
+// ---------------------------------------------------------------------------
 // Deck registration (message thread)
 // ---------------------------------------------------------------------------
 
@@ -570,6 +589,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
     juce::ignoreUnused (inputChannelData, numInputChannels, context);
 
     const auto startTicks = juce::Time::getHighResolutionTicks();
+
+    // PRD-0041: drain the lock-free MIDI FIFO BEFORE any audio processing so
+    // jog/scratch state lands in atomics before this block reads them.
+    if (auto* bridge = midiBridge.load (std::memory_order_acquire))
+        bridge->drainAudioThreadFifo (*this);
 
     // Clear output buffers.
     for (int ch = 0; ch < numOutputChannels; ++ch)

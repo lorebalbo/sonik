@@ -7,6 +7,7 @@
 #include "AudioBufferHolder.h"
 #include "../Deck/DeckIdentifiers.h"
 #include "../../Features/TimeStretch/TimeStretcher.h"
+#include "AudioEngineMidiBridge.h"   // PRD-0041
 #include <array>
 #include <atomic>
 
@@ -16,6 +17,7 @@ class PhaseLockEngine;      // PRD-0028
 
 class AudioEngine final : public juce::AudioIODeviceCallback,
                            public juce::ChangeListener,
+                           public sonik::midi::AudioMidiEventHandler, // PRD-0041
                            private juce::Timer
 {
 public:
@@ -92,6 +94,16 @@ public:
     /// Call from the message thread. The pointer is stored atomically in each DeckAudioSource.
     void setMasterClockPublisher (MasterClockPublisher* publisher);
 
+    /// PRD-0041: Wire the MIDI message bridge. Message thread only. The audio
+    /// thread reads `midiBridge` with acquire each callback and drains the
+    /// FIFO at the top of the block before any audio processing.
+    void setMidiMessageBridge (sonik::midi::MidiMessageBridge* bridge);
+
+    /// PRD-0041: AudioMidiEventHandler. Called from the audio thread for every
+    /// inbound jog/scratch event drained from the FIFO. Stub for now; the
+    /// downstream jog-control logic lives in PRD-0042/0044.
+    void applyAudioMidiEvent (const sonik::midi::MidiAudioEvent&) noexcept override;
+
     float getCpuLoad() const     { return cpuMonitor.loadPercent.load (std::memory_order_relaxed); }
     bool  getCpuOverload() const { return cpuMonitor.overloadWarning.load (std::memory_order_relaxed); }
 
@@ -131,6 +143,10 @@ private:
     // Cached master clock publisher pointer (set in setMasterClockPublisher, audio-thread read).
     // Audio thread uses this each block to write the master deck's playhead for PhaseLockEngine.
     MasterClockPublisher* cachedClockPublisher_ = nullptr;
+
+    // PRD-0041: Lock-free MIDI bridge pointer. Audio thread reads with acquire
+    // every callback; Message thread writes with release in setMidiMessageBridge.
+    std::atomic<sonik::midi::MidiMessageBridge*> midiBridge { nullptr };
 
     // CPU load monitoring
     struct CpuLoadMonitor

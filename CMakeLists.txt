@@ -228,6 +228,12 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/JuceMidiHost.cpp
     Source/Features/Midi/MidiDeviceManager.h
     Source/Features/Midi/MidiDeviceManager.cpp
+    Source/Features/Midi/MidiTargetCategory.h
+    Source/Features/Midi/MidiAudioEvent.h
+    Source/Features/Midi/MidiMessageEvent.h
+    Source/Features/Midi/MidiMessageBridge.h
+    Source/Features/Midi/MidiMessageBridge.cpp
+    Source/Features/AudioEngine/AudioEngineMidiBridge.h
 )
 
 target_include_directories(Sonik PRIVATE Source)
@@ -303,6 +309,7 @@ add_executable(SonikTests
     Tests/SidebarMoleculeTests.cpp
     Tests/MissingFileTests.cpp
     Tests/MidiDeviceManagerTests.cpp
+    Tests/MidiMessageBridgeTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
     Source/Features/Library/LibraryAnalysisQueue.cpp
@@ -352,6 +359,7 @@ add_executable(SonikTests
     Source/Features/Sync/UI/MasterButton.cpp
     Source/Features/Midi/JuceMidiHost.cpp
     Source/Features/Midi/MidiDeviceManager.cpp
+    Source/Features/Midi/MidiMessageBridge.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

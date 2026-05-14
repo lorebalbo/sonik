@@ -120,6 +120,13 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     // Create and start the audio engine
     audioEngine = std::make_unique<AudioEngine> (deckStateManager->getStateTree());
 
+    // PRD-0041: RT-safe MIDI message bridge. Constructed after the device
+    // manager (producers exist) and before the audio engine begins
+    // processing (the audio thread will drain the FIFO each callback once
+    // PRD-0044 wires producers to it).
+    midiMessageBridge = std::make_unique<sonik::midi::MidiMessageBridge>();
+    audioEngine->setMidiMessageBridge (midiMessageBridge.get());
+
     // Inject the master clock publisher into every deck slot (PRD-0026).
     audioEngine->setMasterClockPublisher (masterClockPublisher.get());
 
@@ -249,6 +256,7 @@ void SonikApplication::shutdown()
     if (midiDeviceManager != nullptr && midiDiagnosticLogger != nullptr)
         midiDeviceManager->removeDeviceListChangeListener (midiDiagnosticLogger.get());
     midiDiagnosticLogger.reset();
+    midiMessageBridge.reset();   // PRD-0041
     midiDeviceManager.reset();
     midiHost.reset();
 

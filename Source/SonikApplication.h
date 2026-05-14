@@ -18,6 +18,7 @@
 #include "Features/Library/WatchFolderScanner.h"
 #include "Features/Midi/JuceMidiHost.h"
 #include "Features/Midi/MidiDeviceManager.h"
+#include "Features/Midi/MidiMessageBridge.h"
 #include <memory>
 
 class MainWindow final : public juce::DocumentWindow
@@ -74,6 +75,7 @@ private:
     std::unique_ptr<TrackDatabase>    trackDatabase;
     std::unique_ptr<sonik::midi::JuceMidiHost>      midiHost;           // PRD-0040
     std::unique_ptr<sonik::midi::MidiDeviceManager> midiDeviceManager;  // PRD-0040
+    std::unique_ptr<sonik::midi::MidiMessageBridge> midiMessageBridge;  // PRD-0041
 
     // PRD-0040 diagnostic logger: prints device hot-plug events to the JUCE
     // log (Console.app on macOS) so manual testing can observe enumeration

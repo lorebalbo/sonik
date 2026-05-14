@@ -164,7 +164,7 @@ On first launch, defaults are copied (lazily, on demand) into the user mapping d
 ## 1.4. PRD Roadmap
 
 - [x] PRD-0040: MIDI I/O Subsystem & Device Manager
-- [ ] PRD-0041: RT-Safe MIDI Message Bridge
+- [x] PRD-0041: RT-Safe MIDI Message Bridge
 - [ ] PRD-0042: Control Target Registry & Mapping Data Model
 - [ ] PRD-0043: Mapping Storage, Loading & Crash-Safe Defaults (with bundled Reloop Contour CE & Generic MIDI profiles)
 - [ ] PRD-0044: MIDI Input Routing & Inbound Command Dispatch (incl. 14-bit CC, value-curve transforms)
