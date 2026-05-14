@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "manufacturer": ".*",
+    "product": ".*",
+    "match": { "midiName": ".*" }
+  },
+  "modifiers": [],
+  "bindings": []
+}

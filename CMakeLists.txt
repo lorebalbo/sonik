@@ -94,6 +94,14 @@ juce_add_gui_app(Sonik
     BUNDLE_ID "com.sonik.app"
 )
 
+# Bundled MIDI mapping profiles (PRD-0043).  Generates a static library
+# `SonikBinaryData` with `BinaryData::*` symbols for the embedded JSON files.
+juce_add_binary_data(SonikBinaryData
+    SOURCES
+        Resources/MidiMappings/reloop-contour-interface-edition.json
+        Resources/MidiMappings/generic-midi.json
+)
+
 target_sources(Sonik PRIVATE
     Source/Main.cpp
     Source/SonikApplication.h
@@ -239,6 +247,10 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/MappingParser.cpp
     Source/Features/Midi/BindingResolver.h
     Source/Features/Midi/BindingResolver.cpp
+    Source/Features/Midi/MappingSerializer.h
+    Source/Features/Midi/MappingSerializer.cpp
+    Source/Features/Midi/MappingStore.h
+    Source/Features/Midi/MappingStore.cpp
     Source/Features/AudioEngine/AudioEngineMidiBridge.h
 )
 
@@ -268,6 +280,7 @@ target_link_libraries(Sonik PRIVATE
     essentia
     onnxruntime
     ${RUBBERBAND_LINK_LIBRARIES}
+    SonikBinaryData
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags
 )
@@ -319,6 +332,7 @@ add_executable(SonikTests
     Tests/ControlTargetRegistryTests.cpp
     Tests/MappingParserTests.cpp
     Tests/BindingResolverTests.cpp
+    Tests/MappingStoreTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
     Source/Features/Library/LibraryAnalysisQueue.cpp
@@ -371,6 +385,8 @@ add_executable(SonikTests
     Source/Features/Midi/MidiMessageBridge.cpp
     Source/Features/Midi/MappingParser.cpp
     Source/Features/Midi/BindingResolver.cpp
+    Source/Features/Midi/MappingSerializer.cpp
+    Source/Features/Midi/MappingStore.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})
@@ -399,6 +415,7 @@ target_link_libraries(SonikTests PRIVATE
     essentia
     onnxruntime
     ${RUBBERBAND_LINK_LIBRARIES}
+    SonikBinaryData
     juce::juce_recommended_config_flags
 )
 

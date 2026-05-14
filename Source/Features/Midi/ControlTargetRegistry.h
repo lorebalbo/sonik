@@ -98,6 +98,11 @@ namespace sonik::midi
             SONIK_PER_DECK("pitchRange.cycle",  PitchRangeCycle, Momentary),
             SONIK_PER_DECK("gain",              Gain,            Continuous),
 
+            // ---- Per-deck EQ ---------------------------------------------
+            SONIK_PER_DECK("eq.high", EqHigh, Continuous),
+            SONIK_PER_DECK("eq.mid",  EqMid,  Continuous),
+            SONIK_PER_DECK("eq.low",  EqLow,  Continuous),
+
             // ---- Per-deck key / time -------------------------------------
             SONIK_PER_DECK("keyLock.toggle",      KeyLockToggle,     Toggle),
             SONIK_PER_DECK("masterTempo.toggle",  MasterTempoToggle, Toggle),
