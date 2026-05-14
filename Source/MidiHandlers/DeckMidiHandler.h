@@ -12,12 +12,13 @@
 
 #include <bitset>
 
-namespace sonik::midi { struct MidiMessageEvent; }
+namespace sonik::midi { struct MidiMessageEvent; class SoftTakeoverManager; }
 
 class DeckMidiHandler final
 {
 public:
-    explicit DeckMidiHandler (DeckStateManager& deckState);
+    DeckMidiHandler (DeckStateManager& deckState,
+                     sonik::midi::SoftTakeoverManager& softTakeover);
 
     /** Returns true if the event was consumed (a per-deck category we recognise),
         false otherwise so the composite can try another sub-handler. */
@@ -29,5 +30,6 @@ private:
 
     void toggleBool (juce::ValueTree& deckTree, const juce::Identifier& id);
 
-    DeckStateManager& deckState;
+    DeckStateManager&                 deckState;
+    sonik::midi::SoftTakeoverManager& softTakeover;
 };

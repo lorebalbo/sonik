@@ -251,5 +251,22 @@ namespace sonik::midi
             }
             return std::nullopt;
         }
+
+        /** Linear scan for a (category, deckIndex) pair. Returns nullopt if
+            no row matches. For per-deck rows `deckIndex` is 0..3; for global
+            rows pass the row's stored `deckIndex` (or GlobalDeckIndex). Used
+            by PRD-0045 to resolve a `MidiMessageEvent` back to a stable
+            `TargetIndex` for soft-takeover state lookup. */
+        static std::optional<TargetIndex> findByCategoryAndDeck (MidiTargetCategory category,
+                                                                 std::uint8_t deckIndex) noexcept
+        {
+            for (std::size_t i = 0; i < detail::kRegistrySize; ++i)
+            {
+                const auto& row = detail::kRegistry[i];
+                if (row.category == category && row.deckIndex == deckIndex)
+                    return static_cast<TargetIndex> (i);
+            }
+            return std::nullopt;
+        }
     };
 } // namespace sonik::midi

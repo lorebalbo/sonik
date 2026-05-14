@@ -254,6 +254,8 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/MidiCommandHandler.h
     Source/Features/Midi/MidiInboundRouter.h
     Source/Features/Midi/MidiInboundRouter.cpp
+    Source/Features/Midi/SoftTakeoverManager.h
+    Source/Features/Midi/SoftTakeoverManager.cpp
     Source/MidiHandlers/DeckMidiHandler.h
     Source/MidiHandlers/DeckMidiHandler.cpp
     Source/MidiHandlers/MixerMidiHandler.h
@@ -345,6 +347,7 @@ add_executable(SonikTests
     Tests/BindingResolverTests.cpp
     Tests/MappingStoreTests.cpp
     Tests/MidiInboundRouterTests.cpp
+    Tests/SoftTakeoverManagerTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
     Source/Features/Library/LibraryAnalysisQueue.cpp
@@ -400,6 +403,7 @@ add_executable(SonikTests
     Source/Features/Midi/MappingSerializer.cpp
     Source/Features/Midi/MappingStore.cpp
     Source/Features/Midi/MidiInboundRouter.cpp
+    Source/Features/Midi/SoftTakeoverManager.cpp
     Source/MidiHandlers/DeckMidiHandler.cpp
     Source/MidiHandlers/MixerMidiHandler.cpp
     Source/MidiHandlers/LibraryMidiHandler.cpp

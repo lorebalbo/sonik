@@ -14,6 +14,7 @@
 #include "MidiHandlers/DeckMidiHandler.h"
 #include "MidiHandlers/LibraryMidiHandler.h"
 #include "MidiHandlers/MixerMidiHandler.h"
+#include "Features/Midi/SoftTakeoverManager.h"
 
 #include <juce_core/juce_core.h>
 #include <juce_events/juce_events.h>
@@ -240,7 +241,12 @@ namespace
                     TrackDatabase    db (dbFile);
                     DeckStateManager dsm (db);
                     dsm.addDeck(); // Deck index 0 exists so DeckMidiHandler reaches the switch.
-                    DeckMidiHandler  deck (dsm);
+                    // PRD-0045: DeckMidiHandler now requires a SoftTakeoverManager.
+                    StubHost          stubHost;
+                    MidiDeviceManager stubMgr (stubHost);
+                    MappingStore      stubStore (stubMgr);
+                    SoftTakeoverManager soft (dsm.getStateTree(), stubStore);
+                    DeckMidiHandler  deck (dsm, soft);
                     MixerMidiHandler mix;
                     LibraryMidiHandler lib;
                     CompositeMidiCommandHandler composite (deck, mix, lib);

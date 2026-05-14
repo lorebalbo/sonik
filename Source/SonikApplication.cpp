@@ -133,10 +133,16 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     // Constructor creates the user directory if it does not already exist.
     mappingStore = std::make_unique<sonik::midi::MappingStore> (*midiDeviceManager);
 
+    // PRD-0045: Soft-takeover (pickup mode) tracker. Listens to the root
+    // state tree for non-MIDI parameter changes (track load, mouse moves) so
+    // the next hardware sample must cross the new value before it engages.
+    softTakeoverManager = std::make_unique<sonik::midi::SoftTakeoverManager> (
+        deckStateManager->getStateTree(), *mappingStore);
+
     // PRD-0044: Inbound MIDI command dispatch. The router subscribes to
     // MidiDeviceManager + MappingStore and forwards to the composite handler
     // on the Message thread (audio-thread paths go via the bridge FIFO).
-    deckMidiHandler      = std::make_unique<DeckMidiHandler> (*deckStateManager);
+    deckMidiHandler      = std::make_unique<DeckMidiHandler> (*deckStateManager, *softTakeoverManager);
     mixerMidiHandler     = std::make_unique<MixerMidiHandler>();
     libraryMidiHandler   = std::make_unique<LibraryMidiHandler>();
     compositeMidiHandler = std::make_unique<CompositeMidiCommandHandler> (
@@ -286,6 +292,7 @@ void SonikApplication::shutdown()
     libraryMidiHandler.reset();
     mixerMidiHandler.reset();
     deckMidiHandler.reset();
+    softTakeoverManager.reset(); // PRD-0045 (depends on mappingStore + deckStateManager)
     mappingStore.reset();        // PRD-0043
     midiMessageBridge.reset();   // PRD-0041
     midiDeviceManager.reset();

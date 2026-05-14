@@ -1,13 +1,19 @@
 #include "DeckMidiHandler.h"
 
 #include "../Features/Deck/DeckIdentifiers.h"
+#include "../Features/Midi/ControlTargetRegistry.h"
+#include "../Features/Midi/SoftTakeoverManager.h"
 
 #include <cmath>
 
+using sonik::midi::ControlTargetRegistry;
 using sonik::midi::MidiMessageEvent;
+using sonik::midi::MidiOriginatedWriteScope;
 using sonik::midi::MidiTargetCategory;
 
-DeckMidiHandler::DeckMidiHandler (DeckStateManager& d) : deckState (d) {}
+DeckMidiHandler::DeckMidiHandler (DeckStateManager& d,
+                                  sonik::midi::SoftTakeoverManager& soft)
+    : deckState (d), softTakeover (soft) {}
 
 juce::ValueTree DeckMidiHandler::deckTreeFor (std::uint8_t deckIndex) const
 {
@@ -56,11 +62,39 @@ bool DeckMidiHandler::tryHandle (const MidiMessageEvent& event)
             // percentage. Centre (0.5) is 0%, ends are ±pitchRange.
             const double range = static_cast<double> (deckTree.getProperty (IDs::pitchRange, 8.0));
             const double pitchPercent = range * ((2.0 * event.normalisedValue) - 1.0);
+
+            // PRD-0045: soft-takeover. Compare hardware-normalised value
+            // against the on-screen equivalent (mapped back into 0..1 via
+            // the current pitch range) so the user can place the fader at
+            // any pitchRange setting.
+            const double curPitch    = static_cast<double> (deckTree.getProperty (IDs::pitch, 0.0));
+            const float  softwareNorm = (range > 0.0)
+                                          ? static_cast<float> ((curPitch / range + 1.0) * 0.5)
+                                          : 0.5f;
+            const auto target = ControlTargetRegistry::findByCategoryAndDeck (
+                MidiTargetCategory::PitchFader, event.deckIndex);
+            if (target.has_value()
+                && ! softTakeover.shouldPassThrough (event.deviceId, *target,
+                                                    event.normalisedValue, softwareNorm,
+                                                    event.softTakeover))
+                return true;
+
+            MidiOriginatedWriteScope guard;
             deckTree.setProperty (IDs::pitch, pitchPercent, nullptr);
             return true;
         }
         case MidiTargetCategory::Gain:
         {
+            const float curGain = static_cast<float> (deckTree.getProperty (IDs::gain, 0.0));
+            const auto target = ControlTargetRegistry::findByCategoryAndDeck (
+                MidiTargetCategory::Gain, event.deckIndex);
+            if (target.has_value()
+                && ! softTakeover.shouldPassThrough (event.deviceId, *target,
+                                                    event.normalisedValue, curGain,
+                                                    event.softTakeover))
+                return true;
+
+            MidiOriginatedWriteScope guard;
             deckTree.setProperty (IDs::gain, event.normalisedValue, nullptr);
             return true;
         }
