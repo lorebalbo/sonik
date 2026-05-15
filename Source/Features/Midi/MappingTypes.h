@@ -51,13 +51,40 @@ namespace sonik::midi
     };
 
     //--------------------------------------------------------------------------
+    /** Feedback style — what kind of source value the engine reads and how it
+        translates it to an outbound MIDI value byte (PRD-0047). */
+    enum class FeedbackStyle : std::uint8_t
+    {
+        None       = 0, // No feedback configured (midiKey == 0 also implies this).
+        Binary     = 1, // Source bool → onVelocity / offVelocity.
+        Colour     = 2, // Source int colour-index 0..15 → paletteVelocities[i].
+        Continuous = 3, // Source float [0,1] → 0..127 via Linear / LinearInverse curve.
+    };
+
+    enum class FeedbackCurve : std::uint8_t
+    {
+        Linear        = 0, // out = round(value * 127)
+        LinearInverse = 1, // out = round((1 - value) * 127)
+    };
+
+    //--------------------------------------------------------------------------
     /** Optional feedback wiring. Populated for bindings that can drive an LED
-        or motor on the controller. Consumed by PRD-0046; PRD-0042 only stores. */
+        or motor on the controller. Consumed by PRD-0047. */
     struct BindingFeedback
     {
-        std::uint32_t midiKey;    // 0 = no feedback configured.
-        std::uint8_t  onValue;    // Value to send when bound state is true / non-zero.
-        std::uint8_t  offValue;   // Value to send when bound state is false / zero.
+        // Back-compat sentinel: 0 = no feedback configured (used by serializer +
+        // PRD-0044 readers); PRD-0047's engine inspects `style` instead.
+        std::uint32_t midiKey;
+
+        // Binary style (back-compat fields).
+        std::uint8_t  onValue;
+        std::uint8_t  offValue;
+
+        // PRD-0047 extensions.
+        FeedbackStyle style;
+        FeedbackCurve curve;
+        float         blinkHz;                 // For disengaged feedback (0 = solid).
+        std::uint8_t  paletteVelocities[16];   // Indexed by colour-index 0..15.
     };
     static_assert (std::is_trivially_copyable_v<BindingFeedback>,
                    "BindingFeedback must be POD; lives on the resolver hot path.");
@@ -73,6 +100,7 @@ namespace sonik::midi
         std::uint32_t        requiredModifierMask; // 0 = no modifier required
         SoftTakeoverPolicy   softTakeover;
         BindingFeedback      feedback;
+        BindingFeedback      disengagedFeedback;   // PRD-0047: shown while soft-takeover Disengaged.
     };
     static_assert (std::is_trivially_copyable_v<Binding>,
                    "Binding must be POD; lives in Mapping.bindings hot vector.");

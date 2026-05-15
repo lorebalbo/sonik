@@ -2,6 +2,7 @@
 
 #include "ControlTargetRegistry.h"
 
+#include <algorithm>
 #include <unordered_map>
 
 namespace sonik::midi
@@ -279,21 +280,63 @@ namespace sonik::midi
                 }
 
                 // feedback (optional)
-                BindingFeedback feedback {};
-                if (const auto fbVar = bVar.getProperty ("feedback", juce::var()); fbVar.isObject())
+                auto parseFeedbackBlock = [&] (const juce::var& fbVar, BindingFeedback& outFb)
                 {
+                    if (! fbVar.isObject())
+                        return;
+
                     std::uint8_t fbCh = 0, fbStat = 0, fbD1 = 0, fbLsb = 255;
                     juce::String fbErr;
-                    if (parseMidiBlock (fbVar, fbCh, fbStat, fbD1, fbLsb, fbErr))
+                    if (! parseMidiBlock (fbVar, fbCh, fbStat, fbD1, fbLsb, fbErr))
+                        return; // Bad feedback block is non-fatal.
+
+                    // Style (default: binary for back-compat with PRD-0044 schema).
+                    auto style = FeedbackStyle::Binary;
+                    const auto styleStr = fbVar.getProperty ("style", "binary").toString();
+                    if      (styleStr == "binary")     style = FeedbackStyle::Binary;
+                    else if (styleStr == "colour"
+                          || styleStr == "color")      style = FeedbackStyle::Colour;
+                    else if (styleStr == "continuous") style = FeedbackStyle::Continuous;
+
+                    auto curve = FeedbackCurve::Linear;
+                    if (fbVar.getProperty ("curve", "linear").toString() == "linearInverse")
+                        curve = FeedbackCurve::LinearInverse;
+
+                    outFb.midiKey  = packMidiKey (fbCh, fbStat, fbStat == 0xE0 ? 0 : fbD1);
+                    outFb.onValue  = static_cast<std::uint8_t> (
+                        static_cast<int> (fbVar.getProperty ("onValue", 127)));
+                    outFb.offValue = static_cast<std::uint8_t> (
+                        static_cast<int> (fbVar.getProperty ("offValue", 0)));
+                    outFb.style    = style;
+                    outFb.curve    = curve;
+                    outFb.blinkHz  = static_cast<float> (
+                        static_cast<double> (fbVar.getProperty ("blinkHz", 0.0)));
+
+                    // Palette: { "0": vel0, "1": vel1, ..., "15": vel15 }.
+                    for (int p = 0; p < 16; ++p)
+                        outFb.paletteVelocities[p] = 0;
+
+                    if (const auto paletteVar = fbVar.getProperty ("palette", juce::var());
+                        paletteVar.isObject())
                     {
-                        feedback.midiKey  = packMidiKey (fbCh, fbStat, fbStat == 0xE0 ? 0 : fbD1);
-                        feedback.onValue  = static_cast<std::uint8_t> (
-                            static_cast<int> (fbVar.getProperty ("onValue", 127)));
-                        feedback.offValue = static_cast<std::uint8_t> (
-                            static_cast<int> (fbVar.getProperty ("offValue", 0)));
+                        if (auto* obj = paletteVar.getDynamicObject())
+                        {
+                            for (const auto& entry : obj->getProperties())
+                            {
+                                const auto idxStr = entry.name.toString();
+                                const int idx = idxStr.getIntValue();
+                                if (idx >= 0 && idx < 16)
+                                    outFb.paletteVelocities[idx] = static_cast<std::uint8_t> (
+                                        std::clamp (static_cast<int> (entry.value), 0, 127));
+                            }
+                        }
                     }
-                    // Bad feedback block is non-fatal; binding still loads without it.
-                }
+                };
+
+                BindingFeedback feedback {};
+                BindingFeedback disengagedFeedback {};
+                parseFeedbackBlock (bVar.getProperty ("feedback", juce::var()),           feedback);
+                parseFeedbackBlock (bVar.getProperty ("disengagedFeedback", juce::var()), disengagedFeedback);
 
                 Binding binding {};
                 binding.target               = static_cast<TargetIndex> (*targetIdxOpt);
@@ -303,6 +346,7 @@ namespace sonik::midi
                 binding.requiredModifierMask = requiredMask;
                 binding.softTakeover         = soft;
                 binding.feedback             = feedback;
+                binding.disengagedFeedback   = disengagedFeedback;
 
                 const auto bindingIndex = static_cast<std::uint16_t> (mapping.bindings.size());
 

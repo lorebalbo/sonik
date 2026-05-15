@@ -338,9 +338,9 @@ namespace sonik::midi
 
     void MidiDeviceManager::sendOutput (std::uint64_t deviceId, const juce::MidiMessage& message)
     {
-        JUCE_ASSERT_MESSAGE_THREAD;
-
-        DBG("[MidiDeviceManager::sendOutput] deviceId=" << static_cast<int>(deviceId) << " message size=" << message.getRawDataSize());
+        // PRD-0047: this method is called from MidiOutputThread, NOT the
+        // Message thread. juce::MidiOutput::sendMessageNow is documented as
+        // thread-safe. We rely on the JUCE driver's own synchronisation.
 
         auto* dev = findByIdAndDirection (deviceId, /*isInput*/ false);
         if (dev == nullptr)

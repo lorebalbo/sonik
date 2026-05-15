@@ -2,6 +2,8 @@
 
 #include "../Deck/DeckIdentifiers.h"
 
+#include <algorithm>
+
 namespace sonik::midi
 {
     //==========================================================================
@@ -60,9 +62,12 @@ namespace sonik::midi
         if (policy != SoftTakeoverPolicy::Pickup)
         {
             auto& entry = entries[Key { deviceId, target }];
+            const bool wasEngaged = (entry.state == TakeoverState::Engaged);
             entry.state                    = TakeoverState::Engaged;
             entry.lastHardwareValue        = hardwareValue;
             entry.lastSoftwareValueAtCheck = softwareValue;
+            if (! wasEngaged)
+                notifyStateChanged (deviceId, target, TakeoverState::Engaged);
             return true;
         }
 
@@ -98,6 +103,7 @@ namespace sonik::midi
         if (crossed)
         {
             entry.state = TakeoverState::Engaged;
+            notifyStateChanged (deviceId, target, TakeoverState::Engaged);
             return true;
         }
         return false;
@@ -109,7 +115,13 @@ namespace sonik::midi
         for (auto it = entries.begin(); it != entries.end();)
         {
             if (it->first.deviceId == deviceId)
+            {
+                const bool wasEngaged = (it->second.state == TakeoverState::Engaged);
+                const auto target = it->first.target;
                 it = entries.erase (it);
+                if (wasEngaged)
+                    notifyStateChanged (deviceId, target, TakeoverState::Disengaged);
+            }
             else
                 ++it;
         }
@@ -118,7 +130,13 @@ namespace sonik::midi
     void SoftTakeoverManager::resetForBinding (std::uint64_t deviceId, TargetIndex target)
     {
         JUCE_ASSERT_MESSAGE_THREAD;
-        entries.erase (Key { deviceId, target });
+        auto it = entries.find (Key { deviceId, target });
+        if (it == entries.end())
+            return;
+        const bool wasEngaged = (it->second.state == TakeoverState::Engaged);
+        entries.erase (it);
+        if (wasEngaged)
+            notifyStateChanged (deviceId, target, TakeoverState::Disengaged);
     }
 
     void SoftTakeoverManager::resetForTarget (TargetIndex target)
@@ -127,7 +145,13 @@ namespace sonik::midi
         for (auto it = entries.begin(); it != entries.end();)
         {
             if (it->first.target == target)
+            {
+                const bool wasEngaged = (it->second.state == TakeoverState::Engaged);
+                const auto deviceId = it->first.deviceId;
                 it = entries.erase (it);
+                if (wasEngaged)
+                    notifyStateChanged (deviceId, target, TakeoverState::Disengaged);
+            }
             else
                 ++it;
         }
@@ -140,9 +164,12 @@ namespace sonik::midi
     {
         JUCE_ASSERT_MESSAGE_THREAD;
         auto& entry = entries[Key { deviceId, target }];
+        const bool wasEngaged = (entry.state == TakeoverState::Engaged);
         entry.state                    = TakeoverState::Engaged;
         entry.lastHardwareValue        = hardwareValue;
         entry.lastSoftwareValueAtCheck = softwareValue;
+        if (! wasEngaged)
+            notifyStateChanged (deviceId, target, TakeoverState::Engaged);
     }
 
     TakeoverState SoftTakeoverManager::getState (std::uint64_t deviceId, TargetIndex target) const
@@ -150,6 +177,31 @@ namespace sonik::midi
         JUCE_ASSERT_MESSAGE_THREAD;
         const auto it = entries.find (Key { deviceId, target });
         return it == entries.end() ? TakeoverState::Disengaged : it->second.state;
+    }
+
+    void SoftTakeoverManager::addListener (SoftTakeoverManagerListener* l)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+        if (l != nullptr
+            && std::find (listeners.begin(), listeners.end(), l) == listeners.end())
+            listeners.push_back (l);
+    }
+
+    void SoftTakeoverManager::removeListener (SoftTakeoverManagerListener* l)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+        listeners.erase (std::remove (listeners.begin(), listeners.end(), l), listeners.end());
+    }
+
+    void SoftTakeoverManager::notifyStateChanged (std::uint64_t deviceId,
+                                                  TargetIndex   target,
+                                                  TakeoverState s)
+    {
+        // Copy to permit listener self-removal during callback.
+        auto snapshot = listeners;
+        for (auto* l : snapshot)
+            if (l != nullptr)
+                l->takeoverStateChanged (deviceId, target, s);
     }
 
     //--------------------------------------------------------------------------

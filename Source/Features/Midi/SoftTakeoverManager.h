@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
+#include <vector>
 
 namespace sonik::midi
 {
@@ -40,6 +41,20 @@ namespace sonik::midi
         TakeoverState state                 { TakeoverState::Disengaged };
         float         lastHardwareValue     { -1.0f }; // -1 == "never seen"
         float         lastSoftwareValueAtCheck { 0.0f };
+    };
+
+    //--------------------------------------------------------------------------
+    /** PRD-0047: observers receive state transitions Disengaged↔Engaged so
+        downstream subsystems (notably MidiFeedbackEngine) can drive a
+        "disengaged" LED indicator. All callbacks fire on the Message thread. */
+    class SoftTakeoverManagerListener
+    {
+    public:
+        virtual ~SoftTakeoverManagerListener() = default;
+
+        virtual void takeoverStateChanged (std::uint64_t /*deviceId*/,
+                                           TargetIndex   /*target*/,
+                                           TakeoverState /*newState*/) {}
     };
 
     //--------------------------------------------------------------------------
@@ -98,6 +113,10 @@ namespace sonik::midi
 
         TakeoverState getState (std::uint64_t deviceId, TargetIndex target) const;
 
+        //-- Listeners (Message thread only) -------------------------------
+        void addListener    (SoftTakeoverManagerListener* l);
+        void removeListener (SoftTakeoverManagerListener* l);
+
         //-- MappingStoreListener ------------------------------------------
         void activeMappingChanged (std::uint64_t deviceId) override;
 
@@ -133,8 +152,11 @@ namespace sonik::midi
             tree does not belong to a deck. */
         std::optional<std::uint8_t> deckIndexFor (const juce::ValueTree& deckTree) const;
 
+        void notifyStateChanged (std::uint64_t deviceId, TargetIndex target, TakeoverState s);
+
         juce::ValueTree rootTree;
         MappingStore&   mappingStoreRef;
         std::unordered_map<Key, TakeoverEntry, KeyHash> entries;
+        std::vector<SoftTakeoverManagerListener*> listeners;
     };
 } // namespace sonik::midi

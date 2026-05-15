@@ -170,5 +170,5 @@ On first launch, defaults are copied (lazily, on demand) into the user mapping d
 - [x] PRD-0044: MIDI Input Routing & Inbound Command Dispatch (incl. 14-bit CC, value-curve transforms)
 - [x] PRD-0045: Soft-Takeover (Pickup Mode) for Continuous Controls
 - [ ] PRD-0046: Modifier / Shift Layer Support
-- [ ] PRD-0047: MIDI Output & LED Feedback Engine
+- [x] PRD-0047: MIDI Output & LED Feedback Engine
 - [ ] PRD-0048: MIDI Learn UI & Mapping Manager

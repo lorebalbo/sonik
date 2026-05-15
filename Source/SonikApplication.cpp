@@ -161,9 +161,12 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
             midiDeviceManager->openOutput (dev.deviceId);
     }
 
-    // PRD-0047 (slice 1): message-thread play LED feedback.
+    // PRD-0047: MIDI output and LED feedback engine.
     midiFeedbackEngine = std::make_unique<sonik::midi::MidiFeedbackEngine> (
-        deckStateManager->getStateTree(), *midiDeviceManager, *mappingStore);
+        deckStateManager->getStateTree(),
+        *midiDeviceManager,
+        *mappingStore,
+        *softTakeoverManager);
 
     // Inject the master clock publisher into every deck slot (PRD-0026).
     audioEngine->setMasterClockPublisher (masterClockPublisher.get());
