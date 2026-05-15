@@ -46,7 +46,7 @@ namespace sonik::midi
 
         const char* modifierStyleToString (ModifierStyle s) noexcept
         {
-            return (s == ModifierStyle::Toggle) ? "toggle" : "momentary";
+            return (s == ModifierStyle::Latching) ? "latching" : "momentary";
         }
 
         juce::DynamicObject* makeMidiBlock (std::uint32_t midiKey, std::uint8_t lsbData1 = 255)
@@ -64,8 +64,14 @@ namespace sonik::midi
             return obj;
         }
 
-        juce::String modifierIdForBit (std::uint8_t bit)
+        juce::String modifierIdForBit (const Mapping& m, std::uint8_t bit)
         {
+            if (bit < m.modifierNames.size())
+            {
+                const auto& name = m.modifierNames[bit];
+                if (name.isNotEmpty())
+                    return name;
+            }
             return "mod" + juce::String ((int) bit);
         }
     }
@@ -92,7 +98,7 @@ namespace sonik::midi
             for (const auto& mod : m.modifiers)
             {
                 auto* obj = new juce::DynamicObject();
-                obj->setProperty ("id", modifierIdForBit (mod.bit));
+                obj->setProperty ("id", modifierIdForBit (m, mod.bit));
                 auto* midi = makeMidiBlock (mod.midiKey);
                 midi->setProperty ("style", juce::String (modifierStyleToString (mod.style)));
                 obj->setProperty ("binding", juce::var (midi));
@@ -116,9 +122,22 @@ namespace sonik::midi
 
                 if (b.requiredModifierMask != 0u)
                 {
-                    // Recover modifier id from the single bit (we only emit single-bit masks).
-                    const auto bit = static_cast<std::uint8_t> (std::countr_zero (b.requiredModifierMask));
-                    obj->setProperty ("modifier", modifierIdForBit (bit));
+                    const auto popcnt = std::popcount (b.requiredModifierMask);
+                    if (popcnt == 1)
+                    {
+                        const auto bit = static_cast<std::uint8_t> (std::countr_zero (b.requiredModifierMask));
+                        obj->setProperty ("modifier", modifierIdForBit (m, bit));
+                    }
+                    else
+                    {
+                        juce::Array<juce::var> idsArr;
+                        for (std::uint8_t bit = 0; bit < 32; ++bit)
+                        {
+                            if ((b.requiredModifierMask & (1u << bit)) != 0u)
+                                idsArr.add (modifierIdForBit (m, bit));
+                        }
+                        obj->setProperty ("modifier", idsArr);
+                    }
                 }
 
                 if (b.softTakeover != SoftTakeoverPolicy::Pickup)

@@ -8,7 +8,7 @@ depends-on: [PRD-0040, PRD-0041]
 
 ## 1.1. Problem
 
-PRD-0040 delivers raw MIDI bytes; PRD-0041 routes typed events to the right thread. But neither of them knows what a MIDI byte *means* in application terms. A `0x90 0x0E 0x7F` (Note On, note 14, full velocity) from the Reloop Contour CE could mean "Play Deck A", "Hot Cue 1 on Deck B", or "Cycle pitch range" — the meaning depends on a binding declared by a mapping file.
+PRD-0040 delivers raw MIDI bytes; PRD-0041 routes typed events to the right thread. But neither of them knows what a MIDI byte *means* in application terms. A `0x90 0x0E 0x7F` (Note On, note 14, full velocity) from the Behringer DDM4000 could mean "Play Deck A", "Hot Cue 1 on Deck B", or "Cycle pitch range" — the meaning depends on a binding declared by a mapping file.
 
 Without a canonical, stable vocabulary of mappable application commands, every consumer of MIDI events would invent ad-hoc identifiers, mapping files would diverge in spelling and grammar across releases, and persisted bindings would silently break the moment a feature module was renamed or refactored. Worse, there would be no central place to verify that a target ID a mapping file references actually exists in the application — a typo in a community-shared profile could silently render a control inert with no error visible to the user.
 
@@ -73,7 +73,7 @@ This PRD has no end-user UI. Its consumers are PRD-0043 (which calls `parseMappi
 
 ### 1.3.5. Validation Error Surfacing
 
-1. A user shares a community Reloop mapping that references `deck.A.filter` (which does not yet exist in this version of Sonik).
+1. A user shares a community DDM4000 mapping that references `deck.A.filter` (which does not yet exist in this version of Sonik).
 2. PRD-0043 calls `MappingParser::parse`, which returns `ParseResult` containing one `ValidationError { kind: UnknownTarget, target: "deck.A.filter", sourcePath: "...", offset: 1247 }`.
 3. PRD-0043's loader logs the error via `DBG` on the Message thread, surfaces it in the future MIDI Learn UI (PRD-0048) as a per-binding warning row, and continues loading the rest of the file.
 4. The application launches normally. The unknown binding is inert; every other binding works.
@@ -124,4 +124,4 @@ This PRD has no end-user UI. Its consumers are PRD-0043 (which calls `parseMappi
 - [ ] The system defines a `ModifierMask` as a `uint32_t` value type (passed by value to `resolve`).
 - [ ] The system lives entirely under `Source/Features/Midi/` and does not `#include` any header from `Source/Features/Deck/`, `Source/Features/AudioEngine/`, `Source/Features/Mixer/`, or `Source/Features/Library/`.
 - [ ] The system depends on PRD-0040 (`MidiInboundEvent`) and PRD-0041 (`MidiTargetCategory`, `MidiAudioEvent`, `MidiMessageEvent`) only by `#include`-ing their public headers.
-- [ ] The system is covered by `ControlTargetRegistryTests.cpp` and `MappingParserTests.cpp` in `Tests/` verifying: (a) every registered target has a unique, monotonically sortable id; (b) `lookup` returns `nullopt` for unknown ids and the correct index for every registered id; (c) the parser correctly materialises a hand-written Reloop-Contour-style mapping fixture; (d) every defined `Transform` produces the documented output for representative input values; (e) `resolve` returns the correct overload when a SHIFT modifier is active; (f) `static_assert`s for POD triviality compile; (g) a stress test of 1,000,000 `resolve` calls produces zero allocations (validated by a custom allocator hook in the test build).
+- [ ] The system is covered by `ControlTargetRegistryTests.cpp` and `MappingParserTests.cpp` in `Tests/` verifying: (a) every registered target has a unique, monotonically sortable id; (b) `lookup` returns `nullopt` for unknown ids and the correct index for every registered id; (c) the parser correctly materialises a hand-written DDM4000-style mapping fixture; (d) every defined `Transform` produces the documented output for representative input values; (e) `resolve` returns the correct overload when a SHIFT modifier is active; (f) `static_assert`s for POD triviality compile; (g) a stress test of 1,000,000 `resolve` calls produces zero allocations (validated by a custom allocator hook in the test build).

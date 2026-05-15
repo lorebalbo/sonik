@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace sonik::midi
 {
@@ -51,7 +52,8 @@ namespace sonik::midi
         bool parseModifierStyle (const juce::String& s, ModifierStyle& out) noexcept
         {
             if (s == "momentary") { out = ModifierStyle::Momentary; return true; }
-            if (s == "toggle")    { out = ModifierStyle::Toggle;    return true; }
+            if (s == "latching")  { out = ModifierStyle::Latching;  return true; }
+            if (s == "toggle")    { out = ModifierStyle::Latching;  return true; } // legacy alias
             return false;
         }
 
@@ -145,6 +147,31 @@ namespace sonik::midi
         // ---- modifiers ----------------------------------------------------
         std::unordered_map<std::string, std::uint8_t> modifierIdToBit;
 
+        // Pre-scan: collect MIDI keys present in `bindings[]` so we can
+        // detect ModifierTargetConflict (PRD-0046) without materialising
+        // anything we'd then have to undo.
+        std::unordered_set<std::uint32_t> bindingMidiKeys;
+        if (const auto bindingsScanVar = root.getProperty ("bindings", juce::var()); bindingsScanVar.isArray())
+        {
+            const auto* arr = bindingsScanVar.getArray();
+            for (int i = 0; i < arr->size(); ++i)
+            {
+                const auto& bVar = arr->getReference (i);
+                if (! bVar.isObject())
+                    continue;
+                const auto midiVar = bVar.getProperty ("midi", juce::var());
+                std::uint8_t ch = 0, st = 0, d1 = 0, lsb = 255;
+                juce::String tmp;
+                if (parseMidiBlock (midiVar, ch, st, d1, lsb, tmp))
+                    bindingMidiKeys.insert (packMidiKey (ch, st, st == 0xE0 ? 0 : d1));
+            }
+        }
+
+        // MIDI keys that are declared as BOTH a modifier and a binding (per
+        // PRD-0046 we drop both sides; tracked here so binding parsing can
+        // silently skip the binding too).
+        std::unordered_set<std::uint32_t> conflictingMidiKeys;
+
         if (const auto modsVar = root.getProperty ("modifiers", juce::var()); modsVar.isArray())
         {
             const auto* arr = modsVar.getArray();
@@ -193,12 +220,29 @@ namespace sonik::midi
                     style = ModifierStyle::Momentary;
                 }
 
+                const auto packed = packMidiKey (channel, status, status == 0xE0 ? 0 : data1);
+
+                // ModifierTargetConflict: same MIDI key declared as both a
+                // modifier and a regular binding → drop both (PRD-0046).
+                if (bindingMidiKeys.contains (packed))
+                {
+                    result.errors.push_back (makeError (ValidationError::Kind::ModifierTargetConflict,
+                                                        "midiKey 0x" + juce::String::toHexString ((int) packed)
+                                                            + " (modifier \"" + idStr + "\")",
+                                                        sourcePath, i));
+                    conflictingMidiKeys.insert (packed);
+                    continue;
+                }
+
                 Modifier mod {};
-                mod.midiKey = packMidiKey (channel, status, status == 0xE0 ? 0 : data1);
+                mod.midiKey = packed;
                 mod.bit     = nextBit;
                 mod.style   = style;
 
                 modifierIdToBit[idKey] = nextBit;
+                if (mapping.modifierNames.size() <= nextBit)
+                    mapping.modifierNames.resize (static_cast<std::size_t> (nextBit) + 1u);
+                mapping.modifierNames[nextBit] = idStr;
                 const auto modIndex = static_cast<std::uint16_t> (mapping.modifiers.size());
                 mapping.modifiers.push_back (mod);
                 mapping.modifierIndex.emplace (mod.midiKey, modIndex);
@@ -237,6 +281,15 @@ namespace sonik::midi
                     continue;
                 }
 
+                // Silently skip bindings whose MIDI key collided with a
+                // modifier declaration (the modifier side already emitted
+                // ModifierTargetConflict for this key).
+                {
+                    const auto packed = packMidiKey (channel, status, status == 0xE0 ? 0 : data1);
+                    if (conflictingMidiKeys.contains (packed))
+                        continue;
+                }
+
                 // transform
                 Transform transform = Transform::Momentary;
                 const auto transformStr = bVar.getProperty ("transform", "").toString();
@@ -247,23 +300,49 @@ namespace sonik::midi
                     continue;
                 }
 
-                // modifier (optional)
+                // modifier (optional) — accepts a string id OR an array of ids
+                // (all must be held simultaneously; ANDed into the mask).
                 std::uint32_t requiredMask = 0;
+                bool          unknownModRef = false;
                 if (bVar.hasProperty ("modifier"))
                 {
-                    const auto modRef = bVar.getProperty ("modifier", "").toString();
-                    if (modRef.isNotEmpty())
+                    const auto modVar = bVar.getProperty ("modifier", juce::var());
+
+                    auto applyOne = [&] (const juce::String& ref) -> bool
                     {
-                        const std::string key { modRef.toRawUTF8() };
+                        if (ref.isEmpty())
+                            return true;
+                        const std::string key { ref.toRawUTF8() };
                         const auto it = modifierIdToBit.find (key);
                         if (it == modifierIdToBit.end())
                         {
                             result.errors.push_back (makeError (ValidationError::Kind::UnknownModifierReference,
-                                                                modRef, sourcePath, i));
-                            continue;
+                                                                ref, sourcePath, i));
+                            return false;
                         }
-                        requiredMask = (1u << it->second);
+                        requiredMask |= (1u << it->second);
+                        return true;
+                    };
+
+                    if (modVar.isArray())
+                    {
+                        for (const auto& v : *modVar.getArray())
+                        {
+                            if (! applyOne (v.toString()))
+                            {
+                                unknownModRef = true;
+                                break;
+                            }
+                        }
                     }
+                    else
+                    {
+                        if (! applyOne (modVar.toString()))
+                            unknownModRef = true;
+                    }
+
+                    if (unknownModRef)
+                        continue;
                 }
 
                 // softTakeover (optional)

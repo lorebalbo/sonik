@@ -1,5 +1,5 @@
 ---
-status: Not Implemented
+status: Implemented
 epic: EPIC-0005
 depends-on: [PRD-0042, PRD-0043, PRD-0044]
 ---
@@ -8,7 +8,7 @@ depends-on: [PRD-0042, PRD-0043, PRD-0044]
 
 ## 1.1. Problem
 
-Hardware controllers like the Reloop Contour Interface Edition have far more app commands than physical surfaces. The Contour CE has only four pads per side, yet a DJ needs to access at least eight hot cues per deck, plus delete-cue actions, plus per-cue colour changes — totalling ~24 distinct commands per side from four physical pads. Every DJ controller solves this with **modifier keys (SHIFT, ALT, etc.)** that re-layer the surface: holding SHIFT turns the four hot-cue pads into four hot-cue *delete* buttons, and ALT might turn them into colour pickers.
+Many compact DJ controllers — small pad controllers, mini-MIDI keyboards, and budget all-in-one units — have far more app commands than physical surfaces. A controller with only four hot-cue pads cannot expose eight hot cues per deck plus per-cue delete plus per-cue colour edits without a way to re-layer the same four pads under a held modifier. Every DJ controller solves this with **modifier keys (SHIFT, ALT, etc.)** that re-layer the surface: holding SHIFT turns the four hot-cue pads into four hot-cue *delete* buttons, and ALT might turn them into colour pickers. The Behringer DDM4000 reference hardware (a pure mixer with no pads) does not exercise modifier semantics, but Sonik must support them in v1 because users will MIDI-Learn third-party controllers against the Generic MIDI profile and immediately need SHIFT-style layering.
 
 PRDs 0042 and 0044 already laid groundwork:
 - PRD-0042 defines `Modifier` POD structs in `Mapping`, the resolver's hash-bucket support for up to four modifier-layered overloads per MIDI key, and the `ResolvedBinding { category: ModifierSet | ModifierClear }` special return.
@@ -42,9 +42,9 @@ The system must formalise modifier-layer semantics into a deterministic, documen
 
 This PRD has no UI of its own; it formalises and hardens behaviour described informally in earlier PRDs.
 
-### 1.3.1. Authoring a SHIFT Layer for the Reloop Profile
+### 1.3.1. Authoring a SHIFT Layer for a Generic Controller Profile
 
-1. The mapping author opens `reloop-contour-interface-edition.json` and declares the SHIFT button as a modifier:
+1. The mapping author opens `behringer-ddm4000.json` and declares the SHIFT button as a modifier:
 
    ```json
    "modifiers": [
@@ -84,7 +84,7 @@ This PRD has no UI of its own; it formalises and hardens behaviour described inf
 
 ### 1.3.4. SHIFT Held Across Disconnect
 
-1. The user holds SHIFT. Bit 0 of the Contour CE's `modifierMask` is set.
+1. The user holds SHIFT on a connected jog-capable controller. Bit 0 of that controller's `modifierMask` is set.
 2. The USB cable accidentally disconnects. `MidiDeviceManager` detects the disconnect on the next hot-plug poll (≤ 1 s) and fires `midiDeviceRemoved(deviceId)`.
 3. The `MidiInboundRouter` listens for `midiDeviceRemoved` and atomically clears `deviceStates[deviceId].modifierMask` to 0 before the device's MIDI subscription is torn down.
 4. The user reconnects the cable. `midiDeviceAdded` fires; the previously cached `modifierMask` is 0; no stuck modifier.
@@ -130,8 +130,7 @@ This PRD has no UI of its own; it formalises and hardens behaviour described inf
 - [ ] The system's `MidiInboundRouter` listens for `MappingStoreListener::activeMappingChanged(deviceId)` and atomically clears the device's `modifierMask` to 0 before swapping the cached `Mapping` pointer.
 - [ ] The system exposes `MidiInboundRouter::getModifierMask(uint64_t deviceId) const noexcept -> uint32_t` (read with `std::memory_order_acquire`) for PRD-0048's UI.
 - [ ] The system exposes `MidiInboundRouter::getModifierBitName(const Mapping&, uint8_t bit) const -> std::optional<juce::String>` returning the modifier id string for a given bit index, for UI display.
-- [ ] The system's modifier mask state is per-device — distinct devices have independent masks and a SHIFT held on the Reloop Contour CE does not affect modifier resolution for a different connected controller.
+- [ ] The system's modifier mask state is per-device — distinct devices have independent masks and a SHIFT held on one connected controller does not affect modifier resolution for a different connected controller.
 - [ ] The system supports up to 32 distinct modifiers per mapping (encoded in `uint32_t`). The parser rejects a 33rd modifier in the same mapping with a `ValidationError { kind: TooManyModifiers, ... }`.
-- [ ] The system's bundled Reloop profile (PRD-0043) declares `shift` as a `momentary` modifier with the correct MIDI mapping derived from the reference `.tsi`.
-- [ ] The system's bundled Reloop profile declares SHIFT-layered overloads for at minimum: `hotcue.{1..4}.trigger` → `hotcue.{1..4}.delete`, `loop.size.halve/double` → `beatjump.minus1/plus1`.
-- [ ] The system is covered by `ModifierLayerTests.cpp` in `Tests/` verifying: (a) momentary press/release toggles the bit; (b) latching press toggles bit, release does not; (c) strict-equality matching rejects subset matches; (d) multi-modifier binding requires all listed modifiers simultaneously; (e) device disconnect clears the mask; (f) profile switch clears the mask before activation; (g) `ModifierTargetConflict` and `UnknownModifier` validation errors fire and drop the offending bindings; (h) `getModifierMask` returns the current state via acquire ordering; (i) the bundled Reloop profile loads and exercises SHIFT layers end-to-end.
+- [ ] The system's bundled DDM4000 profile (PRD-0043) declares no `modifier` entries (the DDM4000 has no dedicated SHIFT/ALT surface). Modifier-layer authoring is exercised end-to-end by `ModifierLayerTests.cpp` against a synthetic test fixture (a hand-authored mapping with one momentary modifier and at least one layered overload), not against the DDM4000 reference profile.
+- [ ] The system is covered by `ModifierLayerTests.cpp` in `Tests/` verifying: (a) momentary press/release toggles the bit; (b) latching press toggles bit, release does not; (c) strict-equality matching rejects subset matches; (d) multi-modifier binding requires all listed modifiers simultaneously; (e) device disconnect clears the mask; (f) profile switch clears the mask before activation; (g) `ModifierTargetConflict` and `UnknownModifier` validation errors fire and drop the offending bindings; (h) `getModifierMask` returns the current state via acquire ordering; (i) a synthetic in-test mapping fixture (not the DDM4000 reference profile) exercises SHIFT-layered overloads end-to-end through the resolver, the router, and the modifier-clear path.

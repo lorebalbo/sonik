@@ -207,12 +207,12 @@ namespace
                     expectEquals ((int) release->category, (int) MidiTargetCategory::ModifierClear);
             }
 
-            beginTest ("Toggle modifier emits Set only on press edge");
+            beginTest ("Latching modifier emits ModifierToggle only on press edge");
             {
                 auto m = parseOk (R"({
                     "schemaVersion": 1,
                     "modifiers": [
-                        { "id": "lock", "binding": { "channel": 1, "status": "note", "data1": 24, "style": "toggle" } }
+                        { "id": "lock", "binding": { "channel": 1, "status": "note", "data1": 24, "style": "latching" } }
                     ],
                     "bindings": []
                 })");
@@ -220,7 +220,7 @@ namespace
                 const auto press = BindingResolver::resolve (m, state, makeEvent (0x90, 24, 127), 0);
                 expect (press.has_value());
                 if (press.has_value())
-                    expectEquals ((int) press->category, (int) MidiTargetCategory::ModifierSet);
+                    expectEquals ((int) press->category, (int) MidiTargetCategory::ModifierToggle);
                 const auto release = BindingResolver::resolve (m, state, makeEvent (0x80, 24, 0), 0);
                 expect (! release.has_value());
             }

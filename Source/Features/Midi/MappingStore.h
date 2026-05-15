@@ -149,7 +149,7 @@ namespace sonik::midi
         mutable std::shared_mutex stateMutex;
 
         // Bundled profiles are immutable after construction.  Keyed by a
-        // stable id ("reloop-contour-interface-edition", "generic-midi").
+        // stable id ("behringer-ddm4000", "generic-midi").
         std::unordered_map<juce::String, std::shared_ptr<const Mapping>> bundledProfiles;
         juce::String                                                     genericProfileId;
 

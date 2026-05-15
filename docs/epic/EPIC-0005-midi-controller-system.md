@@ -7,9 +7,9 @@ status: Open
 
 ## 1.1. Goal and Vision
 
-Make Sonik a fully hardware-driven DJ application. Every interactive control exposed in the UI — transport (play, cue, sync), pitch fader, gain and EQ knobs, crossfader, jog wheel (bend and scratch), loops, hot cues, beat-jump, library navigation, and deck loading — must be addressable from a connected MIDI controller, and the corresponding hardware indicators (LEDs, lit pads, transport buttons) must reflect application state in real time.
+Make Sonik a fully hardware-driven DJ application. Every interactive control exposed in the UI — transport (play, cue, sync), pitch fader, gain and EQ knobs, crossfader, jog wheel (bend and scratch), loops, hot cues, beat-jump, library navigation, and deck loading — must be addressable from a connected MIDI controller, and the corresponding hardware indicators (LEDs, lit buttons, level meters) must reflect application state in real time.
 
-The system must support an open, versioned, human-readable mapping format so users and the community can author profiles for any controller, must ship a curated default profile for the **Reloop Contour Interface Edition** (first reference hardware), must allow **MIDI Learn** for any unsupported device, and must obey the application's real-time audio contract: MIDI messages targeting jog/scratch reach the audio thread through lock-free FIFOs in under 5 ms, with zero allocations or locks on the audio path.
+The system must support an open, versioned, human-readable mapping format so users and the community can author profiles for any controller, must ship a curated default profile for the **Behringer DDM4000** (first reference hardware — a 4-channel digital DJ mixer with MIDI in/out, exposing per-channel gain / 3-band EQ + kills / channel fader / CUE button, a crossfader with assignable curve, master and booth outputs, mic section, per-channel BPM counter + tap, effects/sampler sections, and a menu/edit encoder), must allow **MIDI Learn** for any unsupported device, and must obey the application's real-time audio contract: MIDI messages routed to the audio thread (jog/scratch and any other RT-classified target) reach the audio thread through lock-free FIFOs in under 5 ms, with zero allocations or locks on the audio path. The DDM4000 reference profile binds only mixer-surface targets and does not exercise the audio-thread path; that path is preserved in the architecture for future jog-capable controllers and for users who MIDI-Learn jog targets against the Generic MIDI profile.
 
 The guiding principle is that the MIDI module is a **bidirectional adapter**, never an owner of state. It translates hardware events into the same atomics and ValueTree writes that the existing UI controls already produce, and translates state changes back into outbound MIDI for LED feedback. No existing Feature module needs to know that MIDI exists.
 
@@ -24,14 +24,14 @@ The following capabilities are included in this Epic:
 - An abstract **Control Target Registry** that defines stable string IDs (e.g., `deck.A.transport.play`, `deck.B.jog.scratch`, `deck.A.hotcue.3.trigger`, `mixer.crossfader`) for every mappable application command, decoupled from UI layout
 - A versioned **JSON mapping schema** describing, per binding: the inbound MIDI message (channel, status, data1), the optional 14-bit-CC LSB pair, the target control ID, the value-curve transform (linear, signed-bit jog delta, two's-complement, toggle, momentary), an optional modifier mask, an optional per-binding soft-takeover override, and an optional outbound `feedback` declaration
 - Persistent mapping storage as JSON files in the user app-data folder (`~/Library/Application Support/Sonik/MidiMappings/` on macOS, equivalent on Windows), with schema validation on load and crash-safe fallback to bundled defaults on malformed input
-- **Bundled default profile for the Reloop Contour Interface Edition**, curated from the reference `.tsi` and the Reloop manual, with LED feedback declarations for the controller's lit transport and cue buttons
+- **Bundled default profile for the Behringer DDM4000**, curated from the reference `.tsi` in `midi_mappings/ddm4000/` and the Behringer DDM4000 user manual, covering the 4 channel strips (gain, 3-band EQ + kills, channel fader, CUE button), the crossfader, master/booth/headphone levels, channel assign A/B buttons, and the menu/edit encoder, with LED feedback declarations for the channel CUE buttons and assign LEDs
 - **Bundled "Generic MIDI" fallback profile** for unknown devices, enabling immediate MIDI Learn without prior configuration
 - Inbound command dispatch wiring every existing application surface (transport, pitch, gain, EQ, crossfader, loop, hot cue, beat-jump, sync, library nav, track load-to-deck) to the binding resolver, including **14-bit CC pairing** for high-resolution faders
 - **Soft-takeover (pickup mode)** for continuous controls (pitch, gain, EQ, crossfader, filter): hardware writes are suppressed until the hardware value crosses the current software value, with per-binding override (`always` / `never` / `pickup`)
 - **Modifier / SHIFT-layer support**: bindings flagged `type: modifier` set a per-device modifier mask; other bindings declare a required mask
 - **MIDI Output / LED feedback engine**: state-tree and atomic listeners on the Message thread translate state changes into outbound MIDI per the active profile's `feedback` declarations, including the 16-color hot-cue palette (from PRD-0012) mapped to per-device MIDI velocity tables
 - **MIDI Learn UI**: a Settings panel listing detected devices, active profile per device, a per-binding profile editor, a MIDI-Learn workflow (click target → wiggle hardware → bind), conflict detection (warn + replace/cancel), per-binding curve/modifier/soft-takeover overrides, and "Reset to defaults" / "Duplicate profile" actions
-- Hard latency budget: inbound MIDI → audio-thread atomic delivery for jog/scratch must complete in under 5 ms p99 at 44.1/48 kHz
+- Hard latency budget: inbound MIDI → audio-thread atomic delivery for jog/scratch (and any other future RT-classified target) must complete in under 5 ms p99 at 44.1/48 kHz; this budget is enforced by the architecture and validated by stress tests, even though the DDM4000 reference profile does not bind any audio-thread target
 
 ### 1.2.2. Out of Scope
 
@@ -64,43 +64,48 @@ Inbound MIDI → audio-thread atomic delivery, measured from JUCE MIDI callback 
 
 ### 1.3.3. Mapping Schema (Versioned JSON)
 
-Each mapping file is a JSON document of the form:
+Each mapping file is a JSON document of the form (DDM4000 example, illustrative — full bundled profile lives in `Resources/MidiMappings/behringer-ddm4000.json`):
 
 ```json
 {
   "schemaVersion": 1,
   "device": {
-    "manufacturer": "Reloop",
-    "product": "Contour Interface Edition (MIDI)",
-    "match": { "midiName": "Reloop Contour Interface Edition (MIDI)" }
+    "manufacturer": "Behringer",
+    "product": "DDM4000 (MIDI)",
+    "match": { "midiName": ".*DDM4000.*" }
   },
-  "modifiers": [
-    { "id": "shift", "binding": { "channel": 1, "status": "note", "data1": 24, "type": "modifier" } }
-  ],
+  "modifiers": [],
   "bindings": [
     {
-      "target": "deck.A.transport.play",
-      "midi":   { "channel": 1, "status": "note", "data1": 14 },
-      "transform": "momentary",
-      "modifier": null,
-      "feedback": { "channel": 1, "status": "note", "data1": 14, "onValue": 127, "offValue": 0,
-                    "source": "valueTree", "key": "deck.A.isPlaying" }
+      "target": "mixer.channel.A.cue",
+      "midi":   { "channel": 1, "status": "note", "data1": 0 },
+      "transform": "toggle",
+      "feedback": { "channel": 1, "status": "note", "data1": 0, "onValue": 127, "offValue": 0,
+                    "source": "valueTree", "key": "mixer.channel.A.cueEnabled" }
     },
     {
-      "target": "deck.A.pitchFader",
-      "midi":   { "channel": 1, "status": "cc", "data1": 9, "data1Lsb": 41 },
-      "transform": "linear14",
+      "target": "mixer.channel.A.fader",
+      "midi":   { "channel": 1, "status": "cc", "data1": 7 },
+      "transform": "linear",
       "softTakeover": "pickup"
     },
     {
-      "target": "deck.A.jog.scratch",
-      "midi":   { "channel": 1, "status": "cc", "data1": 34 },
-      "transform": "signedBitDelta",
-      "ticksPerRevolution": 128
+      "target": "mixer.crossfader",
+      "midi":   { "channel": 1, "status": "cc", "data1": 8 },
+      "transform": "linear",
+      "softTakeover": "pickup"
+    },
+    {
+      "target": "mixer.channel.A.eq.high",
+      "midi":   { "channel": 1, "status": "cc", "data1": 16 },
+      "transform": "linearBipolar",
+      "softTakeover": "pickup"
     }
   ]
 }
 ```
+
+The schema also supports `transform: "linear14"` (14-bit CC pairing via `data1Lsb`) and `transform: "signedBitDelta"` with `ticksPerRevolution` for relative-encoder jog/scratch bindings; the DDM4000 reference profile does not use them, but third-party profiles authored via MIDI Learn against the Generic MIDI fallback may.
 
 The schema is **versioned** (`schemaVersion: 1`). Future breaking changes increment the version; the loader migrates older versions forward, never rejects them.
 
@@ -118,7 +123,7 @@ Every mappable application command has a stable string ID, defined in a single h
 - `mixer.crossfader`, `mixer.master.gain`, `mixer.headphones.gain`
 - `library.scroll.up`, `library.scroll.down`, `library.load.deckA`, `library.load.deckB`, `library.focus.search`
 
-**Decks are addressed by absolute ID (A/B/C/D), not by focus.** This is the natural fit for hardware like the Reloop Contour CE that has dedicated left/right transport sections wired to specific decks. The "focused-deck" routing model is not supported in v1.
+**Decks are addressed by absolute ID (A/B/C/D), not by focus.** This is the natural fit for hardware whose physical surfaces are statically mapped to specific channels — for example the Behringer DDM4000's four channel strips, each of which can be assigned (via the bundled profile or user customisation) to one of Sonik's four decks. The "focused-deck" routing model is not supported in v1.
 
 ### 1.3.5. Device-ID Resolution
 
@@ -134,7 +139,7 @@ For every continuous binding declared with `softTakeover: pickup`, the MIDI subs
 
 ### 1.3.7. Modifier / SHIFT Layers
 
-Modifiers are bindings flagged with `type: modifier`. The MIDI subsystem maintains a per-device 32-bit modifier mask. Each modifier binding owns one bit; pressing the hardware button sets the bit, releasing clears it (for `momentary` modifiers) or toggles it (for `toggle` modifiers — not used by Contour CE).
+Modifiers are bindings flagged with `type: modifier`. The MIDI subsystem maintains a per-device 32-bit modifier mask. Each modifier binding owns one bit; pressing the hardware button sets the bit, releasing clears it (for `momentary` modifiers) or toggles it (for `latching` modifiers). The DDM4000 reference profile does not declare any modifier (the mixer has no dedicated SHIFT/ALT button); modifier support exists for users who MIDI-Learn third-party controllers — for example a small pad controller with a SHIFT button — against the Generic MIDI profile.
 
 Every non-modifier binding declares an optional required modifier mask. The resolver matches a binding only when the active mask equals the required mask. This allows the same physical MIDI message to be bound to two different targets at two layers (e.g., `PLAY` plain → `deck.A.transport.play`; `SHIFT+PLAY` → `deck.A.transport.stutter`).
 
@@ -156,7 +161,7 @@ All feature interaction is expressed through these three contracts, exactly as t
 
 The build system embeds the bundled JSON profiles into the application binary via JUCE's `BinaryData` resource pipeline. The default profiles directory is `Resources/MidiMappings/` and contains at least:
 
-- `reloop-contour-interface-edition.json` — full Reloop Contour CE mapping with LED feedback
+- `behringer-ddm4000.json` — full Behringer DDM4000 mapping with LED feedback
 - `generic-midi.json` — empty `bindings` array, used as a blank canvas for MIDI Learn against unknown devices
 
 On first launch, defaults are copied (lazily, on demand) into the user mapping directory only if the user makes edits, so the bundled defaults always remain the source of truth for un-customized profiles.
@@ -166,7 +171,7 @@ On first launch, defaults are copied (lazily, on demand) into the user mapping d
 - [x] PRD-0040: MIDI I/O Subsystem & Device Manager
 - [x] PRD-0041: RT-Safe MIDI Message Bridge
 - [x] PRD-0042: Control Target Registry & Mapping Data Model
-- [x] PRD-0043: Mapping Storage, Loading & Crash-Safe Defaults (with bundled Reloop Contour CE & Generic MIDI profiles)
+- [x] PRD-0043: Mapping Storage, Loading & Crash-Safe Defaults (with bundled Behringer DDM4000 & Generic MIDI profiles)
 - [x] PRD-0044: MIDI Input Routing & Inbound Command Dispatch (incl. 14-bit CC, value-curve transforms)
 - [x] PRD-0045: Soft-Takeover (Pickup Mode) for Continuous Controls
 - [ ] PRD-0046: Modifier / Shift Layer Support

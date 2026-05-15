@@ -70,11 +70,11 @@ namespace
                 const auto dir = makeTempDir ("bundled");
                 MappingStore store (mgr, dir, /*async*/ false);
 
-                // The bundled Reloop profile must accept a device named "Reloop Contour Interface Edition".
+                // The bundled Behringer DDM4000 profile must accept a device named "Behringer DDM4000".
                 MidiDeviceRecord rec;
                 rec.deviceId     = 0x1234;
-                rec.manufacturer = "Reloop";
-                rec.productName  = "Contour Interface Edition";
+                rec.manufacturer = "Behringer";
+                rec.productName  = "DDM4000";
                 rec.isInput      = true;
 
                 // Probe via a fake device-add path by registering the device list manually:
@@ -204,7 +204,7 @@ namespace
             {
                 const auto src = juce::JSON::parse (juce::String (R"({
                     "schemaVersion": 1,
-                    "device": { "manufacturer": "Reloop", "product": "Foo",
+                    "device": { "manufacturer": "Acme", "product": "Foo",
                                 "match": { "midiName": "Foo" } },
                     "modifiers": [
                         { "id": "shift", "binding": { "channel": 1, "status": "note", "data1": 24 } }

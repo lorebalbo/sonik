@@ -47,7 +47,7 @@ namespace sonik::midi
     enum class ModifierStyle : std::uint8_t
     {
         Momentary,  // Mask bit set while held, cleared on release.
-        Toggle,     // Each press flips the bit.
+        Latching,   // Each press XOR-toggles the bit; release is ignored.
     };
 
     //--------------------------------------------------------------------------
@@ -147,6 +147,12 @@ namespace sonik::midi
         std::vector<Binding>    bindings;
         std::vector<Modifier>   modifiers;
 
+        // Modifier id strings indexed by `bit`. `modifierNames[bit]` is the
+        // declared id (e.g. "shift") when a modifier occupies that bit, or
+        // an empty string otherwise. Filled by MappingParser and read by
+        // MappingSerializer + MidiInboundRouter::getModifierBitName.
+        std::vector<juce::String> modifierNames;
+
         // Hash map: midiKey → up to MaxOverloadsPerMidiKey indices into `bindings`.
         // Each bucket entry is the index of a Binding in `bindings`, NOT a TargetIndex
         // (despite reusing the same uint16 type — the resolver dereferences via bindings[]).
@@ -205,6 +211,7 @@ namespace sonik::midi
             ModifierBitOverflow,
             TooManyOverloads,
             UnknownSoftTakeover,
+            ModifierTargetConflict,
         };
 
         Kind          kind;

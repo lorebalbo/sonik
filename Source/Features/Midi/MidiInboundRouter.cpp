@@ -145,6 +145,13 @@ namespace sonik::midi
                 slot->modifierMask.fetch_and (~(1u << bit), std::memory_order_release);
             return;
         }
+        if (rb.category == MidiTargetCategory::ModifierToggle)
+        {
+            const auto bit = static_cast<std::uint32_t> (rb.intDelta);
+            if (bit < 32)
+                slot->modifierMask.fetch_xor (1u << bit, std::memory_order_release);
+            return;
+        }
 
         bridge.dispatch (rb.category,
                          rb.deckIndex,
@@ -179,6 +186,20 @@ namespace sonik::midi
 
     void MidiInboundRouter::activeMappingChanged (std::uint64_t deviceId)
     {
+        // PRD-0046: clear any held modifier state before swapping the cached
+        // mapping. A SHIFT held across a profile switch must not bleed into
+        // the new profile's resolver.
+        {
+            std::lock_guard lock (stateMutex);
+            for (auto& slot : deviceStates)
+            {
+                if (slot.deviceId.load (std::memory_order_relaxed) == deviceId)
+                {
+                    slot.modifierMask.store (0, std::memory_order_release);
+                    break;
+                }
+            }
+        }
         refreshMappingFor (deviceId);
     }
 
@@ -206,5 +227,28 @@ namespace sonik::midi
                 return;
             }
         }
+    }
+
+    //--------------------------------------------------------------------------
+    std::uint32_t MidiInboundRouter::getModifierMask (std::uint64_t deviceId) const noexcept
+    {
+        for (const auto& slot : deviceStates)
+        {
+            if (slot.deviceId.load (std::memory_order_acquire) == deviceId)
+                return slot.modifierMask.load (std::memory_order_acquire);
+        }
+        return 0;
+    }
+
+    std::optional<juce::String> MidiInboundRouter::getModifierBitName (const Mapping& mapping,
+                                                                       std::uint8_t   bit) const
+    {
+        if (bit < mapping.modifierNames.size())
+        {
+            const auto& name = mapping.modifierNames[bit];
+            if (name.isNotEmpty())
+                return name;
+        }
+        return std::nullopt;
     }
 } // namespace sonik::midi

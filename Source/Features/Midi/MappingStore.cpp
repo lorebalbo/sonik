@@ -17,8 +17,7 @@ namespace sonik::midi
     namespace
     {
         constexpr int  kMaxFileSizeBytes = 1 * 1024 * 1024; // 1 MB
-        const char*    kReloopId         = "reloop-contour-interface-edition";
-        const char*    kDdm4000Id        = "reloop-ddm4000";
+        const char*    kDdm4000Id        = "behringer-ddm4000";
         const char*    kGenericId        = "generic-midi";
 
         // Compile a pattern as std::regex, returning nullopt on bad syntax.
@@ -138,10 +137,8 @@ namespace sonik::midi
         };
 
         const BundledRaw bundled[] = {
-            { kReloopId,  BinaryData::reloopcontourinterfaceedition_json,
-                          BinaryData::reloopcontourinterfaceedition_jsonSize },
-            { kDdm4000Id, BinaryData::reloopddm4000_json,
-                          BinaryData::reloopddm4000_jsonSize },
+            { kDdm4000Id, BinaryData::behringerddm4000_json,
+                          BinaryData::behringerddm4000_jsonSize },
             { kGenericId, BinaryData::genericmidi_json,
                           BinaryData::genericmidi_jsonSize },
         };
@@ -238,11 +235,23 @@ namespace sonik::midi
                 continue;
             auto newMapping = resolveForRecord (rec);
             std::shared_ptr<const Mapping> previous;
+            juce::String mappingId ("<none>");
             {
                 std::unique_lock lock (stateMutex);
                 previous = activeByDevice[rec.deviceId];
                 activeByDevice[rec.deviceId] = newMapping;
+                if (newMapping != nullptr)
+                {
+                    for (const auto& [id, m] : bundledProfiles)
+                        if (m == newMapping) { mappingId = id + " (bundled)"; break; }
+                    if (mappingId == "<none>")
+                        for (const auto& [id, m] : userProfiles)
+                            if (m == newMapping) { mappingId = id + " (user)"; break; }
+                }
             }
+            DBG ("[MIDI] mapping resolved  id=" << juce::String::toHexString ((juce::int64) rec.deviceId)
+                 << "  device='" << rec.productName << "'"
+                 << "  mapping=" << mappingId);
             if (newMapping != previous)
                 affected.push_back (rec.deviceId);
         }
@@ -318,10 +327,22 @@ namespace sonik::midi
             return;
 
         auto mapping = resolveForRecord (rec);
+        juce::String mappingId ("<none>");
         {
             std::unique_lock lock (stateMutex);
             activeByDevice[deviceId] = mapping;
+            if (mapping != nullptr)
+            {
+                for (const auto& [id, m] : bundledProfiles)
+                    if (m == mapping) { mappingId = id + " (bundled)"; break; }
+                if (mappingId == "<none>")
+                    for (const auto& [id, m] : userProfiles)
+                        if (m == mapping) { mappingId = id + " (user)"; break; }
+            }
         }
+        DBG ("[MIDI] mapping resolved  id=" << juce::String::toHexString ((juce::int64) deviceId)
+             << "  device='" << rec.productName << "'"
+             << "  mapping=" << mappingId);
         fireActiveMappingChanged (deviceId);
     }
 

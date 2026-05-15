@@ -8,7 +8,7 @@ depends-on: []
 
 ## 1.1. Problem
 
-Sonik has no awareness of MIDI hardware. A DJ who connects a MIDI controller — for example the Reloop Contour Interface Edition — sees no indication that the device exists, has no way to discover which controllers macOS or Windows has exposed to the application, and cannot send a single byte of data from hardware to the audio engine. Every subsequent feature in EPIC-0005 (mapping data model, inbound routing, LED feedback, MIDI Learn) is blocked: there is nothing to route, nothing to map, and no surface against which to learn.
+Sonik has no awareness of MIDI hardware. A DJ who connects a MIDI controller — for example the Behringer DDM4000 — sees no indication that the device exists, has no way to discover which controllers macOS or Windows has exposed to the application, and cannot send a single byte of data from hardware to the audio engine. Every subsequent feature in EPIC-0005 (mapping data model, inbound routing, LED feedback, MIDI Learn) is blocked: there is nothing to route, nothing to map, and no surface against which to learn.
 
 The absence of a device-management layer is particularly damaging because MIDI hardware is dynamic: controllers are plugged and unplugged mid-session, USB hubs lose power, drivers reset. Any naive enumeration done once at startup becomes stale the moment a cable is touched. Worse, JUCE delivers incoming MIDI on a dedicated callback thread separate from the JUCE Message Thread and the audio thread, so even after a device is detected, the application has no contract for who consumes its messages and on which thread — a setup that, if rushed, will produce data races against deck atomics, allocations on the MIDI callback thread, or message duplication between subscribers.
 
@@ -38,7 +38,7 @@ This PRD has no end-user UI; its "users" are the subsequent PRDs in EPIC-0005 (t
 2. `MidiDeviceManager::initialise()` calls `juce::MidiInput::getAvailableDevices()` and `juce::MidiOutput::getAvailableDevices()` to enumerate every MIDI device currently exposed by the host OS.
 3. For each enumerated input device, the manager constructs a `MidiDeviceRecord` with fields `(deviceId, juceIdentifier, manufacturer, productName, ordinal, isInput=true, isOpen=false)`. Output devices receive an equivalent record with `isInput=false`.
 4. `deviceId` is computed from a SHA-1 hash of the string `"<manufacturer>|<productName>|<ordinal>"`, truncated to 64 bits. The `ordinal` defaults to 0 and is incremented (0, 1, 2, …) when a duplicate `(manufacturer, productName)` is seen during the same enumeration pass, in JUCE enumeration order.
-5. The manager does **not** open any input or output device at this stage. Opening is deferred until a subscriber explicitly requests it via `openInput(deviceId)` or `openOutput(deviceId)`. The Reloop Contour CE record is present in the device list with `isOpen=false`.
+5. The manager does **not** open any input or output device at this stage. Opening is deferred until a subscriber explicitly requests it via `openInput(deviceId)` or `openOutput(deviceId)`. The Behringer DDM4000 record is present in the device list with `isOpen=false`.
 6. The manager exposes the current device list via `getDevices()` and publishes a `DeviceListChangeListener` callback to all registered listeners on the Message thread.
 
 ### 1.3.2. Subscriber Opens an Input Device
@@ -48,7 +48,7 @@ This PRD has no end-user UI; its "users" are the subsequent PRDs in EPIC-0005 (t
 3. The manager calls `juce::MidiInput::openDevice(juceIdentifier, this)`, where `this` is the manager acting as the `juce::MidiInputCallback`. The returned `std::unique_ptr<juce::MidiInput>` is stored in the record and `isOpen` is set to `true`.
 4. The manager calls `start()` on the `juce::MidiInput` instance so that messages begin arriving on the JUCE MIDI callback thread.
 5. The method returns `MidiOpenResult::Ok`.
-6. From this point on, every byte the Reloop Contour CE produces invokes the manager's `handleIncomingMidiMessage(MidiInput*, const MidiMessage&)` method.
+6. From this point on, every byte the Behringer DDM4000 produces invokes the manager's `handleIncomingMidiMessage(MidiInput*, const MidiMessage&)` method.
 
 ### 1.3.3. Incoming Message Dispatch
 
@@ -64,7 +64,7 @@ This PRD has no end-user UI; its "users" are the subsequent PRDs in EPIC-0005 (t
 2. The timer callback re-enumerates `juce::MidiInput::getAvailableDevices()` and `juce::MidiOutput::getAvailableDevices()`.
 3. The manager diffs the new list against its current records. Newly-present devices are inserted as `MidiDeviceRecord` entries with `isOpen=false` and assigned a fresh `deviceId` per §1.3.1 step 4.
 4. The manager fires `DeviceListChangeListener::midiDeviceAdded(deviceId)` on the Message thread for every new device.
-5. Subscribers that pre-registered an interest in a specific `(manufacturer, productName)` pair (via `registerAutoOpenRule`) receive an automatic `openInput(deviceId)` and `openOutput(deviceId)` call. This is the mechanism that will allow a saved Reloop Contour CE mapping (loaded in a later PRD) to "auto-attach" the moment the user plugs the device in.
+5. Subscribers that pre-registered an interest in a specific `(manufacturer, productName)` pair (via `registerAutoOpenRule`) receive an automatic `openInput(deviceId)` and `openOutput(deviceId)` call. This is the mechanism that will allow a saved Behringer DDM4000 mapping (loaded in a later PRD) to "auto-attach" the moment the user plugs the device in.
 
 ### 1.3.5. Hot-Plug: Device Disappears Mid-Session
 

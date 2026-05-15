@@ -11,7 +11,7 @@ depends-on: [PRD-0043, PRD-0048, PRD-0049]
 After EPIC-0005, the only way a Sonik user can move a custom MIDI mapping between machines (or share it with the DJ community) is to manually locate `~/Library/Application Support/Sonik/MidiMappings/`, find the right JSON file by guessing at its name, copy it onto a USB stick or email it, and trust the recipient to drop it into the same folder on the other side. That is a path filled with footguns:
 
 - **Wrong destination folder.** New users have no idea this folder exists. A profile dropped into Downloads does nothing.
-- **Filename collision.** Two community profiles named `reloop-contour-ce.json` overwrite each other silently.
+- **Filename collision.** Two community profiles named `behringer-ddm4000.json` overwrite each other silently.
 - **Corruption in transit.** A truncated download or a copy-paste through a forum text editor that mangles UTF-8 produces malformed JSON that silently falls back to the bundled default — with no error visible to the user.
 - **Schema version mismatch.** A profile exported from Sonik 3.0 (schema v3) crashes silently when dropped onto a Sonik 2.5 install. Without the import pipeline running PRD-0049's migration framework, the user just sees "this mapping doesn't load."
 - **No preview.** The user has no way to see *what is inside* a `.json` file before committing — how many bindings, what device it targets, what modifiers it declares — short of opening it in a text editor.
@@ -38,13 +38,13 @@ The system must implement an import/export UI on top of `MappingStore` and a por
 
 ## 1.3. User Flow
 
-### 1.3.1. Exporting a Customised Reloop Profile
+### 1.3.1. Exporting a Customised DDM4000 Profile
 
-1. The user has been customising a duplicated copy of the bundled Reloop profile under the name "Reloop CE (my mix)". They open Settings → MIDI.
-2. They select the "Reloop CE (my mix)" entry in the active-profile dropdown for the Reloop Contour CE device, then click the new toolbar **Export…** button.
-3. A native save dialog opens with the default filename `reloop_contour_interface_edition__reloop_ce_my_mix.sonikmidi.json`. They navigate to Desktop and click Save.
+1. The user has been customising a duplicated copy of the bundled DDM4000 profile under the name "DDM4000 (my mix)". They open Settings → MIDI.
+2. They select the "DDM4000 (my mix)" entry in the active-profile dropdown for the Behringer DDM4000 device, then click the new toolbar **Export…** button.
+3. A native save dialog opens with the default filename `behringer_ddm4000__ddm4000_my_mix.sonikmidi.json`. They navigate to Desktop and click Save.
 4. A background `juce::ThreadPoolJob` runs: it serialises the mapping's JSON with sorted keys, computes the SHA-256, assembles the manifest, writes the combined bundle atomically via `.tmp` + rename, and posts a success toast back to the Message thread.
-5. The user sees a brief toast: "Exported to Desktop/reloop_contour_interface_edition__reloop_ce_my_mix.sonikmidi.json".
+5. The user sees a brief toast: "Exported to Desktop/behringer_ddm4000__ddm4000_my_mix.sonikmidi.json".
 6. They email the file to a friend.
 
 ### 1.3.2. Importing a Friend's Profile (Happy Path)
@@ -52,24 +52,24 @@ The system must implement an import/export UI on top of `MappingStore` and a por
 1. The friend opens the email attachment and saves it to Downloads. They open Settings → MIDI, click the toolbar **Import…** button.
 2. A native open dialog filters to `.sonikmidi.json`. They pick the file.
 3. The dialog transitions to a preview pane showing:
-   - **Device:** Reloop Contour Interface Edition (MIDI)
-   - **Mapping name:** Reloop CE (my mix)
+   - **Device:** Behringer DDM4000 (MIDI)
+   - **Mapping name:** DDM4000 (my mix)
    - **Schema:** v1
    - **Sonik app version at export:** 1.2.3
    - **Exported:** 2026-05-12 14:30 (Friend's MacBook)
    - **Bindings:** 124
    - **Modifiers:** 1 (shift)
 4. SHA-256 verification passes silently in the background. No conflict because the friend has no existing user mapping under that name.
-5. The user clicks **Import**. The bundle is written to `~/Library/Application Support/Sonik/MidiMappings/reloop_ce_my_mix.json` atomically. `MappingStore` fires `mappingAdded`. The Settings panel's profile dropdown for the Reloop Contour CE now lists "Reloop CE (my mix) (imported)" alongside the bundled profiles.
-6. The import dialog offers a final option: "Activate now for Reloop Contour Interface Edition?" Yes → `MappingStore::setActiveMapping` fires. The Reloop LEDs perform their boot-dump for the new profile (PRD-0047). Within a second, the user's controller is configured.
+5. The user clicks **Import**. The bundle is written to `~/Library/Application Support/Sonik/MidiMappings/ddm4000_my_mix.json` atomically. `MappingStore` fires `mappingAdded`. The Settings panel's profile dropdown for the Behringer DDM4000 now lists "DDM4000 (my mix) (imported)" alongside the bundled profiles.
+6. The import dialog offers a final option: "Activate now for Behringer DDM4000?" Yes → `MappingStore::setActiveMapping` fires. The DDM4000 LEDs perform their boot-dump for the new profile (PRD-0047). Within a second, the user's controller is configured.
 
 ### 1.3.3. Importing With a Filename Conflict
 
-1. The user has already imported a "Reloop CE (my mix)" mapping. A second friend sends them a different mapping with the same name.
+1. The user has already imported a "DDM4000 (my mix)" mapping. A second friend sends them a different mapping with the same name.
 2. The user runs Import…, picks the new file. The preview pane shows the bundle. Validation stages 1–5 pass.
 3. Stage 6 detects the conflict: an existing user mapping under the same id targets the same device.
-4. A conflict modal appears: "A mapping named 'Reloop CE (my mix)' already exists for this device. Rename, Replace, or Cancel?"
-5. They click **Rename** and type "Reloop CE (friend 2)". The bundle is written to `reloop_ce_friend_2.json` atomically. Both profiles now appear in the dropdown.
+4. A conflict modal appears: "A mapping named 'DDM4000 (my mix)' already exists for this device. Rename, Replace, or Cancel?"
+5. They click **Rename** and type "DDM4000 (friend 2)". The bundle is written to `ddm4000_friend_2.json` atomically. Both profiles now appear in the dropdown.
 
 ### 1.3.4. Importing a Corrupted File
 

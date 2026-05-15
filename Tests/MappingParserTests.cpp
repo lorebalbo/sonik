@@ -45,8 +45,8 @@ namespace
             {
                 const auto v = parseJson (R"({
                     "schemaVersion": 1,
-                    "device": { "manufacturer": "Reloop", "product": "Contour CE",
-                                "match": { "midiName": "Reloop Contour CE" } },
+                    "device": { "manufacturer": "Behringer", "product": "DDM4000",
+                                "match": { "midiName": "Behringer DDM4000" } },
                     "bindings": [
                         { "target": "deck.A.transport.play",
                           "midi": { "channel": 1, "status": "note", "data1": 14 },
@@ -57,7 +57,7 @@ namespace
                 expect (r.ok(), "expected ok parse");
                 expectEquals ((int) r.mapping.bindings.size(), 1);
                 expectEquals (r.mapping.schemaVersion, 1);
-                expect (r.mapping.deviceMatch.midiNamePattern == "Reloop Contour CE");
+                expect (r.mapping.deviceMatch.midiNamePattern == "Behringer DDM4000");
                 if (! r.mapping.bindings.empty())
                 {
                     const auto& b = r.mapping.bindings[0];

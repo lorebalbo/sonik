@@ -64,6 +64,7 @@ namespace sonik::midi
         // ---- Resolver-internal (consumed by PRD-0044's mask manager) -------
         ModifierSet,
         ModifierClear,
+        ModifierToggle,
 
         Count // Must remain last.
     };

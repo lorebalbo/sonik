@@ -8,14 +8,14 @@ depends-on: [PRD-0040, PRD-0042, PRD-0043, PRD-0044]
 
 ## 1.1. Problem
 
-A DJ controller is not just an input device. Every professional controller — the Reloop Contour Interface Edition included — has LEDs, ring meters, and sometimes screens that the host software is expected to **drive in response to application state**:
+A DJ controller is not just an input device. Every professional controller — the Behringer DDM4000 included — has LEDs and indicators that the host software is expected to **drive in response to application state**. Examples across the supported controller surface:
 
-- The PLAY/PAUSE button LED must light when the deck is playing and turn off when paused.
-- The CUE button LED must blink while the deck is cued at a cue point and not playing.
-- The SYNC button LED must light when sync is active for the deck.
-- Hot-cue pads must light in the cue's assigned colour when a cue is set on that slot, and remain dark when the slot is empty.
-- The loop on/off LEDs must reflect the deck's active-loop state.
-- The on-deck VU meters (where supported) must follow the channel's audible level.
+- A channel **CUE button** LED must light when that channel is routed to the headphone cue bus and turn off when it is not.
+- A channel **assign A/B** LED must light to indicate which side of the crossfader the channel is currently assigned to.
+- On controllers with deck transport (third-party controllers learned against the Generic MIDI profile), the **PLAY/PAUSE button LED** must light when the deck is playing and turn off when paused, and the **CUE button LED** must blink while the deck is cued at a cue point and not playing, and the **SYNC button LED** must light when sync is active for the deck.
+- On controllers with hot-cue pads, the pads must light in the cue's assigned colour when a cue is set on that slot, and remain dark when the slot is empty.
+- On controllers with loop buttons, the loop on/off LEDs must reflect the deck's active-loop state.
+- On controllers with VU meters, the on-deck meters must follow the channel's audible level.
 - Pitch-fader-position LEDs (where supported) must reflect the soft-takeover state from PRD-0045 (e.g., flashing while disengaged, solid while engaged).
 
 Without LED feedback, the controller is a one-way input device that gives the DJ no visual confirmation that their software state matches their intent. In a dark club, this is a deal-breaker: the DJ cannot see a tablet/laptop in detail, but they can see the LEDs on the controller in their peripheral vision while looking at the crowd.
@@ -46,24 +46,26 @@ The system must implement a MIDI output and LED feedback engine that listens to 
 
 ## 1.3. User Flow
 
-### 1.3.1. Loading the Application With a Connected Reloop Contour CE
+### 1.3.1. Loading the Application With a Connected Behringer DDM4000
 
-1. The application starts. `MidiDeviceManager` (PRD-0040) detects the Contour CE; `MappingStore` (PRD-0043) resolves to the bundled Reloop profile.
+1. The application starts. `MidiDeviceManager` (PRD-0040) detects the DDM4000; `MappingStore` (PRD-0043) resolves to the bundled DDM4000 profile.
 2. `MidiFeedbackEngine` is constructed by `SonikApplication` and given references to the root `ValueTree`, `MappingStore`, `MidiDeviceManager`, and `SoftTakeoverManager`.
-3. Both decks are in their default state (paused, no track loaded). `MidiFeedbackEngine::onActiveMappingChanged(deviceId)` is called on the Message thread.
-4. The engine iterates every binding with a `feedback` block in the bundled Reloop profile. For each, it reads the corresponding source value from the ValueTree (e.g., `deck.A.transport.isPlaying = false`) and computes the outbound MIDI message (Note On, note 18, velocity 0 → "PLAY LED off"). Each message is enqueued in the per-device output FIFO.
+3. All four channels are in their default state (CUE off, assign neutral, faders at unity, EQs centred). `MidiFeedbackEngine::onActiveMappingChanged(deviceId)` is called on the Message thread.
+4. The engine iterates every binding with a `feedback` block in the bundled DDM4000 profile. For each, it reads the corresponding source value from the ValueTree (e.g., `mixer.channel.A.cueEnabled = false`) and computes the outbound MIDI message (Note On, ch 1, note 0, velocity 0 → "Channel A CUE LED off"). Each message is enqueued in the per-device output FIFO.
 5. The Output Thread drains the FIFO, calling `device.midiOutput->sendMessageNow(msg)` with a 5 ms stagger.
-6. The Contour CE's LEDs settle into the application's idle state: every LED off, hot-cue pads dark.
+6. The DDM4000's LEDs settle into the application's idle state: every channel CUE LED off, every assign-A/B LED off.
 
-### 1.3.2. User Presses PLAY on Deck A
+### 1.3.2. User Presses CUE on Channel A
 
-1. The user presses the PLAY button on the Contour CE. Inbound MIDI flows through PRD-0040 → PRD-0044 → `DeckMidiHandler::handleCommand`, which sets `ValueTree::getChildWithName("decks").getChildWithName("A").setProperty(IDs::isPlaying, true)`.
+1. The user presses the CUE button on channel 1 of the DDM4000. Inbound MIDI flows through PRD-0040 → PRD-0044 → `MixerMidiHandler::handleChannelCue`, which sets `ValueTree::getChildWithName("mixer").getChildWithName("channelA").setProperty(IDs::cueEnabled, true)`.
 2. `MidiFeedbackEngine`'s `ValueTree::Listener::valueTreePropertyChanged` fires on the Message thread.
-3. The engine looks up the binding feedback table for `(deviceId=Contour-CE, source=deck.A.transport.isPlaying)`. It finds: `{ style: binary, midi: { status: note, channel: 1, data1: 18 }, onVelocity: 127, offVelocity: 0 }`.
-4. The new value is `true` → velocity 127. The engine enqueues Note On, ch 1, note 18, vel 127.
-5. The Output Thread drains the FIFO; the PLAY LED lights solid.
+3. The engine looks up the binding feedback table for `(deviceId=DDM4000, source=mixer.channel.A.cueEnabled)`. It finds: `{ style: binary, midi: { status: note, channel: 1, data1: 0 }, onVelocity: 127, offVelocity: 0 }`.
+4. The new value is `true` → velocity 127. The engine enqueues Note On, ch 1, note 0, vel 127.
+5. The Output Thread drains the FIFO; the channel A CUE LED lights solid.
 
-### 1.3.3. User Sets Hot Cue 1 With a Colour
+### 1.3.3. User Sets Hot Cue 1 With a Colour (Generic Pad Controller)
+
+The DDM4000 has no hot-cue pads. This scenario describes a connected third-party pad controller bound via MIDI Learn against the Generic MIDI profile (PRD-0048). It exercises the engine's `colour` feedback style.
 
 1. The user sets hot cue 1 on Deck A with the orange colour preset. `ValueTree` is updated: `deck.A.hotcue.1.isSet = true`, `deck.A.hotcue.1.colourIndex = 4` (palette index for orange).
 2. Two property-change events fire on the Message thread.
@@ -112,5 +114,6 @@ The system must implement a MIDI output and LED feedback engine that listens to 
 - [ ] The system never calls `juce::MidiOutput::sendMessageNow` from the audio thread. `MidiFeedbackEngine` and `MidiOutputThread` have no audio-thread entry points.
 - [ ] The system never calls `juce::MidiOutput::sendMessageNow` from the Message thread; all sends originate on `MidiOutputThread`.
 - [ ] The system asserts via `JUCE_ASSERT_MESSAGE_THREAD` on every public method of `MidiFeedbackEngine` except those invoked by `MidiOutputThread`.
-- [ ] The system's bundled Reloop profile (PRD-0043) declares `feedback` blocks for every lit control on the Contour CE: PLAY/CUE/SYNC LEDs, hot-cue pads with the 16-colour palette, loop on/off LEDs, deck-active LED, optional VU meters per the device's CE-revision capabilities. The blackout dump on profile-swap turns all of them off cleanly.
+- [ ] The system's bundled DDM4000 profile (PRD-0043) declares `feedback` blocks for every lit control the DDM4000 exposes via MIDI out: the four channel CUE buttons (binary, sourced from `mixer.channel.{A,B,C,D}.cueEnabled`) and the eight channel-assign A/B LEDs (binary, sourced from `mixer.channel.{A,B,C,D}.assignA` / `.assignB`). The blackout dump on profile-swap turns all of them off cleanly.
+- [ ] The system's `colour` feedback style (16-entry palette → per-device velocity table) and `continuous` feedback style (linear CC) are exercised in tests against synthetic mapping fixtures (and against third-party profiles authored via MIDI Learn) rather than against the DDM4000 reference profile, which has no colour-capable pads or continuous-output indicators.
 - [ ] The system is covered by `MidiFeedbackEngineTests.cpp` in `Tests/` verifying: (a) property change produces enqueued outbound message; (b) binary style emits the configured on/off velocities; (c) colour style emits the per-palette-index velocity; (d) continuous style emits the linear-curve CC; (e) boot dump enqueues every feedback binding's current value; (f) blackout dump on profile-change emits Note On velocity 0 for old-mapping-only bindings; (g) device-disconnect drops queued messages; (h) the token-bucket throttle caps output at 1000 msg/s; (i) consecutive-same-key coalescing collapses duplicates; (j) disengaged blink fires at the declared `blinkHz`; (k) `sendMessageNow` is never invoked on the Message thread or audio thread.

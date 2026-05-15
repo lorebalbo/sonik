@@ -21,7 +21,7 @@ PRDs 0040–0047 implement the full MIDI controller backend: device detection, r
 - Duplicate a bundled profile to a user profile to start customising.
 - Reset to bundled defaults if their custom mapping breaks.
 
-Without this UI, the entire MIDI subsystem is invisible to end users. The Reloop Contour CE works out of the box (because the profile is bundled), but every other controller in the world requires the user to hand-edit a JSON file in `~/Library/Application Support/Sonik/MidiMappings/`. That is not acceptable for a consumer product comparable to Traktor or Serato.
+Without this UI, the entire MIDI subsystem is invisible to end users. The Behringer DDM4000 works out of the box (because the profile is bundled), but every other controller in the world requires the user to hand-edit a JSON file in `~/Library/Application Support/Sonik/MidiMappings/`. That is not acceptable for a consumer product comparable to Traktor or Serato.
 
 ## 1.2. Objective
 
@@ -46,36 +46,38 @@ The system must implement a "MIDI Settings" panel inside the main application's 
 
 ## 1.3. User Flow
 
-### 1.3.1. Opening the MIDI Settings Panel With a Connected Reloop Contour CE
+### 1.3.1. Opening the MIDI Settings Panel With a Connected Behringer DDM4000
 
 1. The user opens Settings → MIDI.
-2. The panel lists one device: "Reloop Contour Interface Edition (Connected, Profile: Reloop Contour Interface Edition v1)". The active-profile dropdown has two options: "Reloop Contour Interface Edition v1 (bundled, read-only)" and "Generic MIDI (bundled, read-only)".
-3. Below the device header, a table lists every binding: 124 rows for the bundled Reloop profile. The user scrolls to inspect the SHIFT-layered hot-cue delete bindings.
+2. The panel lists one device: "Behringer DDM4000 (Connected, Profile: Behringer DDM4000 v1)". The active-profile dropdown has two options: "Behringer DDM4000 v1 (bundled, read-only)" and "Generic MIDI (bundled, read-only)".
+3. Below the device header, a table lists every binding for the bundled DDM4000 profile (~30 rows: 4 channel CUE buttons, 4 channel faders, 4 channel gain knobs, 4×3 EQ knobs, 4 channel kill switches, 4×2 assign A/B buttons, crossfader, master/booth/headphone gains, headphone cue mix, menu/edit encoder for library scroll). The user scrolls to inspect the assign-button bindings.
 4. Every row is read-only (greyed) because the active profile is bundled.
-5. A banner at the bottom shows: "Modifiers held: (none)". A second list shows "Disengaged: deck.A.pitchFader, deck.B.pitchFader" (the user hasn't touched the pitch faders yet since startup).
-6. The user holds SHIFT; the "Modifiers held" banner updates to "Modifiers held: shift" within ≤ 50 ms.
+5. A banner at the bottom shows: "Modifiers held: (none)". A second list shows "Disengaged: (none)" — the DDM4000's continuous controls are mapped to mixer targets with `softTakeover: never` (instant alignment is preferable to pickup for mixer setup), so no continuous bindings start out disengaged.
+6. The user connects a secondary controller bound via Generic MIDI with a `shift` modifier and holds SHIFT on it; the "Modifiers held" banner updates to "Modifiers held: shift" within ≤ 50 ms.
 
 ### 1.3.2. Duplicating to a User Profile and Editing
 
-1. The user clicks "Duplicate to User Profile". A dialog prompts for the new profile name; the user types "Reloop CE (my mix)" and confirms.
-2. `MappingStore` writes `~/Library/Application Support/Sonik/MidiMappings/reloop-ce-my-mix.json` (atomic via `.tmp` + rename) and emits `mappingAdded` + `activeMappingChanged`.
+1. The user clicks "Duplicate to User Profile". A dialog prompts for the new profile name; the user types "DDM4000 (my mix)" and confirms.
+2. `MappingStore` writes `~/Library/Application Support/Sonik/MidiMappings/ddm4000-my-mix.json` (atomic via `.tmp` + rename) and emits `mappingAdded` + `activeMappingChanged`.
 3. The panel switches the active profile dropdown to the new user profile. Every binding row is now editable.
-4. The user clicks "MIDI Learn" on the PLAY button binding for Deck A. The row enters the "Learning…" state with a countdown.
-5. The user presses a different physical button on the Contour CE (Note On, ch 1, note 50). The row's MIDI key updates to "Ch 1 Note 50". The Learning state dismisses.
+4. The user clicks "MIDI Learn" on the Channel A CUE binding. The row enters the "Learning…" state with a countdown.
+5. The user presses a different physical button on the DDM4000 (Note On, ch 1, note 50). The row's MIDI key updates to "Ch 1 Note 50". The Learning state dismisses.
 6. After 500 ms of inactivity, the user profile is saved atomically.
 
 ### 1.3.3. Conflict Detection During MIDI Learn
 
-1. The user clicks "MIDI Learn" on the CUE button binding for Deck A. The user accidentally presses the same physical button they just remapped to PLAY.
+1. The user clicks "MIDI Learn" on the Channel A assign-A binding. The user accidentally presses the same physical button they just remapped to Channel A CUE.
 2. The panel detects the conflict: another binding in the active profile already uses `(Ch 1, Note 50, modifier mask 0)`.
-3. A modal dialog appears: "This MIDI key is already bound to `deck.A.transport.play`. Replace, change modifier, or cancel?"
-4. The user picks "Change modifier" → "SHIFT". The new binding is created with `requiredModifierMask = bit-for-shift`. No conflict because the PLAY binding has no modifier requirement.
+3. A modal dialog appears: "This MIDI key is already bound to `mixer.channel.A.cue`. Replace, change modifier, or cancel?"
+4. The user picks "Change modifier" → "SHIFT" (declared on a secondary controller's profile). The new binding is created with `requiredModifierMask = bit-for-shift`. No conflict because the CUE binding has no modifier requirement.
 5. The user profile is saved.
 
 ### 1.3.4. Force-Engaging a Soft-Takeover Binding
 
+The bundled DDM4000 profile uses `softTakeover: never` for all continuous controls, so this flow exercises a connected jog-capable third-party controller learned through the Generic MIDI profile whose pitch fader is bound to `deck.A.pitch` with `softTakeover: pickup`.
+
 1. The user has just loaded a track. The pitch fader is `Disengaged`. The settings panel shows it in the "Disengaged" list.
-2. The user clicks "Force Engage" next to `deck.A.pitchFader`.
+2. The user clicks "Force Engage" next to `deck.A.pitch`.
 3. The panel reads the current hardware value (last cached by PRD-0045) and the current software value, calls `SoftTakeoverManager::forceEngage(deviceId, target, hwValue, swValue)`.
 4. The pitch fader's binding transitions to `Engaged`. The Disengaged list updates. Subsequent fader moves pass through immediately.
 
@@ -83,14 +85,14 @@ The system must implement a "MIDI Settings" panel inside the main application's 
 
 1. The user manually edits a user profile JSON outside the application and accidentally introduces a `ModifierTargetConflict`.
 2. On next launch, `MappingStore` parses the file, surfaces a `ValidationError` via `getLoadErrors()`, and falls back to the bundled profile.
-3. The panel displays a red banner: "Failed to load `reloop-ce-my-mix.json`: line 47, offset 12 — modifier 'shift' and binding 'deck.A.transport.play' both bound to Ch 1 Note 24."
+3. The panel displays a red banner: "Failed to load `ddm4000-my-mix.json`: line 47, offset 12 — modifier 'shift' and binding 'deck.A.transport.play' both bound to Ch 1 Note 24."
 4. The banner offers "Open in Editor" (reveals in Finder) and "Reset to Defaults" (overwrites the broken file with a fresh copy from the bundled profile).
 
 ### 1.3.6. Adding a Custom Generic-MIDI Mapping
 
 1. The user connects a future Korg nanoKONTROL2. `MidiDeviceManager` detects it; `MappingStore` resolves to `Generic MIDI` (no bundled Korg profile yet).
 2. The panel lists the new device. The user duplicates Generic MIDI to "Korg nanoKONTROL2 (mine)" and clicks "Add Binding".
-3. The new row enters Learning mode. The user wiggles the first fader; the panel captures CC 0 on channel 1 and proposes the target `deck.A.pitchFader`.
+3. The new row enters Learning mode. The user wiggles the first fader; the panel captures CC 0 on channel 1 and proposes the target `mixer.channel.A.fader`.
 4. The user accepts. The binding is created.
 5. The user repeats for the remaining controls.
 

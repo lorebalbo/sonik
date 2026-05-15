@@ -111,6 +111,7 @@ namespace sonik::midi
         /* LibraryFocusSearch  */ RoutingClass::MessageThread,
         /* ModifierSet         */ RoutingClass::MessageThread,
         /* ModifierClear       */ RoutingClass::MessageThread,
+        /* ModifierToggle      */ RoutingClass::MessageThread,
     };
     static_assert (routingTable.size() == MidiTargetCategoryCount,
                    "routingTable must cover every MidiTargetCategory; add a row when extending the enum");

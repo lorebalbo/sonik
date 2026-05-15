@@ -8,7 +8,7 @@ depends-on: [PRD-0040, PRD-0041, PRD-0042, PRD-0043]
 
 ## 1.1. Problem
 
-PRD-0040 delivers raw MIDI events. PRD-0041 provides a thread-safe bridge. PRD-0042 resolves an event into a typed `ResolvedBinding`. PRD-0043 makes mappings persist. But none of these PRDs actually *do anything* in the application yet: pressing PLAY on the Reloop Contour Interface Edition still has no effect because no module takes a `ResolvedBinding` and turns it into a deck-state change.
+PRD-0040 delivers raw MIDI events. PRD-0041 provides a thread-safe bridge. PRD-0042 resolves an event into a typed `ResolvedBinding`. PRD-0043 makes mappings persist. But none of these PRDs actually *do anything* in the application yet: moving a channel fader on the Behringer DDM4000 still has no effect because no module takes a `ResolvedBinding` and turns it into a mixer-state or deck-state change.
 
 The wiring layer between "we know what the user means" and "the user's intent reaches the deck atomics, the `juce::ValueTree`, the library, and the mixer" is the heart of the MIDI subsystem. Without it, every previous PRD is dead weight.
 
@@ -18,7 +18,7 @@ The router must also enforce the **routing decision** declared by PRD-0041 for e
 
 Finally, the router carries **toggle-state semantics**: a `Toggle`-classified target needs to read the current ValueTree state on the Message thread and flip it. The MIDI callback thread cannot read the ValueTree (no thread safety guarantees for `juce::ValueTree::getProperty` from arbitrary threads), so toggles must be resolved on the Message thread after the `callAsync` lands.
 
-Without this PRD, the Reloop Contour CE stays inert and no later PRD has a downstream to plug into.
+Without this PRD, the Behringer DDM4000 stays inert and no later PRD has a downstream to plug into.
 
 ## 1.2. Objective
 
@@ -47,31 +47,35 @@ This PRD has no end-user UI surface, but produces the first visible behaviour ch
 2. The application constructs the three command handlers — `DeckMidiHandler`, `MixerMidiHandler`, `LibraryMidiHandler` — owned by `SonikApplication` and given references to the root `juce::ValueTree`, the deck atomics view (audio-thread-shared via `AudioEngineMidiBridge.h`), and the appropriate Feature-module state managers.
 3. The router is given a single `MidiCommandHandler*` reference. The handler is in practice a `CompositeMidiCommandHandler` that dispatches to the three concrete handlers based on the target's `MidiTargetCategory`. The composite lives in `Source/SonikApplication.cpp` so the router itself has no Feature awareness.
 4. `MidiInboundRouter::initialise()` registers itself as a `MidiInputSubscriber` on `MidiDeviceManager` and as the `MessageThreadSink` on `MidiMessageBridge`. The audio engine separately registers itself as the `AudioMidiEventHandler` on `MidiMessageBridge`.
-5. `MappingStore` is asked to open the Reloop Contour CE input (and output) if the device is connected; the device is auto-opened via the `registerAutoOpenRule` registered against the bundled Reloop profile's device match.
+5. `MappingStore` is asked to open the Behringer DDM4000 input (and output, since the mixer also emits LED-driving MIDI) if the device is connected; the device is auto-opened via the `registerAutoOpenRule` registered against the bundled DDM4000 profile's device match.
 
-### 1.3.2. Hardware Button Press: Deck A Play
+### 1.3.2. Hardware Button Press: Channel A CUE
 
-1. The user presses the PLAY button on the Reloop Contour Interface Edition. The hardware emits `Note On, ch 1, note 14, velocity 127`.
-2. `MidiDeviceManager` delivers a `MidiInboundEvent { deviceId, ts, 0x90, 14, 127 }` synchronously on the JUCE MIDI callback thread.
+1. The user presses the **CUE** button on channel 1 of the Behringer DDM4000. The hardware emits `Note On, ch 1, note 0, velocity 127`.
+2. `MidiDeviceManager` delivers a `MidiInboundEvent { deviceId, ts, 0x90, 0, 127 }` synchronously on the JUCE MIDI callback thread.
 3. `MidiInboundRouter::onMidiInbound(event)` runs. It indexes its per-device state (a `std::array<DeviceState, MaxOpenDevices>` keyed by `deviceId` via a small in-thread hash, pre-allocated at first sight of the device) and retrieves the device's `ResolverState`, `ModifierMask`, and a `std::shared_ptr<const Mapping>` copy.
-4. The router calls `BindingResolver::resolve(*mapping, resolverState, event, currentMask)`. The Reloop profile matches `(channel=1, status=note, data1=14)` to `deck.A.transport.play` (`MidiTargetCategory::TransportPlay`, `Momentary`).
-5. The router calls `MidiMessageBridge::dispatch(TransportPlay, 0, 1.0f, 0, deviceId)`. The bridge's routing table classifies `TransportPlay` as `MessageThread`, so it schedules a `MessageManager::callAsync` containing a `MidiMessageEvent`.
+4. The router calls `BindingResolver::resolve(*mapping, resolverState, event, currentMask)`. The DDM4000 profile matches `(channel=1, status=note, data1=0)` to `mixer.channel.A.cue` (`MidiTargetCategory::MixerChannelCue`, `Toggle`).
+5. The router calls `MidiMessageBridge::dispatch(MixerChannelCue, 0, 1.0f, 0, deviceId)`. The bridge's routing table classifies `MixerChannelCue` as `MessageThread`, so it schedules a `MessageManager::callAsync` containing a `MidiMessageEvent`.
 6. The Message thread picks up the lambda and calls `MidiInboundRouter::onMidiMessageThreadEvent(event)`. The router calls `commandHandler.handle(event)`.
-7. The composite handler dispatches by category: `TransportPlay` → `DeckMidiHandler::handleTransportPlay(deckIndex, normalisedValue)`. The handler reads the current `isPlaying` ValueTree property, computes the next playback status, and writes it back. The existing `TransportManager` observer fires, the deck starts playing, and the on-screen PLAY button highlight updates via the existing UI binding.
-8. Total round trip: ~3 ms from hardware press to audible playback start (Message-thread `callAsync` overhead ≈ 1–2 ms, ValueTree write and observer fan-out < 1 ms, audio buffer onset < 10 ms — well under the 50 ms human perception threshold).
+7. The composite handler dispatches by category: `MixerChannelCue` → `MixerMidiHandler::handleChannelCue(channelIndex, normalisedValue)`. The handler reads the current `cueEnabled` ValueTree property on the channel node, toggles it, and writes it back. The existing mixer-channel observer fires, the channel's headphone-cue routing updates, and the on-screen channel CUE button highlight updates via the existing UI binding. The DDM4000's channel CUE LED is also driven on by PRD-0047's outbound feedback engine.
+8. Total round trip: ~3 ms from hardware press to ValueTree write (Message-thread `callAsync` overhead ≈ 1–2 ms, ValueTree write and observer fan-out < 1 ms) — well under the 50 ms human perception threshold.
 
-### 1.3.3. Hardware Jog Wheel: Scratching Deck A
+### 1.3.3. Hardware Jog Wheel: Scratching Deck A (Future Jog-Capable Controller)
 
-1. The user touches the platter (`jog.touch` Note On) then rotates it. The Contour CE emits scratch CC messages at ~80 Hz.
+The DDM4000 has no jog wheel. This scenario describes the audio-thread routing path that the router must continue to support for future jog-capable controllers (and for users who MIDI-Learn jog targets against the Generic MIDI profile, see PRD-0048).
+
+1. The user touches the platter (`jog.touch` Note On) then rotates it on a connected jog-capable controller. The controller emits scratch CC messages at ~80 Hz.
 2. Each CC arrives in `MidiInboundRouter::onMidiInbound` on the MIDI callback thread.
 3. Resolver produces `ResolvedBinding { category: JogScratch, deckIndex: 0, normalisedValue: 0.0f, intDelta: <signed bit decoded>, ... }`.
 4. The router calls `MidiMessageBridge::dispatch(JogScratch, 0, 0.0f, intDelta, deviceId)`. The bridge's routing table classifies `JogScratch` as `AudioThread`, so it writes a `MidiAudioEvent` into the lock-free FIFO. No `callAsync`, no allocation.
 5. At the top of the next `processBlock` (within ≤ 5 ms), the audio engine drains the FIFO and calls `AudioMidiEventHandler::applyAudioMidiEvent(event)`. The handler maps `(JogScratch, deckIndex=0, intDelta)` into the existing `jogSpeedMultiplier` / `jogScratchActive` atomics for Deck A, exactly as the mouse jog UI does today (per PRD-0018).
 6. The audio engine produces scratch-modulated audio for the current buffer. The user hears the scratch with imperceptible latency.
 
-### 1.3.4. SHIFT-Layered Action: Delete Hot Cue 1
+### 1.3.4. SHIFT-Layered Action: Delete Hot Cue 1 (Future Controller With SHIFT)
 
-1. The user holds the Contour CE's SHIFT button. SHIFT is itself a binding (`type: modifier`) producing `ResolvedBinding { category: ModifierSet, deckIndex: 255 /* global */, intDelta: 0 /* bit index */ }`.
+The DDM4000 reference profile declares no modifiers. This scenario describes the resolver path that the router must continue to support for user-authored profiles bound to controllers with a dedicated SHIFT (or ALT, etc.) surface — typically third-party hardware learned against the Generic MIDI profile.
+
+1. The user holds the controller's SHIFT button. SHIFT is itself a binding (`type: modifier`) producing `ResolvedBinding { category: ModifierSet, deckIndex: 255 /* global */, intDelta: 0 /* bit index */ }`.
 2. The router's `onMidiInbound` recognises the `ModifierSet` category and **sets bit 0 of the device's `ModifierMask`** atomically (`std::memory_order_release`), without calling `dispatch`. No event reaches Feature modules.
 3. The user presses HOT CUE 1 while SHIFT is held. The resolver's hash lookup finds two overloads for `(ch 1, note X)`: the plain binding to `deck.A.hotcue.1.trigger` and the SHIFT-layered binding to `deck.A.hotcue.1.delete`. The resolver consults `currentMask` (read with `std::memory_order_acquire`) and selects the SHIFT overload.
 4. The resolved binding routes to the Message thread, the composite handler dispatches `HotCueDelete` to the `DeckMidiHandler`, which calls `HotCueManager::deleteCue(deckIndex=0, padIndex=0)`.
@@ -79,10 +83,10 @@ This PRD has no end-user UI surface, but produces the first visible behaviour ch
 
 ### 1.3.5. Library Scroll & Load to Deck
 
-1. The user turns the library encoder on the Contour CE. The hardware emits relative-CC `signedBitDelta` messages.
+1. The user turns the menu/edit encoder on the DDM4000. The hardware emits relative-CC `signedBitDelta` messages.
 2. The resolver materialises `ResolvedBinding { category: LibraryScrollUp | LibraryScrollDown, intDelta: ±1 }`.
 3. The router dispatches via `callAsync`. `LibraryMidiHandler::handleLibraryScroll(direction, magnitude)` writes the new selected row index into the existing library ValueTree node consumed by the `LibraryComponent`.
-4. The user presses LOAD ▸ Deck A. The handler writes the selected track's `filePath` into `IDs::pendingLoadPath` on Deck A (per PRD-0034's track-loading protocol). The existing `DeckShellComponent` listener picks it up and calls `AudioFileLoader::loadFile`, exactly as a drag-and-drop would.
+4. The user presses LOAD ▸ Deck A on a connected controller (DDM4000 has no LOAD button; this scenario assumes either a secondary controller or a key-command bound to a DDM4000 spare button via MIDI Learn). The handler writes the selected track's `filePath` into `IDs::pendingLoadPath` on Deck A (per PRD-0034's track-loading protocol). The existing `DeckShellComponent` listener picks it up and calls `AudioFileLoader::loadFile`, exactly as a drag-and-drop would.
 5. The track loads. MIDI is fully integrated with the existing library flow without any library code knowing MIDI exists.
 
 ### 1.3.6. Unhandled Target

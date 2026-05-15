@@ -8,11 +8,11 @@ depends-on: [PRD-0042, PRD-0044]
 
 ## 1.1. Problem
 
-After PRD-0044, every continuous hardware control on the Reloop Contour Interface Edition — pitch fader, gain knob, EQ knobs, crossfader — writes its physical position directly to the corresponding software value via the existing ValueTree setters. This works fine when the hardware and software are in agreement, but it produces violent, audible jumps in every other scenario:
+After PRD-0044, every continuous hardware control on a connected MIDI controller — the Behringer DDM4000's gain knobs, EQ knobs, channel faders, crossfader and master/booth/headphone gains, plus the pitch faders, gain knobs and EQ knobs of any third-party controller learned through the Generic MIDI profile (PRD-0048) — writes its physical position directly to the corresponding software value via the existing ValueTree setters. This works fine when the hardware and software are in agreement, but it produces violent, audible jumps in every other scenario:
 
-- **Load track scenario.** Deck A is playing at +6% pitch. The user loads a new track, which resets `pitch` to 0%. The hardware fader is still physically at +6%. The next time the user *touches* the fader to nudge by 0.1%, the value jumps from 0% back to +6% — an instant 6% BPM jump audible to the audience as a tempo glitch.
-- **Profile change scenario.** The user switches from a Reloop profile to a custom profile mid-set. The new profile maps the same fader to gain instead of pitch. The hardware position no longer corresponds to the software value; the first move of the fader produces an instant gain jump.
-- **Multi-deck mixing scenario.** With two decks A and B both mapped to the same physical pitch fader (via different profiles or different focus models), the user mixes from A to B. Deck B's software pitch is wherever it was last; the hardware is at whatever position it last touched. Without soft-takeover, every switch produces an audible jump.
+- **Load track scenario.** Deck A is playing at +6% pitch on a controller whose pitch fader is bound to `deck.A.pitch`. The user loads a new track, which resets `pitch` to 0%. The hardware fader is still physically at +6%. The next time the user *touches* the fader to nudge by 0.1%, the value jumps from 0% back to +6% — an instant 6% BPM jump audible to the audience as a tempo glitch.
+- **Profile change scenario.** The user switches from a DDM4000 profile to a custom profile mid-set. The new profile maps the same fader to a different software target. The hardware position no longer corresponds to the software value; the first move of the fader produces an instant jump.
+- **Multi-deck mixing scenario.** With two decks A and B both mapped to the same physical continuous control (via different profiles or different focus models), the user mixes from A to B. Deck B's software value is wherever it was last; the hardware is at whatever position it last touched. Without soft-takeover, every switch produces an audible jump.
 
 Every professional DJ software (Traktor, Serato, Rekordbox, Mixxx) solves this with **soft-takeover (pickup mode)**: hardware moves are suppressed until the hardware *crosses* the current software value, at which point the binding "engages" and subsequent moves pass through. The fader has to physically pass through the software's current position before it takes control. This is the **only acceptable** behaviour for live mixing — without it, the application is unusable for any DJ who loads tracks during a set.
 
@@ -38,7 +38,7 @@ This PRD has no UI of its own; its observable behaviour is that hardware moves a
 
 ### 1.3.1. Track Load Resets a Continuous Binding
 
-1. Deck A is playing. The user has the pitch fader at +6% on the Reloop Contour CE; the software pitch is also +6%. The binding state is `Engaged`.
+1. Deck A is playing. The user has the pitch fader of a connected jog-capable controller (bound to `deck.A.pitch` via the Generic MIDI profile) at +6%; the software pitch is also +6%. The binding state is `Engaged`.
 2. The user loads a new track to Deck A. The existing track-load flow resets `pitch` to 0% via a ValueTree write.
 3. The `DeckMidiHandler` (or a dedicated `SoftTakeoverManager` listening to the deck's pitch ValueTree property) detects that the software value has changed *without* the change originating from the hardware. It resets the soft-takeover state for the `(deviceId, target=deck.A.pitchFader)` binding to `Disengaged`.
 4. The user moves the hardware fader by 0.1%. The router resolves the binding and forwards it to `DeckMidiHandler`. The handler consults the `SoftTakeoverManager` for the binding's current state.
@@ -48,7 +48,7 @@ This PRD has no UI of its own; its observable behaviour is that hardware moves a
 
 ### 1.3.2. Profile Change Resets All Continuous Bindings
 
-1. The user has been performing with the Reloop profile. The pitch fader is `Engaged`.
+1. The user has been performing with the DDM4000 profile. A continuous control (e.g., channel A gain) is `Engaged`.
 2. The user switches via PRD-0048's UI to a different profile that maps the same physical fader to a different target.
 3. `MappingStore` fires `activeMappingChanged(deviceId)`. The `SoftTakeoverManager` listens and resets the state for every `pickup` binding on that device to `Disengaged`.
 4. The user moves the hardware fader. The new binding's target value is some software value (probably not 0). The fader must cross that value before the new binding engages.
@@ -68,7 +68,7 @@ This PRD has no UI of its own; its observable behaviour is that hardware moves a
 
 ### 1.3.5. Initial Connection of a Device
 
-1. The Reloop Contour CE is connected. The Reloop profile is resolved and activated.
+1. The Behringer DDM4000 is connected. The DDM4000 profile is resolved and activated.
 2. The `SoftTakeoverManager` initialises the state for every continuous `pickup` binding to `Disengaged`.
 3. Hardware moves are suppressed on every continuous control until each one is crossed once. This is correct: the application has no idea where the user's hardware is physically positioned at startup, so until the user moves a fader through the software value, the binding remains disengaged.
 

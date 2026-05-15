@@ -8,23 +8,14 @@ namespace sonik::midi
 {
     namespace
     {
-        // True if `required` is a subset of `current` (or required == 0).
-        constexpr bool modifierMatches (ModifierMask required, ModifierMask current) noexcept
-        {
-            return (required & current) == required;
-        }
-
-        // Pick the most-specific binding from up to MaxOverloadsPerMidiKey
-        // candidates. "Most specific" = highest popcount of requiredModifierMask
-        // among those whose mask is a subset of currentMask.
-        // Returns InvalidTargetIndex if no candidate matches.
+        // Pick the binding from the overload bucket whose `requiredModifierMask`
+        // matches `currentMask` exactly. Strict equality (not subset) is the
+        // PRD-0046 contract: holding extra modifiers must NOT trigger a less
+        // specific overload. Returns InvalidTargetIndex if no candidate matches.
         TargetIndex pickBestOverload (const Mapping&       mapping,
                                       const BindingBucket& bucket,
                                       ModifierMask         currentMask) noexcept
         {
-            TargetIndex best        = InvalidTargetIndex;
-            int         bestPopcnt  = -1;
-
             for (std::size_t i = 0; i < MaxOverloadsPerMidiKey; ++i)
             {
                 const auto idx = bucket[i];
@@ -34,17 +25,10 @@ namespace sonik::midi
                     continue;
 
                 const auto& binding = mapping.bindings[idx];
-                if (! modifierMatches (binding.requiredModifierMask, currentMask))
-                    continue;
-
-                const int pop = std::popcount (binding.requiredModifierMask);
-                if (pop > bestPopcnt)
-                {
-                    bestPopcnt = pop;
-                    best       = idx;
-                }
+                if (binding.requiredModifierMask == currentMask)
+                    return idx;
             }
-            return best;
+            return InvalidTargetIndex;
         }
 
         constexpr float clamp01 (float v) noexcept
@@ -100,12 +84,12 @@ namespace sonik::midi
             rb.intDelta        = static_cast<std::int16_t> (mod.bit);
             rb.softTakeover    = SoftTakeoverPolicy::Always;
 
-            if (mod.style == ModifierStyle::Toggle)
+            if (mod.style == ModifierStyle::Latching)
             {
-                // PRD-0044 will flip the bit. We only emit Set on the press edge.
+                // PRD-0044 will XOR the bit. We only emit Toggle on the press edge.
                 if (! isOn)
                     return std::nullopt;
-                rb.category = MidiTargetCategory::ModifierSet;
+                rb.category = MidiTargetCategory::ModifierToggle;
             }
             else
             {

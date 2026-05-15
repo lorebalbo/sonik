@@ -158,9 +158,9 @@ private:
     void testSha1IsStableAndCollisionFree()
     {
         beginTest ("SHA-1 sha1Low64 is stable and distinguishes inputs");
-        const auto a = sha1::sha1Low64 ("Reloop|Contour|0");
-        const auto b = sha1::sha1Low64 ("Reloop|Contour|0");
-        const auto c = sha1::sha1Low64 ("Reloop|Contour|1");
+        const auto a = sha1::sha1Low64 ("Behringer|DDM4000|0");
+        const auto b = sha1::sha1Low64 ("Behringer|DDM4000|0");
+        const auto c = sha1::sha1Low64 ("Behringer|DDM4000|1");
         const auto d = sha1::sha1Low64 ("Pioneer|DDJ-FLX4|0");
         expect (a == b, "identical inputs -> identical hash");
         expect (a != c, "ordinal change -> different hash");
@@ -185,8 +185,8 @@ private:
     {
         beginTest ("Startup enumeration registers every device with stable ID");
         MidiHostFake host;
-        host.inputs.add  (makeInfo ("Reloop Contour CE", "in_id_1"));
-        host.outputs.add (makeInfo ("Reloop Contour CE", "out_id_1"));
+        host.inputs.add  (makeInfo ("Behringer DDM4000", "in_id_1"));
+        host.outputs.add (makeInfo ("Behringer DDM4000", "out_id_1"));
 
         sonik::midi::MidiDeviceManager mgr (host);
         RecordingListener listener;
@@ -202,7 +202,7 @@ private:
             expect (! d.isOpen, "no device auto-opens at init");
 
         // deviceId derived from SHA-1 of "|<name>|<ordinal>" — note empty manufacturer.
-        const auto expectedInputId = sha1::sha1Low64 ("|Reloop Contour CE|0");
+        const auto expectedInputId = sha1::sha1Low64 ("|Behringer DDM4000|0");
         bool found = false;
         for (const auto& d : devices)
             if (d.isInput && d.deviceId == expectedInputId)
@@ -344,7 +344,7 @@ private:
         MidiHostFake host;
         sonik::midi::MidiDeviceManager mgr (host);
         mgr.initialise();
-        mgr.registerAutoOpenRule (".*", "Reloop.*");
+        mgr.registerAutoOpenRule (".*", "Behringer.*");
         expect (true);
     }
 

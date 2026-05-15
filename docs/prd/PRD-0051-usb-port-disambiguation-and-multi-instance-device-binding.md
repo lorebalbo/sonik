@@ -8,19 +8,19 @@ depends-on: [PRD-0040, PRD-0042, PRD-0043, PRD-0048]
 
 ## 1.1. Problem
 
-PRD-0040 computes `deviceId = SHA-1(manufacturer | product | ordinal)` and uses `ordinal = 0` only. This works perfectly for one Reloop Contour Interface Edition on one USB port. It breaks the moment a serious DJ does what serious DJs do: plug **two identical Contour CEs** side-by-side, one for the left half of a four-deck show, one for the right.
+PRD-0040 computes `deviceId = SHA-1(manufacturer | product | ordinal)` and uses `ordinal = 0` only. This works perfectly for one Behringer DDM4000 on one USB port. It breaks the moment a serious DJ does what serious DJs do: plug **two identical Behringer DDM4000 mixers** side-by-side, one for the left half of a four-deck show, one for the right.
 
 Concretely, with the v1 resolver:
 
 - Both physical devices receive identical `deviceId` values (same `manufacturer | product | 0`).
-- The Reloop bundled profile resolves to the same `deviceId` for both, so both devices receive the same MIDI bindings.
-- Pressing PLAY on the left Contour CE and PLAY on the right Contour CE both dispatch to `deck.A.transport.play` — there is no way to distinguish them.
+- The Behringer DDM4000 bundled profile resolves to the same `deviceId` for both, so both devices receive the same MIDI bindings.
+- Pressing the Channel A CUE button on the left DDM4000 and the Channel A CUE button on the right DDM4000 both dispatch to `mixer.channel.A.cue` — there is no way to distinguish them.
 - LED feedback from PRD-0047 sends outbound MIDI to the *first* device returned by `MidiDeviceManager::getMidiOutputForDevice(deviceId)` — the second device's LEDs go dark.
-- MIDI Learn (PRD-0048) cannot bind a control on the right Contour CE to `deck.C.transport.play` because the underlying deviceId is identical to the left one.
+- MIDI Learn (PRD-0048) cannot bind a control on the right DDM4000 to `deck.C.transport.play` because the underlying deviceId is identical to the left one.
 
 The v1 mapping schema reserves an `ordinal` field in `device.match` so this would be a non-breaking schema extension — but the runtime doesn't populate ordinal from anything, and there is no UI to tell Sonik "this physical port is the right deck's controller, the other is the left deck's." Without that, multi-instance setups are dead.
 
-The professional answer is to fingerprint each physical USB port using OS-provided endpoint identifiers (`juce::MidiDeviceInfo::identifier` — stable across reboots on both macOS Core MIDI and Windows WinRT MIDI for the same physical USB connection) and let the user explicitly bind a profile to a physical port via the Settings UI. The user plugs both Contour CEs in, opens Settings, sees both devices listed with distinct port identifiers, and clicks "This is Deck A/B" on one and "This is Deck C/D" on the other.
+The professional answer is to fingerprint each physical USB port using OS-provided endpoint identifiers (`juce::MidiDeviceInfo::identifier` — stable across reboots on both macOS Core MIDI and Windows WinRT MIDI for the same physical USB connection) and let the user explicitly bind a profile to a physical port via the Settings UI. The user plugs both Behringer DDM4000 mixers in, opens Settings, sees both devices listed with distinct port identifiers, and clicks "This is Deck A/B" on one and "This is Deck C/D" on the other.
 
 This is also a **non-breaking** extension: existing v1 profiles without an `identifierHint` continue to match any port (preserving today's behaviour); profiles with an `identifierHint` get port-specific binding.
 
@@ -40,51 +40,51 @@ The system must extend the v1 device-ID resolver to support per-physical-USB-por
 - The system ensures that the Settings panel displays the current `info.identifier` (or a human-readable shortened form, e.g., last 12 chars + ellipsis) per connected device, so the user can visually distinguish two identical controllers.
 - The system ensures that the Settings panel displays a "Swap" action when two identical devices are connected, which swaps the active profiles between the two physical ports atomically.
 - The system ensures that bundled profiles are **never** automatically rewritten to add `identifierHint`. Binding bundled profiles to specific ports requires first duplicating the bundled profile to a user copy (PRD-0048 behaviour).
-- The system ensures that hot-plug events (PRD-0040) correctly produce per-port distinct `deviceId` values: unplugging the left Contour CE and plugging it back in to the same physical USB port yields the same `deviceId`; plugging into a different port yields a different `deviceId`.
-- The system ensures that the active-mapping selection per `deviceId` is persisted in a small JSON state file `~/Library/Application Support/Sonik/MidiMappings/_device_state.json` mapping `deviceId -> activeMappingId`, so that two Contour CEs in two specific ports each remember their last selected profile across launches.
+- The system ensures that hot-plug events (PRD-0040) correctly produce per-port distinct `deviceId` values: unplugging the left DDM4000 and plugging it back in to the same physical USB port yields the same `deviceId`; plugging into a different port yields a different `deviceId`.
+- The system ensures that the active-mapping selection per `deviceId` is persisted in a small JSON state file `~/Library/Application Support/Sonik/MidiMappings/_device_state.json` mapping `deviceId -> activeMappingId`, so that two Behringer DDM4000 mixers in two specific ports each remember their last selected profile across launches.
 - The system ensures that when the OS-reported `identifier` is empty or known-unstable on a platform (a runtime detection, not a compile-time switch), the system silently falls back to the v1 ordinal-based scheme and logs a one-time `DBG` warning on the Message thread.
 
 ## 1.3. User Flow
 
-### 1.3.1. Two Contour CEs Plugged In For the First Time
+### 1.3.1. Two Behringer DDM4000 mixers Plugged In For the First Time
 
-1. The user connects two Reloop Contour Interface Editions side-by-side to two USB ports on their MacBook. `MidiDeviceManager::pollHotPlug` detects both within 1 second.
+1. The user connects two Behringer DDM4000 mixers side-by-side to two USB ports on their MacBook. `MidiDeviceManager::pollHotPlug` detects both within 1 second.
 2. For the first device, `computeDeviceId` reads `info.identifier = "Bluetooth Bus :: USB :: 0x1234567a"` (macOS-style) and produces `deviceId = D1`.
 3. For the second device, `computeDeviceId` reads `info.identifier = "Bluetooth Bus :: USB :: 0x1234567b"` and produces `deviceId = D2`.
 4. `MappingStore` resolves a profile for each:
-   - D1 has no user override → resolves to the bundled `reloop-contour-interface-edition.json` (no `identifierHint`, matches both).
+   - D1 has no user override → resolves to the bundled `behringer-ddm4000.json` (no `identifierHint`, matches both).
    - D2 has no user override → also resolves to the bundled profile.
 5. Both controllers now drive deck A/B identically. The user sees this in the Settings panel: two device entries listing identical profile names.
 6. The user opens Settings → MIDI. The panel lists:
-   - **Reloop Contour Interface Edition** — port: `…0x1234567a` — profile: *Reloop Contour Interface Edition v1 (bundled)*
-   - **Reloop Contour Interface Edition** — port: `…0x1234567b` — profile: *Reloop Contour Interface Edition v1 (bundled)*
-7. They click **Duplicate to User Profile** on the first device, name the copy "Reloop CE Left (A/B)". The profile is duplicated; the panel now shows this user profile as active for D1.
+   - **Behringer DDM4000** — port: `…0x1234567a` — profile: *Behringer DDM4000 v1 (bundled)*
+   - **Behringer DDM4000** — port: `…0x1234567b` — profile: *Behringer DDM4000 v1 (bundled)*
+7. They click **Duplicate to User Profile** on the first device, name the copy "DDM4000 Left (A/B)". The profile is duplicated; the panel now shows this user profile as active for D1.
 8. They click the new "Bind to This Specific USB Port" toggle. `MappingStore` updates the user profile's JSON to add `device.match.identifierHint: "Bluetooth Bus :: USB :: 0x1234567a"` and saves atomically.
-9. They repeat: duplicate again for the second device, naming "Reloop CE Right (C/D)", and bind to the second port.
-10. Now D1 resolves to "Reloop CE Left (A/B)" and D2 resolves to "Reloop CE Right (C/D)" — even though both profiles are derived from the same bundled template.
-11. The user opens the "Reloop CE Right (C/D)" profile in the binding table and remaps every `deck.A.*` target to `deck.C.*` (and `deck.B.*` → `deck.D.*`) via the existing PRD-0048 inline editor.
+9. They repeat: duplicate again for the second device, naming "DDM4000 Right (C/D)", and bind to the second port.
+10. Now D1 resolves to "DDM4000 Left (A/B)" and D2 resolves to "DDM4000 Right (C/D)" — even though both profiles are derived from the same bundled template.
+11. The user opens the "DDM4000 Right (C/D)" profile in the binding table and remaps every `deck.A.*` target to `deck.C.*` (and `deck.B.*` → `deck.D.*`) via the existing PRD-0048 inline editor.
 
 ### 1.3.2. Reboot Restores Per-Port Bindings
 
-1. The user reboots their machine. Both Contour CEs power up.
+1. The user reboots their machine. Both Behringer DDM4000 mixers power up.
 2. `MidiDeviceManager` enumerates and produces the same `deviceId` values D1 and D2 (because macOS's Core MIDI identifier is stable for the same physical port).
-3. `MappingStore` reads `_device_state.json`, finds the persisted active-mapping selections, and resolves D1 → "Reloop CE Left (A/B)" and D2 → "Reloop CE Right (C/D)". The bundled-profile fallback never triggers because both user profiles have explicit `identifierHint` matches.
+3. `MappingStore` reads `_device_state.json`, finds the persisted active-mapping selections, and resolves D1 → "DDM4000 Left (A/B)" and D2 → "DDM4000 Right (C/D)". The bundled-profile fallback never triggers because both user profiles have explicit `identifierHint` matches.
 4. PRD-0047's `MidiFeedbackEngine` performs a boot dump for each device, lighting them correctly.
 
-### 1.3.3. User Plugs One Contour CE Into a Different Port
+### 1.3.3. User Plugs One DDM4000 Into a Different Port
 
-1. The user accidentally swaps the USB ports. The Contour CE that was previously in port-A is now in port-B.
+1. The user accidentally swaps the USB ports. The DDM4000 that was previously in port-A is now in port-B.
 2. `MidiDeviceManager` enumerates: the controller previously known as D1 is now reporting `info.identifier = "…0x1234567b"` (port-B's identifier), so it gets `deviceId = D2`. The other gets D1.
-3. The user-profile resolver: the "Reloop CE Left (A/B)" profile has `identifierHint: "…0x1234567a"` (port-A's identifier). The device now in port-A is the physical right-deck controller. The "Reloop CE Right (C/D)" profile has `identifierHint: "…0x1234567b"`, which now matches the physical left-deck controller in port-B.
-4. Result: the user's physical-controller-to-software-deck mapping is swapped. The Reloop labelled "left" now controls C/D and vice versa. This is **correct behaviour**: the user told the software "this profile binds to this physical port"; if they move the controller to a different port, the binding follows the port, not the controller.
+3. The user-profile resolver: the "DDM4000 Left (A/B)" profile has `identifierHint: "…0x1234567a"` (port-A's identifier). The device now in port-A is the physical right-deck controller. The "DDM4000 Right (C/D)" profile has `identifierHint: "…0x1234567b"`, which now matches the physical left-deck controller in port-B.
+4. Result: the user's physical-controller-to-software-deck mapping is swapped. The DDM4000 labelled "left" now controls C/D and vice versa. This is **correct behaviour**: the user told the software "this profile binds to this physical port"; if they move the controller to a different port, the binding follows the port, not the controller.
 5. The user notices the mismatch. They open Settings → MIDI, see the device list, and click the new **Swap** button. The two profiles' `identifierHint` fields are swapped atomically.
 6. The user could alternatively unplug and re-plug the controllers in the "correct" physical ports.
 
 ### 1.3.4. Single Controller Today (No Behaviour Change)
 
-1. The user has one Reloop Contour CE on one USB port (the EPIC-0005 baseline scenario).
+1. The user has one Behringer DDM4000 on one USB port (the EPIC-0005 baseline scenario).
 2. `MidiDeviceManager::pollHotPlug` produces `deviceId = D1`, derived from the OS identifier.
-3. `MappingStore` resolves to the bundled `reloop-contour-interface-edition.json` (no `identifierHint` → matches any port).
+3. `MappingStore` resolves to the bundled `behringer-ddm4000.json` (no `identifierHint` → matches any port).
 4. The user never opens the new "Bind to This Specific USB Port" toggle. Their experience is identical to EPIC-0005.
 
 ### 1.3.5. Platform With Unstable Identifier

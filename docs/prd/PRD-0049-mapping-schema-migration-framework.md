@@ -10,7 +10,7 @@ depends-on: [PRD-0042, PRD-0043]
 
 EPIC-0005 ships every mapping file with `schemaVersion: 1`. PRD-0042 hard-codes the parser to that version: `MappingParser::parse` rejects any file with `schemaVersion != 1` as `UnsupportedSchemaVersion`. This is correct for v1, but it locks the format. Any future improvement — adding a per-binding `velocityCurve`, splitting `modifiers` into typed sub-blocks, introducing per-port `identifierHint` (PRD-0051) — requires bumping the version, and the *moment* that happens, every user's existing v1 file becomes unreadable.
 
-A DJ who spent hours customising the Reloop profile on their machine cannot afford to lose their mappings just because Sonik updated. Worse: a user who exports a v1 profile and shares it on a forum will see it stop working for every recipient who has upgraded past v1. The "community sharing" promise of PRD-0050 dies on the day of the first schema bump.
+A DJ who spent hours customising the DDM4000 profile on their machine cannot afford to lose their mappings just because Sonik updated. Worse: a user who exports a v1 profile and shares it on a forum will see it stop working for every recipient who has upgraded past v1. The "community sharing" promise of PRD-0050 dies on the day of the first schema bump.
 
 Two non-solutions are tempting and wrong:
 
@@ -46,7 +46,7 @@ This PRD has no end-user UI directly. The user interacts indirectly through PRD-
 
 ### 1.3.1. v1 File Loads After Framework Lands (Today, Zero Migrations)
 
-1. User launches Sonik. `MappingStore::loadAllMappings` iterates the user mapping directory and finds `reloop-ce-my-mix.json` with `schemaVersion: 1`.
+1. User launches Sonik. `MappingStore::loadAllMappings` iterates the user mapping directory and finds `ddm4000-my-mix.json` with `schemaVersion: 1`.
 2. The store reads `schemaVersion: 1`, computes target `kCurrentSchemaVersion = 1`. `fromVersion == target`.
 3. The store skips the migration registry entirely and passes the JSON straight to `MappingParser::parse`.
 4. Result: identical behaviour to EPIC-0005. The framework is a no-op for v1 files in v1 builds. Zero user-visible change.
@@ -54,12 +54,12 @@ This PRD has no end-user UI directly. The user interacts indirectly through PRD-
 ### 1.3.2. v1 File Loads After v2 Schema Bump (Future Build)
 
 1. A future PR bumps `kCurrentSchemaVersion = 2` and registers `migrate_v1_to_v2`. The migration, for instance, splits the v1 string-or-array `modifier` field into a typed `modifierIds: [...]` block.
-2. The user upgrades Sonik. They launch the new build. `MappingStore::loadAllMappings` finds the same `reloop-ce-my-mix.json` still at `schemaVersion: 1`.
+2. The user upgrades Sonik. They launch the new build. `MappingStore::loadAllMappings` finds the same `ddm4000-my-mix.json` still at `schemaVersion: 1`.
 3. The store reads `schemaVersion: 1`, target `2`. `fromVersion < target`. The store invokes `MigrationRegistry::apply(json, 1, 2)`.
 4. The registry runs `migrate_v1_to_v2(json)`. The output is a new `juce::var` with `schemaVersion: 2` and the transformed `modifierIds` block.
 5. The store hands the migrated JSON to `MappingParser::parse` (v2-aware). Parsing succeeds. The mapping is loaded into memory and active.
 6. PRD-0048's UI displays a non-intrusive banner: "1 mapping was migrated from schema v1 to v2 in memory. Save migrated copy?". The user can dismiss or accept.
-7. If the user clicks "Save Migrated Copy", `MappingStore` writes the migrated JSON atomically to `reloop-ce-my-mix.json` (replacing the v1 content). If the user dismisses, the next launch will re-migrate transparently — no user data is lost.
+7. If the user clicks "Save Migrated Copy", `MappingStore` writes the migrated JSON atomically to `ddm4000-my-mix.json` (replacing the v1 content). If the user dismisses, the next launch will re-migrate transparently — no user data is lost.
 
 ### 1.3.3. v3 File Loads in a v2 Build
 

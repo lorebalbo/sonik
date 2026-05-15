@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <optional>
 
 namespace sonik::midi
 {
@@ -73,6 +74,18 @@ namespace sonik::midi
         {
             return unmatchedEventCount.load (std::memory_order_relaxed);
         }
+
+        // ---- Modifier mask introspection (PRD-0046, for PRD-0048 UI) -------
+        // Returns the current modifier mask for `deviceId`, or 0 if unknown.
+        // Reads with acquire ordering so the UI sees a value at least as
+        // recent as the most recent inbound modifier event.
+        std::uint32_t getModifierMask (std::uint64_t deviceId) const noexcept;
+
+        // Returns the modifier id string declared at `bit` in `mapping`, or
+        // nullopt if no modifier occupies that bit. Pure mapping inspection;
+        // no device state is touched.
+        std::optional<juce::String> getModifierBitName (const Mapping& mapping,
+                                                        std::uint8_t   bit) const;
 
     private:
         struct DeviceState

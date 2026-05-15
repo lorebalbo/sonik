@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "device": {
+    "manufacturer": "Behringer",
+    "product": "DDM4000 (MIDI)",
+    "match": { "midiName": ".*(DDM4000|USB2\\.0-MIDI).*" }
+  },
+  "modifiers": [],
+  "bindings": [
+    { "target": "deck.A.eq.high", "midi": { "channel": 1, "status": "cc", "data1":  4 }, "transform": "linear" },
+    { "target": "deck.A.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1":  5 }, "transform": "linear" },
+    { "target": "deck.A.eq.low",  "midi": { "channel": 1, "status": "cc", "data1":  6 }, "transform": "linear" },
+    { "target": "deck.A.gain",    "midi": { "channel": 1, "status": "cc", "data1":  7 }, "transform": "linear" },
+
+    { "target": "deck.B.eq.high", "midi": { "channel": 1, "status": "cc", "data1":  8 }, "transform": "linear" },
+    { "target": "deck.B.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1":  9 }, "transform": "linear" },
+    { "target": "deck.B.eq.low",  "midi": { "channel": 1, "status": "cc", "data1": 10 }, "transform": "linear" },
+    { "target": "deck.B.gain",    "midi": { "channel": 1, "status": "cc", "data1": 11 }, "transform": "linear" },
+
+    { "target": "deck.C.eq.high", "midi": { "channel": 1, "status": "cc", "data1": 12 }, "transform": "linear" },
+    { "target": "deck.C.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1": 13 }, "transform": "linear" },
+    { "target": "deck.C.eq.low",  "midi": { "channel": 1, "status": "cc", "data1": 14 }, "transform": "linear" },
+    { "target": "deck.C.gain",    "midi": { "channel": 1, "status": "cc", "data1": 15 }, "transform": "linear" },
+
+    { "target": "deck.D.eq.high", "midi": { "channel": 1, "status": "cc", "data1": 16 }, "transform": "linear" },
+    { "target": "deck.D.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1": 17 }, "transform": "linear" },
+    { "target": "deck.D.eq.low",  "midi": { "channel": 1, "status": "cc", "data1": 18 }, "transform": "linear" },
+    { "target": "deck.D.gain",    "midi": { "channel": 1, "status": "cc", "data1": 19 }, "transform": "linear" },
+
+    { "target": "mixer.crossfader", "midi": { "channel": 1, "status": "cc", "data1": 21 }, "transform": "linear" }
+  ]
+}

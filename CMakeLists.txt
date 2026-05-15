@@ -98,8 +98,7 @@ juce_add_gui_app(Sonik
 # `SonikBinaryData` with `BinaryData::*` symbols for the embedded JSON files.
 juce_add_binary_data(SonikBinaryData
     SOURCES
-        Resources/MidiMappings/reloop-contour-interface-edition.json
-        Resources/MidiMappings/reloop-ddm4000.json
+        Resources/MidiMappings/behringer-ddm4000.json
         Resources/MidiMappings/generic-midi.json
 )
 
@@ -352,6 +351,7 @@ add_executable(SonikTests
     Tests/BindingResolverTests.cpp
     Tests/MappingStoreTests.cpp
     Tests/MidiInboundRouterTests.cpp
+    Tests/ModifierLayerTests.cpp
     Tests/SoftTakeoverManagerTests.cpp
     Tests/MidiFeedbackEngineTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
