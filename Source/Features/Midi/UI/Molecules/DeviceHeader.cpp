@@ -94,6 +94,14 @@ namespace sonik::midi::ui
 
         addAndMakeVisible (bindingTable);
 
+        // PRD-0051: per-device port-identifier label + "bind to this port"
+        // toggle. Visibility/enablement is recomputed in refreshFromStore().
+        portBindingControls.onToggle = [this] (bool shouldBind)
+        {
+            handleBindToPortToggled (shouldBind);
+        };
+        addAndMakeVisible (portBindingControls);
+
         modifierBanner = std::make_unique<ModifierBanner> (record.deviceId,
                                                            inboundRouter,
                                                            store);
@@ -168,6 +176,10 @@ namespace sonik::midi::ui
 
         profileDropdown.setBounds (actionRow);
 
+        // PRD-0051: port-identifier label + bind toggle row.
+        bounds.removeFromTop (6);
+        portBindingControls.setBounds (bounds.removeFromTop (portBindingControls.getPreferredHeight()));
+
         // ---- Binding table (fills the remaining vertical space) -------
         bounds.removeFromTop (8);
 
@@ -231,8 +243,8 @@ namespace sonik::midi::ui
 
     int DeviceHeader::getPreferredHeight() const noexcept
     {
-        // Header bar = 8 (top pad) + 24 (title) + 4 + 16 (id) + 6 + 28 (actions) + 8 (gap) + 8 (bottom pad)
-        constexpr int kHeaderArea = 8 + 24 + 4 + 16 + 6 + 28 + 8 + 8;
+        // Header bar = 8 (top pad) + 24 (title) + 4 + 16 (id) + 6 + 28 (actions) + 6 (gap) + 26 (port row) + 8 (gap) + 8 (bottom pad)
+        constexpr int kHeaderArea = 8 + 24 + 4 + 16 + 6 + 28 + 6 + 26 + 8 + 8;
         const int footer  = activeIsBundled ? 0 : (28 + 6); // "+ ADD BINDING" bar
         const int mbH     = modifierBanner != nullptr ? modifierBanner->getPreferredHeight() : 0;
         const int mbBlock = mbH > 0 ? (mbH + 6) : 0;
@@ -276,6 +288,8 @@ namespace sonik::midi::ui
         addBindingButton.setVisible (! activeIsBundled);
         pushSnapshotToTable();
 
+        refreshPortBindingControls();
+
         // PRD-0048 Phase 10: re-seed the disengaged list against the new
         // active mapping (state entries persist across mapping switches
         // until explicitly reset, but the list of softTakeover-eligible
@@ -312,6 +326,56 @@ namespace sonik::midi::ui
         const auto result = store.setActiveMapping (record.deviceId, selected->id);
         juce::ignoreUnused (result);
         updateActionButtonsEnablement();
+    }
+
+    //--------------------------------------------------------------------------
+    // PRD-0051: port-binding toggle wiring.
+    //--------------------------------------------------------------------------
+    void DeviceHeader::refreshPortBindingControls()
+    {
+        // Pull the latest device record from the manager (it may have been
+        // updated by hot-plug after we cached `record` in our ctor).
+        for (const auto& r : deviceManager.getDevices())
+            if (r.deviceId == record.deviceId) { record = r; break; }
+
+        const auto activeMapping = store.getActiveMappingForDevice (record.deviceId);
+        const bool isBound =
+            (activeMapping != nullptr
+             && activeMapping->deviceMatch.identifierHintLiteral.has_value()
+             && record.juceIdentifier.isNotEmpty()
+             && *activeMapping->deviceMatch.identifierHintLiteral == record.juceIdentifier);
+
+        PortBindingControls::State s;
+        s.juceIdentifier    = record.juceIdentifier;
+        s.bound             = isBound;
+        s.activeIsBundled   = activeIsBundled;
+        s.platformAvailable = deviceManager.isIdentifierBasedDisambiguationAvailable();
+        portBindingControls.setState (s);
+    }
+
+    void DeviceHeader::handleBindToPortToggled (bool shouldBind)
+    {
+        const auto activeId = store.getActiveMappingIdForDevice (record.deviceId);
+        if (activeId.isEmpty())
+        {
+            refreshPortBindingControls();
+            return;
+        }
+
+        std::optional<juce::String> hint;
+        if (shouldBind)
+        {
+            if (record.juceIdentifier.isEmpty())
+            {
+                refreshPortBindingControls();
+                return;
+            }
+            hint = record.juceIdentifier;
+        }
+
+        const auto rc = store.setIdentifierHint (activeId, hint);
+        juce::ignoreUnused (rc);
+        // refreshFromStore() will be triggered by activeMappingChanged.
     }
 
     void DeviceHeader::handleDuplicateClicked()

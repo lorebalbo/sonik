@@ -2,6 +2,9 @@
 
 #include "Sha1.h"
 
+#include <algorithm>
+#include <unordered_set>
+
 namespace sonik::midi
 {
     namespace
@@ -64,16 +67,25 @@ namespace sonik::midi
 
         auto processList = [&] (const juce::Array<juce::MidiDeviceInfo>& list, bool isInput)
         {
-            // Per PRD: ordinal is assigned per duplicate (manufacturer, productName)
-            // in JUCE enumeration order within the same enumeration pass.
-            // JUCE's MidiDeviceInfo does not expose `manufacturer`; we treat it
-            // as empty and use `name` as productName, so the ordinal is the
-            // primary disambiguator.
+            // PRD-0051: compute deviceIds with per-port disambiguation using
+            // the OS-provided `juce::MidiDeviceInfo::identifier`. The full
+            // `siblings` list is passed verbatim so `computeDeviceId` can
+            // decide identifier-uniqueness across the entire bus, falling back
+            // to the v1 ordinal scheme when identifiers are empty / duplicated.
+            std::vector<juce::MidiDeviceInfo> siblings;
+            siblings.reserve (static_cast<size_t> (list.size()));
+            for (const auto& i : list)
+                siblings.push_back (i);
+
+            // Track ordinals here purely for the `MidiDeviceRecord::ordinal`
+            // diagnostic field; the actual deviceId derivation lives in
+            // computeDeviceId().
             std::vector<std::pair<juce::String, int>> ordinalCounts;
             ordinalCounts.reserve (static_cast<size_t> (list.size()));
 
-            for (const auto& info : list)
+            for (int infoIndex = 0; infoIndex < list.size(); ++infoIndex)
             {
+                const auto& info = list.getReference (infoIndex);
                 const juce::String manufacturer; // not provided by JUCE
                 const juce::String productName = info.name;
 
@@ -91,7 +103,7 @@ namespace sonik::midi
                 if (! found)
                     ordinalCounts.emplace_back (productName, 0);
 
-                const auto deviceId = computeDeviceId (manufacturer, productName, ordinal);
+                const auto deviceId = computeDeviceId (info, siblings, infoIndex);
                 seenThisPass.push_back ({ deviceId });
 
                 if (auto* existing = findByIdAndDirection (deviceId, isInput))
@@ -191,13 +203,89 @@ namespace sonik::midi
 
     // ---------------- ID / lookup --------------------------------------------
 
-    std::uint64_t MidiDeviceManager::computeDeviceId (const juce::String& manufacturer,
-                                                      const juce::String& productName,
-                                                      int ordinal) const noexcept
+    std::uint64_t MidiDeviceManager::computeDeviceId (const juce::MidiDeviceInfo& info,
+                                                      const std::vector<juce::MidiDeviceInfo>& siblings,
+                                                      int siblingIndex) const noexcept
     {
+        // PRD-0051: per-physical-USB-port disambiguation.
+        //
+        //  1. If `info.identifier` is non-empty AND every sibling identifier
+        //     is non-empty AND no two siblings share an identifier, use
+        //     SHA-1(manufacturer | product | identifier). This is stable
+        //     across reboots when the OS reports stable identifiers (macOS
+        //     Core MIDI, Windows WinRT MIDI for the same physical USB port).
+        //
+        //  2. Otherwise fall back to v1's ordinal scheme: SHA-1(manufacturer
+        //     | product | ordinal) where `ordinal` is the 0-based index of
+        //     this device among siblings sharing the same (manufacturer,
+        //     product), sorted lexically by (identifier, name).
+        //
+        // The fallback also fires a one-time DBG warning so a developer
+        // looking at the console knows multi-instance disambiguation is
+        // unavailable on this platform.
+
+        const juce::String manufacturer; // JUCE does not expose it.
+        const juce::String productName = info.name;
+
+        bool identifierPathOk = info.identifier.isNotEmpty();
+        if (identifierPathOk)
+        {
+            std::unordered_set<std::string> seen;
+            for (const auto& s : siblings)
+            {
+                if (s.identifier.isEmpty())
+                {
+                    identifierPathOk = false;
+                    break;
+                }
+                const auto inserted = seen.insert (s.identifier.toStdString()).second;
+                if (! inserted)
+                {
+                    identifierPathOk = false;
+                    break;
+                }
+            }
+        }
+
+        if (identifierPathOk)
+        {
+            juce::String key;
+            key << manufacturer << "|" << productName << "|" << info.identifier;
+            return sha1::sha1Low64 (key);
+        }
+
+        // Fallback: latch the "identifier-based path unavailable" state and
+        // emit a one-time warning. The latch is one-way — once we fall back
+        // for *any* enumeration pass we never re-enable identifier mode (the
+        // UI would otherwise oscillate as devices are hot-plugged).
+        identifierPathAvailable.store (false, std::memory_order_release);
+        if (! platformWarningFired.test_and_set (std::memory_order_acq_rel))
+        {
+            DBG ("[MIDI][PRD-0051] OS-reported MidiDeviceInfo::identifier values are "
+                 "empty or duplicated; falling back to ordinal-based deviceId. "
+                 "Per-physical-USB-port disambiguation is unavailable on this platform.");
+        }
+
+        // Build the sibling subset matching productName, and assign this
+        // device a unique ordinal equal to its positional index among them.
+        // We use the caller-supplied `siblingIndex` (the position of `info`
+        // within `siblings`) so that even siblings with identical
+        // (identifier, name) tuples receive distinct ordinals — this is the
+        // critical guarantee that two empty-identifier ports collapse to
+        // different deviceIds.
+        int ordinal = 0;
+        for (int i = 0; i < siblingIndex && i < (int) siblings.size(); ++i)
+            if (siblings[(size_t) i].name == productName)
+                ++ordinal;
+
         juce::String key;
         key << manufacturer << "|" << productName << "|" << ordinal;
         return sha1::sha1Low64 (key);
+    }
+
+    bool MidiDeviceManager::isIdentifierBasedDisambiguationAvailable() const noexcept
+    {
+        return identifierPathAvailable.load (std::memory_order_acquire);
     }
 
     MidiDeviceManager::OwnedDevice* MidiDeviceManager::findById (std::uint64_t id) noexcept

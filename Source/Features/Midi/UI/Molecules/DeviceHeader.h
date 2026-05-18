@@ -25,6 +25,7 @@
 #include "../Atoms/ModifierBanner.h"
 #include "../Atoms/ProfileDropdown.h"
 #include "BindingTable.h"
+#include "PortBindingControls.h"
 
 #include <memory>
 
@@ -62,6 +63,8 @@ namespace sonik::midi::ui
 
     private:
         void rebuildProfileList();
+        void refreshPortBindingControls();
+        void handleBindToPortToggled (bool shouldBind);
         void handleMidiLearned       (size_t bindingIndex, std::uint32_t newMidiKey);
         void resolveConflictByReplace (bool currentIsPlaceholder,
                                        size_t currentPhIdx,
@@ -106,6 +109,7 @@ namespace sonik::midi::ui
         BindingTable     bindingTable;
         std::unique_ptr<ModifierBanner> modifierBanner;
         std::unique_ptr<DisengagedList> disengagedList;
+        PortBindingControls portBindingControls;
         bool             activeIsBundled { true };
 
         // Debounced save state -----------------------------------------

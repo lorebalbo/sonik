@@ -4,6 +4,7 @@
 #include "Migrations/MigrationRegistry.h"
 
 #include <algorithm>
+#include <regex>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -143,7 +144,69 @@ namespace sonik::midi
             mapping.deviceMatch.manufacturerPattern = deviceVar.getProperty ("manufacturer", "").toString();
             mapping.deviceMatch.productPattern      = deviceVar.getProperty ("product",      "").toString();
             if (const auto matchVar = deviceVar.getProperty ("match", juce::var()); matchVar.isObject())
+            {
                 mapping.deviceMatch.midiNamePattern = matchVar.getProperty ("midiName", "").toString();
+
+                // PRD-0051: optional identifierHint matched against
+                // juce::MidiDeviceInfo::identifier. Accepted shapes:
+                //   "identifierHint": "literal-string"
+                //   "identifierHint": { "regex": "pattern" }
+                // Anything else is a ValidationError (the rest of the mapping
+                // still loads — partial-load semantics).
+                if (auto* obj = matchVar.getDynamicObject();
+                    obj != nullptr && obj->hasProperty ("identifierHint"))
+                {
+                    const auto hintVar = matchVar.getProperty ("identifierHint", juce::var());
+                    if (hintVar.isString())
+                    {
+                        const auto literal = hintVar.toString();
+                        if (literal.isNotEmpty())
+                            mapping.deviceMatch.identifierHintLiteral = literal;
+                    }
+                    else if (hintVar.isObject())
+                    {
+                        const auto regexProp = hintVar.getProperty ("regex", juce::var());
+                        if (! regexProp.isString())
+                        {
+                            result.errors.push_back (makeError (
+                                ValidationError::Kind::MalformedRoot,
+                                "device.match.identifierHint object must contain a string \"regex\" property",
+                                sourcePath));
+                        }
+                        else
+                        {
+                            const auto src = regexProp.toString();
+                            if (src.isNotEmpty())
+                            {
+                                // Validate the regex compiles. Cache the
+                                // result on the DeviceMatch so resolution
+                                // does not have to recompile.
+                                try
+                                {
+                                    (void) std::regex (src.toStdString(),
+                                                       std::regex::ECMAScript | std::regex::icase);
+                                    mapping.deviceMatch.identifierHintRegexSrc = src;
+                                }
+                                catch (const std::regex_error& e)
+                                {
+                                    result.errors.push_back (makeError (
+                                        ValidationError::Kind::MalformedRoot,
+                                        juce::String ("device.match.identifierHint.regex failed to compile: ")
+                                            + e.what(),
+                                        sourcePath));
+                                }
+                            }
+                        }
+                    }
+                    else if (! hintVar.isVoid())
+                    {
+                        result.errors.push_back (makeError (
+                            ValidationError::Kind::MalformedRoot,
+                            "device.match.identifierHint must be a string or { regex: string }",
+                            sourcePath));
+                    }
+                }
+            }
         }
 
         // ---- modifiers ----------------------------------------------------

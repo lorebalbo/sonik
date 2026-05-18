@@ -143,6 +143,28 @@ namespace sonik::midi
     };
 
     //--------------------------------------------------------------------------
+    /** PRD-0051: result of setIdentifierHint(). */
+    enum class SetIdentifierHintResult : std::uint8_t
+    {
+        Ok,
+        BundledNotEditable,  // The mapping is bundled; duplicate to a user copy first.
+        UnknownMapping,      // No mapping with that id exists in the user store.
+        IoFailure,           // Disk write failed; in-memory state rolled back.
+        SerializeFailure,    // Serializer threw; in-memory state unchanged.
+    };
+
+    /** PRD-0051: result of swapIdentifierHints(). */
+    enum class SwapIdentifierHintsResult : std::uint8_t
+    {
+        Ok,
+        UnknownDevice,        // One of the two deviceIds has no active mapping.
+        OneSideIsBundled,     // At least one of the two active mappings is bundled.
+        SameMapping,          // Both devices resolve to the same user mapping.
+        IoFailure,            // Disk write failed; best-effort rollback was attempted.
+        SerializeFailure,     // Serializer threw; in-memory state unchanged.
+    };
+
+    //--------------------------------------------------------------------------
     /** PRD-0050: result of registering an imported (already-parsed) mapping. */
     struct RegisterImportedResult
     {
@@ -253,6 +275,39 @@ namespace sonik::midi
         SetActiveMappingResult setActiveMapping (std::uint64_t   deviceId,
                                                  juce::StringRef mappingId);
 
+        // ---- PRD-0051: per-physical-USB-port disambiguation ---------------
+
+        /** Write or clear the `device.match.identifierHint` field on the user
+            mapping `mappingId`. Pass an empty optional to remove the hint;
+            pass a non-empty literal string to set the exact-match form.
+            Atomically rewrites the on-disk JSON via the existing user-mapping
+            save pipeline; the regex form is not exposed through this entry
+            point (the UI only writes literals — regex hints are author-only
+            and edited directly in the JSON). Returns `BundledNotEditable`
+            when `mappingId` resolves to a bundled profile.
+
+            On success fires `activeMappingChanged` for every device whose
+            resolved mapping changed.
+
+            Message thread only. */
+        SetIdentifierHintResult setIdentifierHint (juce::StringRef mappingId,
+                                                   std::optional<juce::String> identifierHint);
+
+        /** Atomically swap the `identifierHint` fields between the two
+            devices' currently active *user* profiles. Used by the Settings
+            panel's "Swap Profiles Between Ports" action.
+
+            Refuses with `OneSideIsBundled` if either device's active mapping
+            is a bundled profile (the user must duplicate first).
+
+            Best-effort rollback on failure: if profile A's write succeeds and
+            profile B's write fails, A's old hint is restored. The return
+            value is `IoFailure` in that case.
+
+            Message thread only. */
+        SwapIdentifierHintsResult swapIdentifierHints (std::uint64_t deviceA,
+                                                       std::uint64_t deviceB);
+
         // ---- PRD-0050: Import / export support ----------------------------
 
         /** Returns the in-memory Mapping for the given id (user profile takes
@@ -356,6 +411,18 @@ namespace sonik::midi
         // Picks user profile (first match), then bundled by-device, then generic.
         // Caller must NOT hold the writer lock.
         std::shared_ptr<const Mapping> resolveForRecord (const MidiDeviceRecord& rec) const;
+
+        // PRD-0051: scoring helper used by resolveForRecord. Returns the
+        // priority tier per PRD §1.4 AC 5:
+        //   4 — user, identifierHint matches
+        //   3 — user, no identifierHint, deviceMatch other fields match
+        //   2 — bundled, identifierHint matches
+        //   1 — bundled, no identifierHint, deviceMatch other fields match
+        //   0 — rejected (identifierHint configured but does not match, or
+        //       deviceMatch other fields do not match)
+        static int scoreCandidate (const Mapping&         mapping,
+                                   const MidiDeviceRecord& record,
+                                   bool                   isUserMapping) noexcept;
 
         // Returns true if the mapping's deviceMatch regexes accept the record.
         static bool deviceMatchAccepts (const Mapping&, const MidiDeviceRecord&) noexcept;

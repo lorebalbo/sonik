@@ -60,6 +60,13 @@ namespace sonik::midi::ui
         void launchExportFlow (const juce::String& mappingId);
         std::uint64_t firstActiveInputDeviceId() const;
 
+        // PRD-0051: "Swap Profiles Between Ports" action.
+        void onSwapPortsClicked();
+        // Returns the pair of input deviceIds when exactly two devices
+        // sharing (manufacturer, product) are connected; otherwise (0, 0).
+        std::pair<std::uint64_t, std::uint64_t> findSwapCandidates() const;
+        void refreshSwapButtonVisibility();
+
         // ---- DeviceListChangeListener -------------------------------------
         void midiDeviceAdded   (std::uint64_t) override;
         void midiDeviceRemoved (std::uint64_t) override;
@@ -87,6 +94,7 @@ namespace sonik::midi::ui
         juce::Component                             toolbar;
         juce::TextButton                            importButton { "Import\xE2\x80\xA6" };
         juce::TextButton                            exportButton { "Export\xE2\x80\xA6" };
+        juce::TextButton                            swapPortsButton { "SWAP PROFILES BETWEEN PORTS" };
         juce::ThreadPool                            ioPool { 1 };
         std::unique_ptr<MappingExportService>       exportService;
         std::unique_ptr<MappingImportService>       importService;

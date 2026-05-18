@@ -275,11 +275,14 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/UI/Atoms/LoadErrorBanner.h
     Source/Features/Midi/UI/Atoms/ModifierBanner.h
     Source/Features/Midi/UI/Atoms/DisengagedList.h
+    Source/Features/Midi/UI/Atoms/BindToPortToggle.h
     Source/Features/Midi/UI/Molecules/TargetPicker.h
     Source/Features/Midi/UI/Molecules/DeviceHeader.h
     Source/Features/Midi/UI/Molecules/DeviceHeader.cpp
     Source/Features/Midi/UI/Molecules/BindingTable.h
     Source/Features/Midi/UI/Molecules/BindingTable.cpp
+    Source/Features/Midi/UI/Molecules/PortBindingControls.h
+    Source/Features/Midi/UI/Molecules/PortBindingControls.cpp
     Source/Features/Midi/MidiFeedbackEngine.h
     Source/Features/Midi/MidiFeedbackEngine.cpp
     Source/Features/Midi/MidiOutputThread.h
@@ -386,6 +389,7 @@ add_executable(SonikTests
     Tests/SoftTakeoverManagerTests.cpp
     Tests/MidiFeedbackEngineTests.cpp
     Tests/MidiSettingsPanelTests.cpp
+    Tests/UsbPortDisambiguationTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
     Source/Features/Library/LibraryAnalysisQueue.cpp
@@ -448,6 +452,7 @@ add_executable(SonikTests
     Source/Features/Midi/UI/MidiSettingsPanel.cpp
     Source/Features/Midi/UI/Molecules/DeviceHeader.cpp
     Source/Features/Midi/UI/Molecules/BindingTable.cpp
+    Source/Features/Midi/UI/Molecules/PortBindingControls.cpp
     Source/Features/Midi/UI/Organisms/MidiImportDialog.cpp
     Source/Features/Midi/UI/Organisms/MidiExportDialog.cpp
     Source/Features/Midi/MidiFeedbackEngine.cpp

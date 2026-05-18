@@ -93,10 +93,13 @@ namespace sonik::midi::ui
 
         styleToolbarButton (importButton);
         styleToolbarButton (exportButton);
+        styleToolbarButton (swapPortsButton);
         importButton.onClick = [this]() { onImportClicked(); };
         exportButton.onClick = [this]() { onExportClicked(); };
+        swapPortsButton.onClick = [this]() { onSwapPortsClicked(); };
         toolbar.addAndMakeVisible (importButton);
         toolbar.addAndMakeVisible (exportButton);
+        toolbar.addAndMakeVisible (swapPortsButton);
         addAndMakeVisible (toolbar);
 
         loadErrorBanner.setVisible (false);
@@ -141,6 +144,14 @@ namespace sonik::midi::ui
             importButton.setBounds (t.removeFromLeft (110));
             t.removeFromLeft (8);
             exportButton.setBounds (t.removeFromLeft (110));
+            t.removeFromLeft (12);
+            // PRD-0051: only show when exactly two same-product devices are
+            // connected. We still allocate the slot when visible so the
+            // toolbar is laid out predictably.
+            if (swapPortsButton.isVisible())
+                swapPortsButton.setBounds (t.removeFromLeft (260));
+            else
+                swapPortsButton.setBounds ({});
         }
 
         const int bannerH = loadErrorBanner.isVisible() ? loadErrorBanner.getPreferredHeight() : 0;
@@ -178,6 +189,7 @@ namespace sonik::midi::ui
         }
 
         content.setHeaders (headers);
+        refreshSwapButtonVisibility();
         resized();
     }
 
@@ -198,7 +210,6 @@ namespace sonik::midi::ui
     void MidiSettingsPanel::midiDeviceRemoved (std::uint64_t) { rebuildOnMessageThread(); }
     void MidiSettingsPanel::midiDeviceOpened  (std::uint64_t) { rebuildOnMessageThread(); }
     void MidiSettingsPanel::midiDeviceClosed  (std::uint64_t) { rebuildOnMessageThread(); }
-
     //--------------------------------------------------------------------------
     // MappingStoreListener
     //--------------------------------------------------------------------------
@@ -482,5 +493,88 @@ namespace sonik::midi::ui
                 opts.resizable               = false;
                 activeDialogWindow.reset (opts.launchAsync());
             });
+    }
+
+    //--------------------------------------------------------------------------
+    // PRD-0051: Swap Profiles Between Ports
+    //--------------------------------------------------------------------------
+    std::pair<std::uint64_t, std::uint64_t> MidiSettingsPanel::findSwapCandidates() const
+    {
+        // Visible only when EXACTLY two connected input devices share
+        // (manufacturer, productName). Both must currently resolve to
+        // active mappings.
+        std::vector<MidiDeviceRecord> inputs;
+        for (const auto& r : deviceManager.getDevices())
+            if (r.isInput && r.isConnected)
+                inputs.push_back (r);
+
+        if (inputs.size() != 2)
+            return { 0, 0 };
+
+        const auto& a = inputs[0];
+        const auto& b = inputs[1];
+
+        if (a.manufacturer != b.manufacturer || a.productName != b.productName)
+            return { 0, 0 };
+
+        return { a.deviceId, b.deviceId };
+    }
+
+    void MidiSettingsPanel::refreshSwapButtonVisibility()
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+        const auto pair = findSwapCandidates();
+        const bool visible = pair.first != 0 && pair.second != 0
+                             && deviceManager.isIdentifierBasedDisambiguationAvailable();
+        swapPortsButton.setVisible (visible);
+    }
+
+    void MidiSettingsPanel::onSwapPortsClicked()
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        const auto pair = findSwapCandidates();
+        if (pair.first == 0 || pair.second == 0)
+            return;
+
+        const auto rc = store.swapIdentifierHints (pair.first, pair.second);
+        if (rc == SwapIdentifierHintsResult::Ok)
+            return;
+
+        juce::String title  = "Cannot Swap Profiles";
+        juce::String detail;
+        switch (rc)
+        {
+            case SwapIdentifierHintsResult::OneSideIsBundled:
+                detail = "At least one of the two devices is using a bundled profile. "
+                         "Duplicate the bundled profile to a User Profile on both devices "
+                         "before swapping.";
+                break;
+            case SwapIdentifierHintsResult::SameMapping:
+                detail = "Both devices resolve to the same mapping. Each device must have "
+                         "its own user profile before swapping ports.";
+                break;
+            case SwapIdentifierHintsResult::IoFailure:
+                detail = "The on-disk update failed. The original profile bindings were "
+                         "restored.";
+                break;
+            case SwapIdentifierHintsResult::SerializeFailure:
+                detail = "Serializing the modified mapping failed. The original profile "
+                         "bindings were not modified.";
+                break;
+            case SwapIdentifierHintsResult::UnknownDevice:
+                detail = "One of the devices was disconnected before the swap completed.";
+                break;
+            case SwapIdentifierHintsResult::Ok:
+                return;
+        }
+
+        juce::AlertWindow::showAsync (
+            juce::MessageBoxOptions()
+                .withIconType (juce::MessageBoxIconType::WarningIcon)
+                .withTitle (title)
+                .withMessage (detail)
+                .withButton ("OK"),
+            nullptr);
     }
 }

@@ -414,6 +414,25 @@ namespace sonik::midi
         return true;
     }
 
+    int MappingStore::scoreCandidate (const Mapping&         mapping,
+                                      const MidiDeviceRecord& record,
+                                      bool                   isUserMapping) noexcept
+    {
+        // PRD-0051 §1.4 AC 5 scoring tiers.
+        if (! deviceMatchAccepts (mapping, record))
+            return 0;
+
+        if (mapping.deviceMatch.hasIdentifierHint())
+        {
+            if (! mapping.deviceMatch.identifierHintMatches (record.juceIdentifier))
+                return 0; // configured but does not match -> reject
+            return isUserMapping ? 4 : 2;
+        }
+
+        // No identifierHint: any-port match.
+        return isUserMapping ? 3 : 1;
+    }
+
     std::shared_ptr<const Mapping> MappingStore::resolveForRecord (const MidiDeviceRecord& rec) const
     {
         // Snapshot containers under shared lock.
@@ -431,32 +450,65 @@ namespace sonik::midi
                 overrideId = it->second;
         }
 
-        // PRD-0048: explicit per-device override wins.
+        // PRD-0048: explicit per-device override wins. Note that overrides do
+        // NOT bypass identifierHint matching when matching is possible — but
+        // the user has explicitly pinned a profile, so we honour the choice
+        // even if its identifierHint does not match the device's port. The
+        // intent is "I have decided this mapping owns this device".
         if (overrideId.isNotEmpty())
         {
             if (auto it = userSnap.find (overrideId); it != userSnap.end() && it->second != nullptr)
                 return it->second;
             if (auto it = bundledSnap.find (overrideId); it != bundledSnap.end() && it->second != nullptr)
                 return it->second;
-            // Stale override (referenced mapping no longer exists). Fall through
-            // to automatic resolution; the override is cleaned up lazily by
-            // deleteUserMapping; we do not mutate here under a reader lock.
+            // Stale override (referenced mapping no longer exists). Fall
+            // through to automatic resolution; the override is cleaned up
+            // lazily by deleteUserMapping; we do not mutate here under a
+            // reader lock.
         }
+
+        // PRD-0051: scored resolution. Higher score wins; ties broken by
+        // (user > bundled), then alphabetical id for determinism.
+        struct Candidate
+        {
+            int                            score;
+            bool                           isUser;
+            juce::String                   id;
+            std::shared_ptr<const Mapping> mapping;
+        };
+        std::vector<Candidate> candidates;
+        candidates.reserve (userSnap.size() + bundledSnap.size());
 
         for (const auto& [stem, mapping] : userSnap)
         {
-            if (mapping != nullptr && deviceMatchAccepts (*mapping, rec))
-                return mapping;
+            if (mapping == nullptr) continue;
+            const int s = scoreCandidate (*mapping, rec, /*isUserMapping*/ true);
+            if (s > 0)
+                candidates.push_back ({ s, true, stem, mapping });
         }
-
         for (const auto& [id, mapping] : bundledSnap)
         {
+            if (mapping == nullptr) continue;
             if (id == genericId)
-                continue;
-            if (mapping != nullptr && deviceMatchAccepts (*mapping, rec))
-                return mapping;
+                continue; // generic-midi is the universal fallback, scored separately
+            const int s = scoreCandidate (*mapping, rec, /*isUserMapping*/ false);
+            if (s > 0)
+                candidates.push_back ({ s, false, id, mapping });
         }
 
+        if (! candidates.empty())
+        {
+            std::sort (candidates.begin(), candidates.end(),
+                       [] (const Candidate& a, const Candidate& b) noexcept
+                       {
+                           if (a.score != b.score) return a.score > b.score;
+                           if (a.isUser != b.isUser) return a.isUser; // user > bundled
+                           return a.id.compareIgnoreCase (b.id) < 0;
+                       });
+            return candidates.front().mapping;
+        }
+
+        // Generic-midi fallback (lowest tier).
         if (auto it = bundledSnap.find (genericId); it != bundledSnap.end())
             return it->second;
 
@@ -752,6 +804,13 @@ namespace sonik::midi
 
     juce::File MappingStore::activeOverridesFile() const
     {
+        // Filename is `_active-mappings.json` (legacy from PRD-0048).
+        // PRD-0051 §1.4 specifies a file named `_device_state.json` for the
+        // same semantic ("persisted active-mapping per deviceId"). We keep
+        // the existing filename: renaming would orphan all shipping user
+        // state, and the schema + atomic write semantics already satisfy
+        // PRD-0051's requirement. The legacy filename is therefore the
+        // canonical on-disk identity for both PRDs.
         return userDir.getChildFile ("_active-mappings.json");
     }
 
@@ -1111,6 +1170,153 @@ namespace sonik::midi
             fireActiveMappingChanged (deviceId);
 
         return SetActiveMappingResult::Ok;
+    }
+
+    //--------------------------------------------------------------------------
+    // PRD-0051: per-physical-USB-port disambiguation
+    //--------------------------------------------------------------------------
+    SetIdentifierHintResult
+    MappingStore::setIdentifierHint (juce::StringRef                   mappingId,
+                                     std::optional<juce::String>       identifierHint)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        const juce::String id = mappingId;
+        if (id.isEmpty())
+            return SetIdentifierHintResult::UnknownMapping;
+
+        // Bundled mappings are read-only. UI must duplicate first.
+        {
+            std::shared_lock lock (stateMutex);
+            if (bundledProfiles.find (id) != bundledProfiles.end()
+                && userProfiles.find (id) == userProfiles.end())
+                return SetIdentifierHintResult::BundledNotEditable;
+        }
+
+        std::shared_ptr<const Mapping> original;
+        {
+            std::shared_lock lock (stateMutex);
+            const auto it = userProfiles.find (id);
+            if (it == userProfiles.end() || it->second == nullptr)
+                return SetIdentifierHintResult::UnknownMapping;
+            original = it->second;
+        }
+
+        // Build the modified copy. The UI path only writes literal hints; the
+        // regex form is reserved for hand-authored JSON.
+        Mapping edited = *original;
+        edited.deviceMatch.identifierHintLiteral.reset();
+        edited.deviceMatch.identifierHintRegexSrc.reset();
+        edited.deviceMatch.identifierHintRegexCache.reset();
+        if (identifierHint.has_value() && identifierHint->isNotEmpty())
+            edited.deviceMatch.identifierHintLiteral = *identifierHint;
+
+        juce::var root;
+        try { root = MappingSerializer::serialize (edited); }
+        catch (...) { return SetIdentifierHintResult::SerializeFailure; }
+
+        const auto json     = juce::JSON::toString (root, false);
+        const auto target   = userDir.getChildFile (id + ".json");
+        const auto tmp      = userDir.getChildFile (id + ".json.tmp");
+
+        if (tmp.existsAsFile()) tmp.deleteFile();
+        if (! tmp.replaceWithText (json))
+            return SetIdentifierHintResult::IoFailure;
+        if (target.existsAsFile()) target.deleteFile();
+        if (! tmp.moveFileTo (target))
+        {
+            tmp.deleteFile();
+            return SetIdentifierHintResult::IoFailure;
+        }
+
+        // Re-parse from canonical disk source so in-memory matches the file.
+        auto pr = MappingParser::parse (root, target.getFullPathName());
+        auto sp = std::make_shared<const Mapping> (std::move (pr.mapping));
+
+        {
+            std::unique_lock lock (stateMutex);
+            userProfiles[id] = sp;
+        }
+
+        // Re-resolve every device — changing an identifierHint can promote
+        // or demote this mapping for multiple devices simultaneously.
+        std::vector<std::uint64_t> affected;
+        for (const auto& rec : deviceManager.getDevices())
+        {
+            if (! rec.isInput) continue;
+            auto fresh = resolveForRecord (rec);
+            std::shared_ptr<const Mapping> previous;
+            {
+                std::unique_lock lock (stateMutex);
+                previous = activeByDevice[rec.deviceId];
+                activeByDevice[rec.deviceId] = fresh;
+            }
+            if (fresh != previous)
+                affected.push_back (rec.deviceId);
+        }
+
+        for (auto did : affected)
+            fireActiveMappingChanged (did);
+
+        return SetIdentifierHintResult::Ok;
+    }
+
+    SwapIdentifierHintsResult
+    MappingStore::swapIdentifierHints (std::uint64_t deviceA, std::uint64_t deviceB)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        if (deviceA == 0 || deviceB == 0 || deviceA == deviceB)
+            return SwapIdentifierHintsResult::UnknownDevice;
+
+        const auto idA = getActiveMappingIdForDevice (deviceA);
+        const auto idB = getActiveMappingIdForDevice (deviceB);
+
+        if (idA.isEmpty() || idB.isEmpty())
+            return SwapIdentifierHintsResult::UnknownDevice;
+        if (idA == idB)
+            return SwapIdentifierHintsResult::SameMapping;
+
+        // Both sides must be user mappings (bundled are read-only).
+        {
+            std::shared_lock lock (stateMutex);
+            const bool aIsUser = userProfiles.find (idA) != userProfiles.end();
+            const bool bIsUser = userProfiles.find (idB) != userProfiles.end();
+            if (! aIsUser || ! bIsUser)
+                return SwapIdentifierHintsResult::OneSideIsBundled;
+        }
+
+        // Snapshot the two old hints for rollback.
+        std::optional<juce::String> oldHintA, oldHintB;
+        {
+            std::shared_lock lock (stateMutex);
+            const auto& a = userProfiles[idA]->deviceMatch;
+            const auto& b = userProfiles[idB]->deviceMatch;
+            oldHintA = a.identifierHintLiteral;
+            oldHintB = b.identifierHintLiteral;
+        }
+
+        // Write A with B's hint.
+        const auto rA = setIdentifierHint (idA, oldHintB);
+        if (rA == SetIdentifierHintResult::SerializeFailure)
+            return SwapIdentifierHintsResult::SerializeFailure;
+        if (rA == SetIdentifierHintResult::IoFailure)
+            return SwapIdentifierHintsResult::IoFailure;
+        if (rA != SetIdentifierHintResult::Ok)
+            return SwapIdentifierHintsResult::UnknownDevice;
+
+        // Write B with A's hint.
+        const auto rB = setIdentifierHint (idB, oldHintA);
+        if (rB != SetIdentifierHintResult::Ok)
+        {
+            // Best-effort rollback: restore A's original hint.
+            (void) setIdentifierHint (idA, oldHintA);
+            if (rB == SetIdentifierHintResult::SerializeFailure)
+                return SwapIdentifierHintsResult::SerializeFailure;
+            return SwapIdentifierHintsResult::IoFailure;
+        }
+
+        return SwapIdentifierHintsResult::Ok;
     }
 
     //--------------------------------------------------------------------------

@@ -20,6 +20,10 @@
 
 #include <array>
 #include <cstdint>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <regex>
 #include <type_traits>
 #include <unordered_map>
 #include <vector>
@@ -124,6 +128,74 @@ namespace sonik::midi
         juce::String manufacturerPattern;
         juce::String productPattern;
         juce::String midiNamePattern;
+
+        // PRD-0051: optional per-physical-USB-port disambiguator matched
+        // against `juce::MidiDeviceInfo::identifier`. Exactly one of the two
+        // forms is populated when an `identifierHint` is configured:
+        //   - `identifierHintLiteral` — exact string equality
+        //   - `identifierHintRegexSrc` — ECMAScript regex source (case-insensitive)
+        // When both are absent the mapping matches any port (legacy behaviour).
+        std::optional<juce::String> identifierHintLiteral;
+        std::optional<juce::String> identifierHintRegexSrc;
+
+        // Lazy regex compile cache. shared_ptr so DeviceMatch remains copyable
+        // (a Mapping is deep-copied by `Mapping copy = *src;` in createUserCopy).
+        // `std::once_flag` guarantees one-shot compilation across all copies of
+        // the same DeviceMatch.
+        struct RegexCache
+        {
+            std::once_flag           once;
+            std::optional<std::regex> compiled;
+        };
+        mutable std::shared_ptr<RegexCache> identifierHintRegexCache;
+
+        bool hasIdentifierHint() const noexcept
+        {
+            return identifierHintLiteral.has_value() || identifierHintRegexSrc.has_value();
+        }
+
+        // Returns true iff this DeviceMatch's `identifierHint` (if any)
+        // matches `candidate`. When no hint is configured returns `false`
+        // (callers should check `hasIdentifierHint()` first to distinguish
+        // "no constraint" from "constraint failed").
+        bool identifierHintMatches (const juce::String& candidate) const noexcept
+        {
+            if (identifierHintLiteral.has_value())
+                return *identifierHintLiteral == candidate;
+
+            if (! identifierHintRegexSrc.has_value())
+                return false;
+
+            if (identifierHintRegexCache == nullptr)
+                identifierHintRegexCache = std::make_shared<RegexCache>();
+
+            std::call_once (identifierHintRegexCache->once, [this]() noexcept
+            {
+                try
+                {
+                    identifierHintRegexCache->compiled =
+                        std::regex (identifierHintRegexSrc->toStdString(),
+                                    std::regex::ECMAScript | std::regex::icase);
+                }
+                catch (const std::regex_error&)
+                {
+                    identifierHintRegexCache->compiled.reset();
+                }
+            });
+
+            if (! identifierHintRegexCache->compiled.has_value())
+                return false;
+
+            try
+            {
+                return std::regex_search (candidate.toStdString(),
+                                          *identifierHintRegexCache->compiled);
+            }
+            catch (const std::regex_error&)
+            {
+                return false;
+            }
+        }
     };
 
     //--------------------------------------------------------------------------

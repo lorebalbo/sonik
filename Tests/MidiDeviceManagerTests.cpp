@@ -201,13 +201,15 @@ private:
         for (const auto& d : devices)
             expect (! d.isOpen, "no device auto-opens at init");
 
-        // deviceId derived from SHA-1 of "|<name>|<ordinal>" — note empty manufacturer.
-        const auto expectedInputId = sha1::sha1Low64 ("|Behringer DDM4000|0");
+        // PRD-0051: deviceId is SHA-1("|<name>|<identifier>") when identifiers
+        // are non-empty and unique across the bus. Manufacturer is empty since
+        // JUCE does not expose it.
+        const auto expectedInputId = sha1::sha1Low64 ("|Behringer DDM4000|in_id_1");
         bool found = false;
         for (const auto& d : devices)
             if (d.isInput && d.deviceId == expectedInputId)
                 found = true;
-        expect (found, "input deviceId matches SHA-1 of |name|0");
+        expect (found, "input deviceId matches SHA-1 of |name|identifier");
     }
 
     void testOrdinalDisambiguationOfDuplicates()
@@ -397,7 +399,11 @@ private:
 
     void testReplugReusesSameDeviceId()
     {
-        beginTest ("Replug re-uses the same deviceId");
+        beginTest ("Replug into the same physical port re-uses the same deviceId");
+        // PRD-0051: deviceId stability across hot-plug is now defined by the
+        // OS-reported identifier, not by ordinal. Plugging the same physical
+        // controller back into the same USB port yields the same identifier
+        // on macOS Core MIDI / Windows WinRT MIDI, and therefore the same id.
         MidiHostFake host;
         host.inputs.add (makeInfo ("ReplugDev", "rp1"));
         sonik::midi::MidiDeviceManager mgr (host);
@@ -411,11 +417,11 @@ private:
         host.inputs.clearQuick();
         expect (pumpUntil ([&] { return l.removed.size() >= 1; }, 1800));
 
-        // Replug under a different identifier — same name -> same deviceId.
-        host.inputs.add (makeInfo ("ReplugDev", "rp1-prime"));
+        // Replug under the SAME identifier (same physical port) -> same deviceId.
+        host.inputs.add (makeInfo ("ReplugDev", "rp1"));
         expect (pumpUntil ([&] { return l.added.size() >= 2; }, 1800));
         expectEquals ((long long) l.added.back(), (long long) firstId,
-                      "deviceId stable across unplug/replug");
+                      "deviceId stable across same-port unplug/replug");
     }
 
     void testMidiInboundEventPodInvariants()

@@ -67,6 +67,16 @@ namespace sonik::midi
         void registerAutoOpenRule (const juce::String& manufacturerRegex,
                                    const juce::String& productNameRegex);
 
+        // ---- PRD-0051: per-physical-USB-port disambiguation ----------------
+
+        /** Returns true when the OS-reported `juce::MidiDeviceInfo::identifier`
+            values are usable for per-port disambiguation, i.e. they have been
+            observed non-empty and unique for every connected device since
+            this manager was constructed. When this returns false, the UI must
+            disable port-binding controls — the underlying identifier-based
+            path is unavailable and the v1 ordinal-fallback is in effect. */
+        bool isIdentifierBasedDisambiguationAvailable() const noexcept;
+
         // ---- juce::MidiInputCallback (MIDI callback thread) -----------------
 
         void handleIncomingMidiMessage (juce::MidiInput* source,
@@ -104,9 +114,9 @@ namespace sonik::midi
         OwnedDevice*               findById   (std::uint64_t id) noexcept;
         const OwnedDevice*         findById   (std::uint64_t id) const noexcept;
         OwnedDevice*               findByIdAndDirection (std::uint64_t id, bool isInput) noexcept;
-        std::uint64_t              computeDeviceId (const juce::String& manufacturer,
-                                                    const juce::String& productName,
-                                                    int ordinal) const noexcept;
+        std::uint64_t              computeDeviceId (const juce::MidiDeviceInfo& info,
+                                                    const std::vector<juce::MidiDeviceInfo>& siblings,
+                                                    int siblingIndex) const noexcept;
         void                       populateLookupSlot (juce::MidiInput* ptr, std::uint64_t id);
         void                       clearLookupSlot    (juce::MidiInput* ptr);
         void                       maybeAutoOpen      (const MidiDeviceRecord& record);
@@ -129,6 +139,17 @@ namespace sonik::midi
 
         // O(1) device-id resolution on the MIDI callback thread.
         std::array<DeviceIdLookup, MaxDevices> lookupTable;
+
+        // PRD-0051: latched state — set to true on construction and cleared
+        // (and never re-set) the first time we observe a sibling with an
+        // empty/duplicate identifier. Read by `isIdentifierBasedDisambiguationAvailable()`.
+        // `mutable` because the latch update happens inside the `const`
+        // `computeDeviceId` helper.
+        mutable std::atomic<bool> identifierPathAvailable { true };
+
+        // One-shot DBG warning on the fallback path. `atomic_flag::test_and_set`
+        // is the canonical "fire-once" primitive across all threads.
+        mutable std::atomic_flag platformWarningFired = ATOMIC_FLAG_INIT;
 
         bool initialised = false;
     };

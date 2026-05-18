@@ -91,6 +91,22 @@ namespace sonik::midi
             device->setProperty ("product",      m.deviceMatch.productPattern);
             auto* match = new juce::DynamicObject();
             match->setProperty ("midiName", m.deviceMatch.midiNamePattern);
+
+            // PRD-0051: round-trip identifierHint. Literal form emits a bare
+            // string; regex form emits { "regex": "..." }. Absent fields are
+            // omitted so v1 profiles without an identifierHint serialise
+            // byte-identically (modulo property ordering) to their inputs.
+            if (m.deviceMatch.identifierHintLiteral.has_value())
+            {
+                match->setProperty ("identifierHint", *m.deviceMatch.identifierHintLiteral);
+            }
+            else if (m.deviceMatch.identifierHintRegexSrc.has_value())
+            {
+                auto* hint = new juce::DynamicObject();
+                hint->setProperty ("regex", *m.deviceMatch.identifierHintRegexSrc);
+                match->setProperty ("identifierHint", juce::var (hint));
+            }
+
             device->setProperty ("match", juce::var (match));
             root->setProperty ("device", juce::var (device));
         }
