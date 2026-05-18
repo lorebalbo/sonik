@@ -1,5 +1,8 @@
 #include "MidiSettingsPanel.h"
 
+#include "Organisms/MidiExportDialog.h"
+#include "Organisms/MidiImportDialog.h"
+
 namespace sonik::midi::ui
 {
     namespace
@@ -10,6 +13,17 @@ namespace sonik::midi::ui
         constexpr int kRowGap       = 8;
         constexpr int kOuterPad     = 12;
         constexpr int kEmptyHeight  = 80;
+        constexpr int kToolbarH     = 44;
+
+        void styleToolbarButton (juce::TextButton& b)
+        {
+            // DESIGN.md: 2px ink border, fill inversion on press (same palette
+            // as LearnButton).
+            b.setColour (juce::TextButton::buttonColourId,   juce::Colour (0xFFFDFDFD));
+            b.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xFF2D2D2D));
+            b.setColour (juce::TextButton::textColourOffId,  juce::Colour (0xFF2D2D2D));
+            b.setColour (juce::TextButton::textColourOnId,   juce::Colour (0xFFFDFDFD));
+        }
     }
 
     //==========================================================================
@@ -62,13 +76,28 @@ namespace sonik::midi::ui
     MidiSettingsPanel::MidiSettingsPanel (MappingStore&        s,
                                           MidiDeviceManager&   dm,
                                           MidiInboundRouter&   r,
-                                          SoftTakeoverManager& st)
+                                          SoftTakeoverManager& st,
+                                          juce::String         appVersion)
         : store               (s),
           deviceManager       (dm),
           inboundRouter       (r),
           softTakeoverManager (st)
     {
         juce::ignoreUnused (inboundRouter, softTakeoverManager);
+
+        exportService = std::make_unique<MappingExportService> (store, ioPool, appVersion);
+        importService = std::make_unique<MappingImportService> (store,
+                                                                store.getMigrationRegistry(),
+                                                                ioPool,
+                                                                store.getSchemaVersionTarget());
+
+        styleToolbarButton (importButton);
+        styleToolbarButton (exportButton);
+        importButton.onClick = [this]() { onImportClicked(); };
+        exportButton.onClick = [this]() { onExportClicked(); };
+        toolbar.addAndMakeVisible (importButton);
+        toolbar.addAndMakeVisible (exportButton);
+        addAndMakeVisible (toolbar);
 
         loadErrorBanner.setVisible (false);
         loadErrorBanner.onReload = [this]() { store.reloadUserMappings(); };
@@ -89,6 +118,7 @@ namespace sonik::midi::ui
     {
         store        .removeListener                 (this);
         deviceManager.removeDeviceListChangeListener (this);
+        ioPool.removeAllJobs (true, 4000);
     }
 
     //--------------------------------------------------------------------------
@@ -103,6 +133,16 @@ namespace sonik::midi::ui
     void MidiSettingsPanel::resized()
     {
         auto inner = getLocalBounds().reduced (2);
+
+        auto toolbarBounds = inner.removeFromTop (kToolbarH);
+        toolbar.setBounds (toolbarBounds);
+        {
+            auto t = toolbarBounds.reduced (8, 6);
+            importButton.setBounds (t.removeFromLeft (110));
+            t.removeFromLeft (8);
+            exportButton.setBounds (t.removeFromLeft (110));
+        }
+
         const int bannerH = loadErrorBanner.isVisible() ? loadErrorBanner.getPreferredHeight() : 0;
         if (bannerH > 0)
             loadErrorBanner.setBounds (inner.removeFromTop (bannerH));
@@ -189,5 +229,258 @@ namespace sonik::midi::ui
         for (auto& h : headers)
             if (h != nullptr)
                 h->refreshFromStore();
+    }
+
+    //--------------------------------------------------------------------------
+    // PRD-0050: Import / Export
+    //--------------------------------------------------------------------------
+    std::uint64_t MidiSettingsPanel::firstActiveInputDeviceId() const
+    {
+        for (const auto& rec : deviceManager.getDevices())
+            if (rec.isInput)
+                return rec.deviceId;
+        return 0;
+    }
+
+    void MidiSettingsPanel::onImportClicked()
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        activeFileChooser = std::make_unique<juce::FileChooser> (
+            "Import MIDI Mapping",
+            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+            "*.sonikmidi.json");
+
+        const auto flags = juce::FileBrowserComponent::openMode
+                         | juce::FileBrowserComponent::canSelectFiles;
+
+        activeFileChooser->launchAsync (flags,
+            [this] (const juce::FileChooser& fc)
+            {
+                const auto file = fc.getResult();
+                if (file == juce::File())
+                    return;
+                launchImportFlow (file);
+            });
+    }
+
+    void MidiSettingsPanel::onExportClicked()
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        const auto deviceId = firstActiveInputDeviceId();
+        if (deviceId == 0)
+        {
+            juce::AlertWindow::showAsync (
+                juce::MessageBoxOptions()
+                    .withIconType (juce::MessageBoxIconType::WarningIcon)
+                    .withTitle ("No device")
+                    .withMessage ("Connect a MIDI input device before exporting a mapping.")
+                    .withButton ("OK"),
+                nullptr);
+            return;
+        }
+
+        const auto summaries = store.listAvailableMappings (deviceId);
+        const auto activeId  = store.getActiveMappingIdForDevice (deviceId);
+
+        auto* dialog = new MidiExportDialog (summaries, activeId);
+        dialog->setSize (440, 160);
+        dialog->onCancelClicked = [this]()
+        {
+            if (activeDialogWindow != nullptr)
+                activeDialogWindow->exitModalState (0);
+        };
+        dialog->onExportClicked = [this] (juce::String mappingId)
+        {
+            if (activeDialogWindow != nullptr)
+                activeDialogWindow->exitModalState (0);
+            launchExportFlow (mappingId);
+        };
+
+        juce::DialogWindow::LaunchOptions opts;
+        opts.content.setOwned (dialog);
+        opts.dialogTitle             = "Export MIDI Mapping";
+        opts.dialogBackgroundColour  = juce::Colour (0xFFFDFDFD);
+        opts.escapeKeyTriggersCloseButton = true;
+        opts.useNativeTitleBar       = true;
+        opts.resizable               = false;
+        activeDialogWindow.reset (opts.launchAsync());
+    }
+
+    void MidiSettingsPanel::launchExportFlow (const juce::String& mappingId)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        const auto mapping = store.getMappingById (mappingId);
+        if (mapping == nullptr)
+            return;
+
+        const auto stemFromName = MappingStore::sanitiseFilenameStem (
+            mapping->displayName.isNotEmpty() ? mapping->displayName : mappingId);
+        const auto defaultName  = (stemFromName.isEmpty() ? mappingId : stemFromName)
+                                + ".sonikmidi.json";
+
+        activeFileChooser = std::make_unique<juce::FileChooser> (
+            "Export MIDI Mapping",
+            juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                .getChildFile (defaultName),
+            "*.sonikmidi.json");
+
+        const auto flags = juce::FileBrowserComponent::saveMode
+                         | juce::FileBrowserComponent::canSelectFiles
+                         | juce::FileBrowserComponent::warnAboutOverwriting;
+
+        activeFileChooser->launchAsync (flags,
+            [this, mappingId] (const juce::FileChooser& fc)
+            {
+                const auto file = fc.getResult();
+                if (file == juce::File())
+                    return;
+
+                exportService->exportMappingAsync (mappingId, file,
+                    [this] (const ExportResult& res)
+                    {
+                        JUCE_ASSERT_MESSAGE_THREAD;
+                        if (res.status == ExportResult::Status::Ok)
+                        {
+                            juce::AlertWindow::showAsync (
+                                juce::MessageBoxOptions()
+                                    .withIconType (juce::MessageBoxIconType::InfoIcon)
+                                    .withTitle ("Export complete")
+                                    .withMessage ("Saved to " + res.destination.getFullPathName())
+                                    .withButton ("OK"),
+                                nullptr);
+                        }
+                        else
+                        {
+                            juce::AlertWindow::showAsync (
+                                juce::MessageBoxOptions()
+                                    .withIconType (juce::MessageBoxIconType::WarningIcon)
+                                    .withTitle ("Export failed")
+                                    .withMessage (res.errorDetail)
+                                    .withButton ("OK"),
+                                nullptr);
+                        }
+                    });
+            });
+    }
+
+    void MidiSettingsPanel::launchImportFlow (const juce::File& source)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        importService->prepareImportAsync (source,
+            [this] (ImportPrepared prepared)
+            {
+                JUCE_ASSERT_MESSAGE_THREAD;
+
+                auto* dlg = new MidiImportDialog();
+                dlg->setSize (560, 380);
+
+                if (! prepared.ok)
+                    dlg->setError (prepared.error);
+                else
+                    dlg->setPreview (prepared.preview);
+
+                auto previewCopy = std::make_shared<ImportPrepared> (std::move (prepared));
+
+                dlg->onCancelClicked = [this]()
+                {
+                    if (activeDialogWindow != nullptr)
+                        activeDialogWindow->exitModalState (0);
+                };
+
+                dlg->onImportClicked = [this, previewCopy]()
+                {
+                    if (! previewCopy->ok)
+                        return;
+
+                    if (activeDialogWindow != nullptr)
+                        activeDialogWindow->exitModalState (0);
+
+                    auto finalise = [this, previewCopy] (ConflictResolution resolution,
+                                                         juce::String renameStem)
+                    {
+                        const auto commit = importService->commitImport (*previewCopy,
+                                                                         resolution,
+                                                                         renameStem);
+                        if (commit.status != ImportCommitResult::Status::Ok)
+                        {
+                            juce::AlertWindow::showAsync (
+                                juce::MessageBoxOptions()
+                                    .withIconType (juce::MessageBoxIconType::WarningIcon)
+                                    .withTitle ("Import failed")
+                                    .withMessage (commit.errorDetail)
+                                    .withButton ("OK"),
+                                nullptr);
+                            return;
+                        }
+
+                        const auto devId = firstActiveInputDeviceId();
+                        if (devId == 0)
+                            return;
+
+                        juce::AlertWindow::showAsync (
+                            juce::MessageBoxOptions()
+                                .withIconType (juce::MessageBoxIconType::QuestionIcon)
+                                .withTitle ("Activate now?")
+                                .withMessage ("Imported '" + commit.finalMappingId
+                                               + "'. Activate for the connected MIDI device?")
+                                .withButton ("Yes")
+                                .withButton ("No"),
+                            [this, devId, id = commit.finalMappingId] (int result)
+                            {
+                                if (result == 1)
+                                    store.setActiveMapping (devId, id);
+                            });
+                    };
+
+                    if (! previewCopy->preview.conflictDetected)
+                    {
+                        finalise (ConflictResolution::None, {});
+                        return;
+                    }
+
+                    auto* alert = new juce::AlertWindow ("Mapping conflict",
+                        "A mapping named '" + previewCopy->preview.conflictExistingMappingId
+                        + "' already exists. Choose Rename, Replace, or Cancel.",
+                        juce::MessageBoxIconType::QuestionIcon);
+                    alert->addTextEditor ("renameTo", previewCopy->preview.mappingId, "New stem:");
+                    alert->addButton ("Rename",  1);
+                    alert->addButton ("Replace", 2);
+                    alert->addButton ("Cancel",  0);
+                    alert->enterModalState (true,
+                        juce::ModalCallbackFunction::create (
+                            [alert, finalise] (int chosen)
+                            {
+                                ConflictResolution resolution = ConflictResolution::None;
+                                juce::String       renameStem;
+                                switch (chosen)
+                                {
+                                    case 1:
+                                        resolution = ConflictResolution::RenameTo;
+                                        renameStem = alert->getTextEditorContents ("renameTo");
+                                        break;
+                                    case 2:
+                                        resolution = ConflictResolution::Replace;
+                                        break;
+                                    default:
+                                        return;
+                                }
+                                finalise (resolution, renameStem);
+                            }),
+                        /*deleteWhenDismissed*/ true);
+                };
+
+                juce::DialogWindow::LaunchOptions opts;
+                opts.content.setOwned (dlg);
+                opts.dialogTitle             = "Import MIDI Mapping";
+                opts.dialogBackgroundColour  = juce::Colour (0xFFFDFDFD);
+                opts.escapeKeyTriggersCloseButton = true;
+                opts.useNativeTitleBar       = true;
+                opts.resizable               = false;
+                activeDialogWindow.reset (opts.launchAsync());
+            });
     }
 }

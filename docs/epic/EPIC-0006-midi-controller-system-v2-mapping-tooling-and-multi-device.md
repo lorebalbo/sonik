@@ -89,7 +89,7 @@ EPIC-0006 PRDs continue to live under `Source/Features/Midi/`. The migration fra
 ## 1.4. PRD Roadmap
 
 - [x] PRD-0049: Mapping Schema Migration Framework
-- [ ] PRD-0050: Mapping Import / Export & `.sonikmidi.json` Bundle Format
+- [x] PRD-0050: Mapping Import / Export and `.sonikmidi.json` Bundle Format
 - [ ] PRD-0051: USB-Port Disambiguation & Multi-Instance Device Binding
 
 ## 1.5. Future Successor Epics

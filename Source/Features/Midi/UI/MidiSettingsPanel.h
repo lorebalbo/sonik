@@ -16,6 +16,8 @@
 
 #include "../DeviceListChangeListener.h"
 #include "../MappingStore.h"
+#include "../Bundle/MappingExportService.h"
+#include "../Bundle/MappingImportService.h"
 #include "Atoms/LoadErrorBanner.h"
 #include "../MidiDeviceManager.h"
 #include "../MidiInboundRouter.h"
@@ -32,7 +34,8 @@ namespace sonik::midi::ui
         MidiSettingsPanel (MappingStore&        store,
                            MidiDeviceManager&   deviceManager,
                            MidiInboundRouter&   router,
-                           SoftTakeoverManager& softTakeover);
+                           SoftTakeoverManager& softTakeover,
+                           juce::String         appVersion = "0.1.0");
         ~MidiSettingsPanel() override;
 
         void paint   (juce::Graphics&) override;
@@ -49,6 +52,13 @@ namespace sonik::midi::ui
 
         void rebuildDeviceList();           // Message thread
         void rebuildOnMessageThread();      // schedules + dedups
+
+        // PRD-0050: Import/Export wiring.
+        void onImportClicked();
+        void onExportClicked();
+        void launchImportFlow (const juce::File& source);
+        void launchExportFlow (const juce::String& mappingId);
+        std::uint64_t firstActiveInputDeviceId() const;
 
         // ---- DeviceListChangeListener -------------------------------------
         void midiDeviceAdded   (std::uint64_t) override;
@@ -72,6 +82,17 @@ namespace sonik::midi::ui
         Content                                     content;
         LoadErrorBanner                             loadErrorBanner;
         std::vector<std::unique_ptr<DeviceHeader>>  headers;
+
+        // PRD-0050: Import / Export toolbar + services.
+        juce::Component                             toolbar;
+        juce::TextButton                            importButton { "Import\xE2\x80\xA6" };
+        juce::TextButton                            exportButton { "Export\xE2\x80\xA6" };
+        juce::ThreadPool                            ioPool { 1 };
+        std::unique_ptr<MappingExportService>       exportService;
+        std::unique_ptr<MappingImportService>       importService;
+        std::unique_ptr<juce::FileChooser>          activeFileChooser;
+        std::unique_ptr<juce::Component>            activeDialog;
+        std::unique_ptr<juce::DialogWindow>         activeDialogWindow;
 
         void refreshLoadErrorBanner();
 

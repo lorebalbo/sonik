@@ -143,6 +143,23 @@ namespace sonik::midi
     };
 
     //--------------------------------------------------------------------------
+    /** PRD-0050: result of registering an imported (already-parsed) mapping. */
+    struct RegisterImportedResult
+    {
+        enum class Status : std::uint8_t
+        {
+            Ok,
+            InvalidStem,
+            ConflictNotOverwritten,
+            IoFailure,
+            SerializeFailure,
+        };
+
+        Status       status { Status::Ok };
+        juce::String finalStem;
+    };
+
+    //--------------------------------------------------------------------------
     class MappingStoreListener
     {
     public:
@@ -236,6 +253,45 @@ namespace sonik::midi
         SetActiveMappingResult setActiveMapping (std::uint64_t   deviceId,
                                                  juce::StringRef mappingId);
 
+        // ---- PRD-0050: Import / export support ----------------------------
+
+        /** Returns the in-memory Mapping for the given id (user profile takes
+            precedence over a bundled profile with the same id). nullptr if
+            no such mapping exists. Thread-safe. */
+        std::shared_ptr<const Mapping> getMappingById (juce::StringRef id) const;
+
+        /** Returns true if a user mapping with the given filename stem
+            currently exists in memory or on disk. */
+        bool userMappingExists (juce::StringRef stem) const;
+
+        /** Returns the displayName of the currently-active mapping for
+            `deviceId`, or empty string if no mapping is resolved.
+            Thread-safe. */
+        juce::String getActiveMappingDisplayNameForDevice (std::uint64_t deviceId) const;
+
+        /** Sanitise a free-form mapping display name into a filesystem-safe
+            stem. Exposed for the import dialog so it can preview the final
+            on-disk filename before commit. */
+        static juce::String sanitiseFilenameStem (juce::StringRef raw) noexcept;
+
+        /** PRD-0050: atomically write an imported mapping to disk and
+            register it with the in-memory store. Performs MappingSerializer
+            serialisation + `.tmp` + rename. Fires `mappingAdded` on
+            success. Message thread only. */
+        RegisterImportedResult registerImportedMapping (const Mapping&  mapping,
+                                                        juce::StringRef filenameStem,
+                                                        bool            overwriteExisting);
+
+        /** Read-only access to the migration registry the store was
+            constructed with. Used by PRD-0050's import pipeline so the same
+            v(N) → v(N+1) ladder is applied on import as on load. */
+        const MigrationRegistry& getMigrationRegistry() const noexcept { return migrations; }
+
+        /** Returns the schema version the store migrates *to*. PRD-0050's
+            import service forwards this to MigrationRegistry::apply so a
+            bundle exported on a newer build is rejected cleanly. */
+        int getSchemaVersionTarget() const noexcept { return schemaVersionTarget; }
+
         void addListener    (MappingStoreListener*);
         void removeListener (MappingStoreListener*);
 
@@ -327,9 +383,7 @@ namespace sonik::midi
         // Caller must hold at least a reader lock.
         juce::String idForMappingLocked (const std::shared_ptr<const Mapping>& m) const;
 
-        // Sanitises a free-form display name into a filesystem-safe stem.
-        // Returns empty on completely-invalid input.
-        static juce::String sanitiseFilenameStem (juce::StringRef raw) noexcept;
+        // (sanitiseFilenameStem is public; declared above.)
 
         MidiDeviceManager& deviceManager;
         juce::File         userDir;

@@ -1112,4 +1112,155 @@ namespace sonik::midi
 
         return SetActiveMappingResult::Ok;
     }
+
+    //--------------------------------------------------------------------------
+    // PRD-0050: Import / export support.
+    //--------------------------------------------------------------------------
+    std::shared_ptr<const Mapping> MappingStore::getMappingById (juce::StringRef id) const
+    {
+        return findMappingById (juce::String (id));
+    }
+
+    bool MappingStore::userMappingExists (juce::StringRef stem) const
+    {
+        const juce::String s = stem;
+        if (s.isEmpty())
+            return false;
+        {
+            std::shared_lock lock (stateMutex);
+            if (userProfiles.find (s) != userProfiles.end())
+                return true;
+        }
+        return userDir.getChildFile (s + ".json").existsAsFile();
+    }
+
+    juce::String MappingStore::getActiveMappingDisplayNameForDevice (std::uint64_t deviceId) const
+    {
+        std::shared_lock lock (stateMutex);
+        const auto it = activeByDevice.find (deviceId);
+        if (it == activeByDevice.end() || it->second == nullptr)
+            return {};
+        if (it->second->displayName.isNotEmpty())
+            return it->second->displayName;
+        return idForMappingLocked (it->second);
+    }
+
+    RegisterImportedResult
+    MappingStore::registerImportedMapping (const Mapping&  mapping,
+                                           juce::StringRef filenameStem,
+                                           bool            overwriteExisting)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        RegisterImportedResult out;
+
+        const juce::String stem = sanitiseFilenameStem (filenameStem);
+        if (stem.isEmpty())
+        {
+            out.status = RegisterImportedResult::Status::InvalidStem;
+            return out;
+        }
+
+        // Bundled ids are reserved.
+        {
+            std::shared_lock lock (stateMutex);
+            if (bundledProfiles.find (stem) != bundledProfiles.end())
+            {
+                out.status = RegisterImportedResult::Status::InvalidStem;
+                return out;
+            }
+        }
+
+        const auto filename = stem + ".json";
+        const auto target   = userDir.getChildFile (filename);
+        const auto tmp      = userDir.getChildFile (filename + ".tmp");
+
+        const bool diskExists = target.existsAsFile();
+        bool       memExists  = false;
+        {
+            std::shared_lock lock (stateMutex);
+            memExists = (userProfiles.find (stem) != userProfiles.end());
+        }
+
+        if ((diskExists || memExists) && ! overwriteExisting)
+        {
+            out.status = RegisterImportedResult::Status::ConflictNotOverwritten;
+            return out;
+        }
+
+        if (! userDir.exists())
+        {
+            const auto cr = userDir.createDirectory();
+            if (! cr.wasOk())
+            {
+                out.status = RegisterImportedResult::Status::IoFailure;
+                return out;
+            }
+        }
+
+        juce::var root;
+        try { root = MappingSerializer::serialize (mapping); }
+        catch (...)
+        {
+            out.status = RegisterImportedResult::Status::SerializeFailure;
+            return out;
+        }
+
+        const auto json = juce::JSON::toString (root, false);
+
+        if (tmp.existsAsFile())
+            tmp.deleteFile();
+        if (! tmp.replaceWithText (json))
+        {
+            tmp.deleteFile();
+            out.status = RegisterImportedResult::Status::IoFailure;
+            return out;
+        }
+        if (target.existsAsFile())
+            target.deleteFile();
+        if (! tmp.moveFileTo (target))
+        {
+            tmp.deleteFile();
+            out.status = RegisterImportedResult::Status::IoFailure;
+            return out;
+        }
+
+        // Re-parse from the canonical on-disk JSON so the in-memory state
+        // matches what a fresh process would load.
+        auto pr = MappingParser::parse (root, target.getFullPathName());
+        auto sp = std::make_shared<const Mapping> (std::move (pr.mapping));
+
+        const bool wasNew = ! memExists;
+        {
+            std::unique_lock lock (stateMutex);
+            userProfiles[stem] = sp;
+            migratedUserMappings.erase (stem);
+        }
+
+        // Re-resolve devices: a freshly-added mapping may take precedence
+        // over a previously-active bundled profile via deviceMatch.
+        std::vector<std::uint64_t> affected;
+        for (const auto& rec : deviceManager.getDevices())
+        {
+            if (! rec.isInput) continue;
+            auto fresh = resolveForRecord (rec);
+            std::shared_ptr<const Mapping> previous;
+            {
+                std::unique_lock lock (stateMutex);
+                previous = activeByDevice[rec.deviceId];
+                activeByDevice[rec.deviceId] = fresh;
+            }
+            if (fresh != previous)
+                affected.push_back (rec.deviceId);
+        }
+
+        if (wasNew)
+            fireMappingAdded (stem);
+        for (auto id : affected)
+            fireActiveMappingChanged (id);
+
+        out.status    = RegisterImportedResult::Status::Ok;
+        out.finalStem = stem;
+        return out;
+    }
 }

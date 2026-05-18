@@ -253,10 +253,22 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/MappingSerializer.cpp
     Source/Features/Midi/MappingStore.h
     Source/Features/Midi/MappingStore.cpp
+    Source/Features/Midi/Bundle/SonikMidiBundle.h
+    Source/Features/Midi/Bundle/SonikMidiBundleSerializer.h
+    Source/Features/Midi/Bundle/SonikMidiBundleSerializer.cpp
+    Source/Features/Midi/Bundle/ImportPipeline.h
+    Source/Features/Midi/Bundle/MappingExportService.h
+    Source/Features/Midi/Bundle/MappingExportService.cpp
+    Source/Features/Midi/Bundle/MappingImportService.h
+    Source/Features/Midi/Bundle/MappingImportService.cpp
     Source/Features/Midi/UI/MidiSettingsWindow.h
     Source/Features/Midi/UI/MidiSettingsWindow.cpp
     Source/Features/Midi/UI/MidiSettingsPanel.h
     Source/Features/Midi/UI/MidiSettingsPanel.cpp
+    Source/Features/Midi/UI/Organisms/MidiImportDialog.h
+    Source/Features/Midi/UI/Organisms/MidiImportDialog.cpp
+    Source/Features/Midi/UI/Organisms/MidiExportDialog.h
+    Source/Features/Midi/UI/Organisms/MidiExportDialog.cpp
     Source/Features/Midi/UI/Atoms/DevicePill.h
     Source/Features/Midi/UI/Atoms/ProfileDropdown.h
     Source/Features/Midi/UI/Atoms/LearnButton.h
@@ -368,6 +380,7 @@ add_executable(SonikTests
     Tests/MappingMigrationTests.cpp
     Tests/BindingResolverTests.cpp
     Tests/MappingStoreTests.cpp
+    Tests/MappingImportExportTests.cpp
     Tests/MidiInboundRouterTests.cpp
     Tests/ModifierLayerTests.cpp
     Tests/SoftTakeoverManagerTests.cpp
@@ -428,10 +441,15 @@ add_executable(SonikTests
     Source/Features/Midi/BindingResolver.cpp
     Source/Features/Midi/MappingSerializer.cpp
     Source/Features/Midi/MappingStore.cpp
+    Source/Features/Midi/Bundle/SonikMidiBundleSerializer.cpp
+    Source/Features/Midi/Bundle/MappingExportService.cpp
+    Source/Features/Midi/Bundle/MappingImportService.cpp
     Source/Features/Midi/UI/MidiSettingsWindow.cpp
     Source/Features/Midi/UI/MidiSettingsPanel.cpp
     Source/Features/Midi/UI/Molecules/DeviceHeader.cpp
     Source/Features/Midi/UI/Molecules/BindingTable.cpp
+    Source/Features/Midi/UI/Organisms/MidiImportDialog.cpp
+    Source/Features/Midi/UI/Organisms/MidiExportDialog.cpp
     Source/Features/Midi/MidiFeedbackEngine.cpp
     Source/Features/Midi/MidiOutputThread.cpp
     Source/Features/Midi/MidiInboundRouter.cpp
