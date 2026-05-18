@@ -86,6 +86,12 @@ public:
             libraryComponent->setScanner (scanner);
     }
 
+    /** PRD-0048: route the toolbar MIDI button click to the application. */
+    void setOnMidiClicked (std::function<void()> cb)
+    {
+        toolbar.onMidiClicked = std::move (cb);
+    }
+
     void savePreparationListBeforeQuit (std::function<void(bool)> completion)
     {
         if (libraryComponent != nullptr)

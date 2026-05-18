@@ -135,6 +135,9 @@ namespace sonik::midi
         }
         mapping.schemaVersion = schemaVersion;
 
+        // ---- displayName (PRD-0048, optional) -----------------------------
+        mapping.displayName = root.getProperty ("displayName", "").toString();
+
         // ---- device.match -------------------------------------------------
         if (const auto deviceVar = root.getProperty ("device", juce::var()); deviceVar.isObject())
         {

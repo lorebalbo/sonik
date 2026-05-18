@@ -59,6 +59,50 @@ namespace sonik::midi
     };
 
     //--------------------------------------------------------------------------
+    /** PRD-0048: where a mapping came from. */
+    enum class MappingOrigin : std::uint8_t
+    {
+        Bundled, // Embedded in the binary; read-only.
+        User     // On-disk JSON in the user mapping directory; editable.
+    };
+
+    /** PRD-0048: row in the per-device profile dropdown. */
+    struct MappingProfileSummary
+    {
+        juce::String  id;            // Stable id (bundled name or user filename stem).
+        juce::String  displayName;   // Human label; falls back to id when empty.
+        MappingOrigin origin         { MappingOrigin::User };
+        bool          readOnly       { false };
+        bool          matchesDevice  { false }; // true if the deviceMatch regex accepts this device.
+    };
+
+    //--------------------------------------------------------------------------
+    enum class CreateUserCopyResult : std::uint8_t
+    {
+        Ok,
+        UnknownSource,
+        InvalidName,
+        DuplicateName,
+        IoFailure,
+        SerializeFailure,
+    };
+
+    enum class DeleteUserMappingResult : std::uint8_t
+    {
+        Ok,
+        UnknownMapping,
+        IoFailure,
+    };
+
+    enum class SetActiveMappingResult : std::uint8_t
+    {
+        Ok,
+        UnknownDevice,
+        UnknownMapping,
+        IoFailure,   // override persistence failed; in-memory state still updated.
+    };
+
+    //--------------------------------------------------------------------------
     class MappingStoreListener
     {
     public:
@@ -67,6 +111,11 @@ namespace sonik::midi
         virtual void userProfilesLoaded() {}
         virtual void activeMappingChanged (std::uint64_t /*deviceId*/) {}
         virtual void userMappingSaved (juce::String /*filename*/, SaveResult) {}
+
+        // PRD-0048: emitted after the in-memory user-profile table gains
+        // (`mappingAdded`) or loses (`mappingRemoved`) an entry.
+        virtual void mappingAdded   (juce::String /*mappingId*/) {}
+        virtual void mappingRemoved (juce::String /*mappingId*/) {}
     };
 
     //--------------------------------------------------------------------------
@@ -97,6 +146,49 @@ namespace sonik::midi
         SaveResult saveUserMapping (const Mapping& mapping, juce::StringRef filename);
 
         std::vector<MappingLoadError> getLoadErrors() const;
+
+        /** PRD-0048 Phase 8: Reload user mappings from disk.  Clears the
+            current `loadErrors` set, re-scans the user mapping directory,
+            and fires `userProfilesLoaded()` when complete.  Bound to the
+            "Reload" action in the load-error banner. */
+        void reloadUserMappings();
+
+        // ---- PRD-0048: profile management & per-device active override ----
+
+        /** Returns the stable mapping id (bundled name or user filename stem)
+            of the mapping currently resolved for the device, or empty string
+            if no mapping is resolved.  Thread-safe. */
+        juce::String getActiveMappingIdForDevice (std::uint64_t deviceId) const;
+
+        /** Returns the list of all available mappings (bundled + user) for the
+            device, each tagged with origin / read-only / device-match flag.
+            Stable-sorted: bundled first, then user, alphabetical by id. */
+        std::vector<MappingProfileSummary> listAvailableMappings (std::uint64_t deviceId) const;
+
+        /** Deep-copy `sourceMappingId` (bundled or user) into a new user file.
+            `newDisplayName` is sanitised into a filesystem-safe stem; an
+            integer suffix is appended on collision. On success, fires
+            `mappingAdded` with the new id; the new mapping is NOT auto-set
+            as active for any device. The new id is written to
+            `outNewMappingId` when non-null. */
+        CreateUserCopyResult createUserCopy (juce::StringRef sourceMappingId,
+                                             juce::StringRef newDisplayName,
+                                             juce::String*   outNewMappingId = nullptr);
+
+        /** Delete a user mapping by id (filename stem). Bundled mappings
+            cannot be deleted. Removes the on-disk file, the in-memory entry,
+            and any per-device active overrides pointing at it (those devices
+            re-resolve to their bundled default). Fires `mappingRemoved` and
+            `activeMappingChanged` for each affected device. */
+        DeleteUserMappingResult deleteUserMapping (juce::StringRef mappingId);
+
+        /** Pin a specific mapping as the active mapping for a device. The
+            override is persisted to disk so it survives restarts. Use an
+            empty string to clear the override (re-enable automatic
+            resolution). Fires `activeMappingChanged` when the resolved
+            mapping changes. */
+        SetActiveMappingResult setActiveMapping (std::uint64_t   deviceId,
+                                                 juce::StringRef mappingId);
 
         void addListener    (MappingStoreListener*);
         void removeListener (MappingStoreListener*);
@@ -142,6 +234,25 @@ namespace sonik::midi
         void fireUserProfilesLoaded();
         void fireActiveMappingChanged (std::uint64_t);
         void fireUserMappingSaved     (juce::String, SaveResult);
+        void fireMappingAdded         (juce::String);
+        void fireMappingRemoved       (juce::String);
+
+        // PRD-0048: active-override persistence.
+        juce::File activeOverridesFile() const;
+        void       loadActiveOverridesFromDisk();   // sync; called from ctor.
+        void       saveActiveOverridesToDisk();     // sync; best-effort.
+
+        // Look up the in-memory mapping for an id (user first, then bundled).
+        // Caller must NOT hold the writer lock.
+        std::shared_ptr<const Mapping> findMappingById (const juce::String& id) const;
+
+        // Returns the stable id for a Mapping pointer, or empty if unknown.
+        // Caller must hold at least a reader lock.
+        juce::String idForMappingLocked (const std::shared_ptr<const Mapping>& m) const;
+
+        // Sanitises a free-form display name into a filesystem-safe stem.
+        // Returns empty on completely-invalid input.
+        static juce::String sanitiseFilenameStem (juce::StringRef raw) noexcept;
 
         MidiDeviceManager& deviceManager;
         juce::File         userDir;
@@ -158,6 +269,11 @@ namespace sonik::midi
         std::unordered_map<juce::String, std::shared_ptr<const Mapping>> userProfiles;
 
         std::unordered_map<std::uint64_t, std::shared_ptr<const Mapping>> activeByDevice;
+
+        // PRD-0048: per-device explicit override (mappingId). When present,
+        // resolveForRecord returns the override before falling through to
+        // automatic device-match resolution. Empty string is never stored.
+        std::unordered_map<std::uint64_t, juce::String> activeOverrideByDevice;
 
         std::vector<MappingLoadError> loadErrors;
 

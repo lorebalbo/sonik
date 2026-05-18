@@ -1,0 +1,4605 @@
+{
+  "capturedAtUtc": "2026-05-14T17:41:30.355184+00:00",
+  "inputPort": "USB2.0-MIDI Port 1",
+  "captureOptions": {
+    "includeNoteOff": false,
+    "includeRealtime": false,
+    "maxEvents": 0,
+    "promptLabels": true
+  },
+  "summary": {
+    "acceptedEventCount": 264,
+    "uniqueControlCount": 77
+  },
+  "capturedControlsInOrder": [
+    {
+      "captureIndex": 1,
+      "label": "mic high knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "firstSeenData2": 45,
+      "firstSeenRawBytes": [
+        176,
+        0,
+        45
+      ],
+      "firstSeenEventIndex": 1,
+      "occurrences": 16
+    },
+    {
+      "captureIndex": 2,
+      "label": "mic mid knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 1,
+      "firstSeenData2": 65,
+      "firstSeenRawBytes": [
+        176,
+        1,
+        65
+      ],
+      "firstSeenEventIndex": 17,
+      "occurrences": 6
+    },
+    {
+      "captureIndex": 3,
+      "label": "mic low knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "firstSeenData2": 75,
+      "firstSeenRawBytes": [
+        176,
+        2,
+        75
+      ],
+      "firstSeenEventIndex": 23,
+      "occurrences": 9
+    },
+    {
+      "captureIndex": 4,
+      "label": "mic set up",
+      "status": "note",
+      "channel": 1,
+      "data1": 49,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        49,
+        127
+      ],
+      "firstSeenEventIndex": 32,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 5,
+      "label": "xmc on",
+      "status": "note",
+      "channel": 1,
+      "data1": 50,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        50,
+        127
+      ],
+      "firstSeenEventIndex": 33,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 6,
+      "label": "mic fx on",
+      "status": "note",
+      "channel": 1,
+      "data1": 51,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        51,
+        127
+      ],
+      "firstSeenEventIndex": 34,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 7,
+      "label": "talk on",
+      "status": "note",
+      "channel": 1,
+      "data1": 52,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        52,
+        127
+      ],
+      "firstSeenEventIndex": 35,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 8,
+      "label": "mic on off",
+      "status": "note",
+      "channel": 1,
+      "data1": 53,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        53,
+        127
+      ],
+      "firstSeenEventIndex": 36,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 9,
+      "label": "sampler volume mix",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "firstSeenData2": 56,
+      "firstSeenRawBytes": [
+        176,
+        3,
+        56
+      ],
+      "firstSeenEventIndex": 37,
+      "occurrences": 16
+    },
+    {
+      "captureIndex": 10,
+      "label": "sampler insert",
+      "status": "note",
+      "channel": 1,
+      "data1": 95,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        95,
+        127
+      ],
+      "firstSeenEventIndex": 53,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 11,
+      "label": "sampler rec source left",
+      "status": "note",
+      "channel": 1,
+      "data1": 97,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        97,
+        127
+      ],
+      "firstSeenEventIndex": 54,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 12,
+      "label": "sampler rec source right",
+      "status": "note",
+      "channel": 1,
+      "data1": 96,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        96,
+        127
+      ],
+      "firstSeenEventIndex": 55,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 13,
+      "label": "sampler plf",
+      "status": "note",
+      "channel": 1,
+      "data1": 102,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        102,
+        127
+      ],
+      "firstSeenEventIndex": 56,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 14,
+      "label": "sampler length left",
+      "status": "note",
+      "channel": 1,
+      "data1": 104,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        104,
+        127
+      ],
+      "firstSeenEventIndex": 57,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 15,
+      "label": "sampler length right",
+      "status": "note",
+      "channel": 1,
+      "data1": 103,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        103,
+        127
+      ],
+      "firstSeenEventIndex": 58,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 16,
+      "label": "sampler record in",
+      "status": "note",
+      "channel": 1,
+      "data1": 109,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        109,
+        127
+      ],
+      "firstSeenEventIndex": 59,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 17,
+      "label": "sampler bank assing",
+      "status": "note",
+      "channel": 1,
+      "data1": 108,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        108,
+        127
+      ],
+      "firstSeenEventIndex": 60,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 18,
+      "label": "sampler play out bank 1",
+      "status": "note",
+      "channel": 1,
+      "data1": 110,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        110,
+        127
+      ],
+      "firstSeenEventIndex": 61,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 19,
+      "label": "sampler bank mode 1",
+      "status": "note",
+      "channel": 1,
+      "data1": 113,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        113,
+        127
+      ],
+      "firstSeenEventIndex": 62,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 20,
+      "label": "sampler play out 2",
+      "status": "note",
+      "channel": 1,
+      "data1": 115,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        115,
+        127
+      ],
+      "firstSeenEventIndex": 63,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 21,
+      "label": "sampler bank mode 2",
+      "status": "note",
+      "channel": 1,
+      "data1": 118,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        118,
+        127
+      ],
+      "firstSeenEventIndex": 64,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 22,
+      "label": "sampler smp fx",
+      "status": "note",
+      "channel": 1,
+      "data1": 120,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        120,
+        127
+      ],
+      "firstSeenEventIndex": 65,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 23,
+      "label": "sampler select",
+      "status": "note",
+      "channel": 1,
+      "data1": 121,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        121,
+        127
+      ],
+      "firstSeenEventIndex": 66,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 24,
+      "label": "sampler cf assign",
+      "status": "note",
+      "channel": 1,
+      "data1": 122,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        122,
+        127
+      ],
+      "firstSeenEventIndex": 67,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 25,
+      "label": "sampler cf start",
+      "status": "note",
+      "channel": 1,
+      "data1": 124,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        124,
+        127
+      ],
+      "firstSeenEventIndex": 68,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 26,
+      "label": "ch1 high knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "firstSeenData2": 50,
+      "firstSeenRawBytes": [
+        176,
+        4,
+        50
+      ],
+      "firstSeenEventIndex": 69,
+      "occurrences": 10
+    },
+    {
+      "captureIndex": 27,
+      "label": "ch1 mid knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "firstSeenData2": 76,
+      "firstSeenRawBytes": [
+        176,
+        5,
+        76
+      ],
+      "firstSeenEventIndex": 79,
+      "occurrences": 16
+    },
+    {
+      "captureIndex": 28,
+      "label": "ch1 low knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 6,
+      "firstSeenData2": 47,
+      "firstSeenRawBytes": [
+        176,
+        6,
+        47
+      ],
+      "firstSeenEventIndex": 95,
+      "occurrences": 5
+    },
+    {
+      "captureIndex": 29,
+      "label": "ch1 mode",
+      "status": "note",
+      "channel": 1,
+      "data1": 3,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        3,
+        127
+      ],
+      "firstSeenEventIndex": 100,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 30,
+      "label": "ch1 kill high",
+      "status": "note",
+      "channel": 1,
+      "data1": 0,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        0,
+        127
+      ],
+      "firstSeenEventIndex": 101,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 31,
+      "label": "ch1 kill mid",
+      "status": "note",
+      "channel": 1,
+      "data1": 1,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        1,
+        127
+      ],
+      "firstSeenEventIndex": 102,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 32,
+      "label": "ch1 kill low",
+      "status": "note",
+      "channel": 1,
+      "data1": 2,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        2,
+        127
+      ],
+      "firstSeenEventIndex": 103,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 33,
+      "label": "ch2 high knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "firstSeenData2": 33,
+      "firstSeenRawBytes": [
+        176,
+        8,
+        33
+      ],
+      "firstSeenEventIndex": 104,
+      "occurrences": 11
+    },
+    {
+      "captureIndex": 34,
+      "label": "ch2 mid knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 9,
+      "firstSeenData2": 52,
+      "firstSeenRawBytes": [
+        176,
+        9,
+        52
+      ],
+      "firstSeenEventIndex": 115,
+      "occurrences": 5
+    },
+    {
+      "captureIndex": 35,
+      "label": "ch2 low knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "firstSeenData2": 46,
+      "firstSeenRawBytes": [
+        176,
+        10,
+        46
+      ],
+      "firstSeenEventIndex": 120,
+      "occurrences": 9
+    },
+    {
+      "captureIndex": 36,
+      "label": "ch2 mode",
+      "status": "note",
+      "channel": 1,
+      "data1": 7,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        7,
+        127
+      ],
+      "firstSeenEventIndex": 129,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 37,
+      "label": "ch2 kill high",
+      "status": "note",
+      "channel": 1,
+      "data1": 4,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        4,
+        127
+      ],
+      "firstSeenEventIndex": 130,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 38,
+      "label": "ch2 kill mid",
+      "status": "note",
+      "channel": 1,
+      "data1": 5,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        5,
+        127
+      ],
+      "firstSeenEventIndex": 131,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 39,
+      "label": "ch3 kill low",
+      "status": "note",
+      "channel": 1,
+      "data1": 6,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        6,
+        127
+      ],
+      "firstSeenEventIndex": 132,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 40,
+      "label": "ch3 high knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 12,
+      "firstSeenData2": 51,
+      "firstSeenRawBytes": [
+        176,
+        12,
+        51
+      ],
+      "firstSeenEventIndex": 133,
+      "occurrences": 8
+    },
+    {
+      "captureIndex": 41,
+      "label": "ch3 mid knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 13,
+      "firstSeenData2": 53,
+      "firstSeenRawBytes": [
+        176,
+        13,
+        53
+      ],
+      "firstSeenEventIndex": 141,
+      "occurrences": 5
+    },
+    {
+      "captureIndex": 42,
+      "label": "ch3 low knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "firstSeenData2": 105,
+      "firstSeenRawBytes": [
+        176,
+        14,
+        105
+      ],
+      "firstSeenEventIndex": 146,
+      "occurrences": 9
+    },
+    {
+      "captureIndex": 43,
+      "label": "ch3 mode",
+      "status": "note",
+      "channel": 1,
+      "data1": 11,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        11,
+        127
+      ],
+      "firstSeenEventIndex": 155,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 44,
+      "label": "ch3 kill high",
+      "status": "note",
+      "channel": 1,
+      "data1": 8,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        8,
+        127
+      ],
+      "firstSeenEventIndex": 156,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 45,
+      "label": "ch3 kill mid",
+      "status": "note",
+      "channel": 1,
+      "data1": 9,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        9,
+        127
+      ],
+      "firstSeenEventIndex": 157,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 46,
+      "label": "ch2 kill low",
+      "status": "note",
+      "channel": 1,
+      "data1": 10,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        10,
+        127
+      ],
+      "firstSeenEventIndex": 158,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 47,
+      "label": "ch4 high knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 16,
+      "firstSeenData2": 23,
+      "firstSeenRawBytes": [
+        176,
+        16,
+        23
+      ],
+      "firstSeenEventIndex": 159,
+      "occurrences": 7
+    },
+    {
+      "captureIndex": 48,
+      "label": "ch4 mid knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 17,
+      "firstSeenData2": 68,
+      "firstSeenRawBytes": [
+        176,
+        17,
+        68
+      ],
+      "firstSeenEventIndex": 166,
+      "occurrences": 4
+    },
+    {
+      "captureIndex": 49,
+      "label": "ch4 low knob",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "firstSeenData2": 54,
+      "firstSeenRawBytes": [
+        176,
+        18,
+        54
+      ],
+      "firstSeenEventIndex": 170,
+      "occurrences": 9
+    },
+    {
+      "captureIndex": 50,
+      "label": "ch4 mode",
+      "status": "note",
+      "channel": 1,
+      "data1": 15,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        15,
+        127
+      ],
+      "firstSeenEventIndex": 179,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 51,
+      "label": "ch4 kill high",
+      "status": "note",
+      "channel": 1,
+      "data1": 12,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        12,
+        127
+      ],
+      "firstSeenEventIndex": 180,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 52,
+      "label": "vh4 kill mid",
+      "status": "note",
+      "channel": 1,
+      "data1": 13,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        13,
+        127
+      ],
+      "firstSeenEventIndex": 181,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 53,
+      "label": "ch5 kill low",
+      "status": "note",
+      "channel": 1,
+      "data1": 14,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        14,
+        127
+      ],
+      "firstSeenEventIndex": 182,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 54,
+      "label": "cf kill high left",
+      "status": "note",
+      "channel": 1,
+      "data1": 24,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        24,
+        127
+      ],
+      "firstSeenEventIndex": 183,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 55,
+      "label": "cf kill mid left",
+      "status": "note",
+      "channel": 1,
+      "data1": 25,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        25,
+        127
+      ],
+      "firstSeenEventIndex": 184,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 56,
+      "label": "cf kill low left",
+      "status": "note",
+      "channel": 1,
+      "data1": 26,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        26,
+        127
+      ],
+      "firstSeenEventIndex": 185,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 57,
+      "label": "cf full eq left",
+      "status": "note",
+      "channel": 1,
+      "data1": 23,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        23,
+        127
+      ],
+      "firstSeenEventIndex": 186,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 58,
+      "label": "cf on",
+      "status": "note",
+      "channel": 1,
+      "data1": 31,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        31,
+        127
+      ],
+      "firstSeenEventIndex": 187,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 59,
+      "label": "cf full eq right",
+      "status": "note",
+      "channel": 1,
+      "data1": 27,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        27,
+        127
+      ],
+      "firstSeenEventIndex": 188,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 60,
+      "label": "cf kill high right",
+      "status": "note",
+      "channel": 1,
+      "data1": 28,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        28,
+        127
+      ],
+      "firstSeenEventIndex": 189,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 61,
+      "label": "cf kill mid right",
+      "status": "note",
+      "channel": 1,
+      "data1": 29,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        29,
+        127
+      ],
+      "firstSeenEventIndex": 190,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 62,
+      "label": "cf kill low right",
+      "status": "note",
+      "channel": 1,
+      "data1": 30,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        30,
+        127
+      ],
+      "firstSeenEventIndex": 191,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 63,
+      "label": "cf",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "firstSeenData2": 44,
+      "firstSeenRawBytes": [
+        176,
+        21,
+        44
+      ],
+      "firstSeenEventIndex": 192,
+      "occurrences": 14
+    },
+    {
+      "captureIndex": 64,
+      "label": "ch1 volume fader",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "firstSeenData2": 83,
+      "firstSeenRawBytes": [
+        176,
+        7,
+        83
+      ],
+      "firstSeenEventIndex": 206,
+      "occurrences": 9
+    },
+    {
+      "captureIndex": 65,
+      "label": "ch2 volume fader",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "firstSeenData2": 81,
+      "firstSeenRawBytes": [
+        176,
+        11,
+        81
+      ],
+      "firstSeenEventIndex": 215,
+      "occurrences": 17
+    },
+    {
+      "captureIndex": 66,
+      "label": "ch3 volume fader",
+      "status": "cc",
+      "channel": 1,
+      "data1": 15,
+      "firstSeenData2": 68,
+      "firstSeenRawBytes": [
+        176,
+        15,
+        68
+      ],
+      "firstSeenEventIndex": 232,
+      "occurrences": 4
+    },
+    {
+      "captureIndex": 67,
+      "label": "ch4 volume fader",
+      "status": "cc",
+      "channel": 1,
+      "data1": 19,
+      "firstSeenData2": 125,
+      "firstSeenRawBytes": [
+        176,
+        19,
+        125
+      ],
+      "firstSeenEventIndex": 236,
+      "occurrences": 7
+    },
+    {
+      "captureIndex": 68,
+      "label": "ch1 cf assign",
+      "status": "note",
+      "channel": 1,
+      "data1": 32,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        32,
+        127
+      ],
+      "firstSeenEventIndex": 243,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 69,
+      "label": "ch2 cf assign",
+      "status": "note",
+      "channel": 1,
+      "data1": 34,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        34,
+        127
+      ],
+      "firstSeenEventIndex": 244,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 70,
+      "label": "ch3 cf assign",
+      "status": "note",
+      "channel": 1,
+      "data1": 36,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        36,
+        127
+      ],
+      "firstSeenEventIndex": 245,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 71,
+      "label": "ch4 cf assing",
+      "status": "note",
+      "channel": 1,
+      "data1": 38,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        38,
+        127
+      ],
+      "firstSeenEventIndex": 246,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 72,
+      "label": "cf beat left",
+      "status": "note",
+      "channel": 1,
+      "data1": 43,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        43,
+        127
+      ],
+      "firstSeenEventIndex": 247,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 73,
+      "label": "cf beat right",
+      "status": "note",
+      "channel": 1,
+      "data1": 44,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        44,
+        127
+      ],
+      "firstSeenEventIndex": 248,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 74,
+      "label": "cf bounce",
+      "status": "note",
+      "channel": 1,
+      "data1": 42,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        42,
+        127
+      ],
+      "firstSeenEventIndex": 249,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 75,
+      "label": "cf reverse tap",
+      "status": "note",
+      "channel": 1,
+      "data1": 40,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        40,
+        127
+      ],
+      "firstSeenEventIndex": 250,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 76,
+      "label": "cf reverse hold",
+      "status": "note",
+      "channel": 1,
+      "data1": 41,
+      "firstSeenData2": 127,
+      "firstSeenRawBytes": [
+        144,
+        41,
+        127
+      ],
+      "firstSeenEventIndex": 251,
+      "occurrences": 1
+    },
+    {
+      "captureIndex": 77,
+      "label": "cf curve",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "firstSeenData2": 75,
+      "firstSeenRawBytes": [
+        176,
+        20,
+        75
+      ],
+      "firstSeenEventIndex": 252,
+      "occurrences": 13
+    }
+  ],
+  "eventsInOrder": [
+    {
+      "eventIndex": 1,
+      "timestampUtc": "2026-05-14T17:30:10.811757+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 45,
+      "rawBytes": [
+        176,
+        0,
+        45
+      ]
+    },
+    {
+      "eventIndex": 2,
+      "timestampUtc": "2026-05-14T17:30:40.940425+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 45,
+      "rawBytes": [
+        176,
+        0,
+        45
+      ]
+    },
+    {
+      "eventIndex": 3,
+      "timestampUtc": "2026-05-14T17:30:40.941023+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 47,
+      "rawBytes": [
+        176,
+        0,
+        47
+      ]
+    },
+    {
+      "eventIndex": 4,
+      "timestampUtc": "2026-05-14T17:30:40.941259+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 47,
+      "rawBytes": [
+        176,
+        0,
+        47
+      ]
+    },
+    {
+      "eventIndex": 5,
+      "timestampUtc": "2026-05-14T17:30:40.941476+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 49,
+      "rawBytes": [
+        176,
+        0,
+        49
+      ]
+    },
+    {
+      "eventIndex": 6,
+      "timestampUtc": "2026-05-14T17:30:40.941695+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 49,
+      "rawBytes": [
+        176,
+        0,
+        49
+      ]
+    },
+    {
+      "eventIndex": 7,
+      "timestampUtc": "2026-05-14T17:30:40.941890+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 50,
+      "rawBytes": [
+        176,
+        0,
+        50
+      ]
+    },
+    {
+      "eventIndex": 8,
+      "timestampUtc": "2026-05-14T17:30:40.942101+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 51,
+      "rawBytes": [
+        176,
+        0,
+        51
+      ]
+    },
+    {
+      "eventIndex": 9,
+      "timestampUtc": "2026-05-14T17:30:40.942324+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 52,
+      "rawBytes": [
+        176,
+        0,
+        52
+      ]
+    },
+    {
+      "eventIndex": 10,
+      "timestampUtc": "2026-05-14T17:30:40.942546+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 53,
+      "rawBytes": [
+        176,
+        0,
+        53
+      ]
+    },
+    {
+      "eventIndex": 11,
+      "timestampUtc": "2026-05-14T17:30:40.942764+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 54,
+      "rawBytes": [
+        176,
+        0,
+        54
+      ]
+    },
+    {
+      "eventIndex": 12,
+      "timestampUtc": "2026-05-14T17:30:40.943045+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 55,
+      "rawBytes": [
+        176,
+        0,
+        55
+      ]
+    },
+    {
+      "eventIndex": 13,
+      "timestampUtc": "2026-05-14T17:30:40.943300+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 56,
+      "rawBytes": [
+        176,
+        0,
+        56
+      ]
+    },
+    {
+      "eventIndex": 14,
+      "timestampUtc": "2026-05-14T17:30:40.943544+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 57,
+      "rawBytes": [
+        176,
+        0,
+        57
+      ]
+    },
+    {
+      "eventIndex": 15,
+      "timestampUtc": "2026-05-14T17:30:40.943787+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 58,
+      "rawBytes": [
+        176,
+        0,
+        58
+      ]
+    },
+    {
+      "eventIndex": 16,
+      "timestampUtc": "2026-05-14T17:30:40.944091+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 0,
+      "data2": 58,
+      "rawBytes": [
+        176,
+        0,
+        58
+      ]
+    },
+    {
+      "eventIndex": 17,
+      "timestampUtc": "2026-05-14T17:30:49.496153+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 1,
+      "data2": 65,
+      "rawBytes": [
+        176,
+        1,
+        65
+      ]
+    },
+    {
+      "eventIndex": 18,
+      "timestampUtc": "2026-05-14T17:30:55.263546+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 1,
+      "data2": 66,
+      "rawBytes": [
+        176,
+        1,
+        66
+      ]
+    },
+    {
+      "eventIndex": 19,
+      "timestampUtc": "2026-05-14T17:30:55.264144+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 1,
+      "data2": 67,
+      "rawBytes": [
+        176,
+        1,
+        67
+      ]
+    },
+    {
+      "eventIndex": 20,
+      "timestampUtc": "2026-05-14T17:30:55.264554+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 1,
+      "data2": 68,
+      "rawBytes": [
+        176,
+        1,
+        68
+      ]
+    },
+    {
+      "eventIndex": 21,
+      "timestampUtc": "2026-05-14T17:30:55.265011+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 1,
+      "data2": 68,
+      "rawBytes": [
+        176,
+        1,
+        68
+      ]
+    },
+    {
+      "eventIndex": 22,
+      "timestampUtc": "2026-05-14T17:30:55.265373+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 1,
+      "data2": 69,
+      "rawBytes": [
+        176,
+        1,
+        69
+      ]
+    },
+    {
+      "eventIndex": 23,
+      "timestampUtc": "2026-05-14T17:30:57.198741+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "data2": 75,
+      "rawBytes": [
+        176,
+        2,
+        75
+      ]
+    },
+    {
+      "eventIndex": 24,
+      "timestampUtc": "2026-05-14T17:31:02.247665+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "data2": 74,
+      "rawBytes": [
+        176,
+        2,
+        74
+      ]
+    },
+    {
+      "eventIndex": 25,
+      "timestampUtc": "2026-05-14T17:31:02.248512+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "data2": 73,
+      "rawBytes": [
+        176,
+        2,
+        73
+      ]
+    },
+    {
+      "eventIndex": 26,
+      "timestampUtc": "2026-05-14T17:31:02.249143+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "data2": 72,
+      "rawBytes": [
+        176,
+        2,
+        72
+      ]
+    },
+    {
+      "eventIndex": 27,
+      "timestampUtc": "2026-05-14T17:31:02.249700+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "data2": 72,
+      "rawBytes": [
+        176,
+        2,
+        72
+      ]
+    },
+    {
+      "eventIndex": 28,
+      "timestampUtc": "2026-05-14T17:31:02.250230+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "data2": 71,
+      "rawBytes": [
+        176,
+        2,
+        71
+      ]
+    },
+    {
+      "eventIndex": 29,
+      "timestampUtc": "2026-05-14T17:31:02.250729+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "data2": 70,
+      "rawBytes": [
+        176,
+        2,
+        70
+      ]
+    },
+    {
+      "eventIndex": 30,
+      "timestampUtc": "2026-05-14T17:31:02.251377+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "data2": 69,
+      "rawBytes": [
+        176,
+        2,
+        69
+      ]
+    },
+    {
+      "eventIndex": 31,
+      "timestampUtc": "2026-05-14T17:31:02.251935+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 2,
+      "data2": 68,
+      "rawBytes": [
+        176,
+        2,
+        68
+      ]
+    },
+    {
+      "eventIndex": 32,
+      "timestampUtc": "2026-05-14T17:31:04.921284+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 49,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        49,
+        127
+      ]
+    },
+    {
+      "eventIndex": 33,
+      "timestampUtc": "2026-05-14T17:31:12.671755+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 50,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        50,
+        127
+      ]
+    },
+    {
+      "eventIndex": 34,
+      "timestampUtc": "2026-05-14T17:31:23.519190+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 51,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        51,
+        127
+      ]
+    },
+    {
+      "eventIndex": 35,
+      "timestampUtc": "2026-05-14T17:31:30.583176+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 52,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        52,
+        127
+      ]
+    },
+    {
+      "eventIndex": 36,
+      "timestampUtc": "2026-05-14T17:31:35.081068+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 53,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        53,
+        127
+      ]
+    },
+    {
+      "eventIndex": 37,
+      "timestampUtc": "2026-05-14T17:31:41.656493+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 56,
+      "rawBytes": [
+        176,
+        3,
+        56
+      ]
+    },
+    {
+      "eventIndex": 38,
+      "timestampUtc": "2026-05-14T17:31:50.649456+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 55,
+      "rawBytes": [
+        176,
+        3,
+        55
+      ]
+    },
+    {
+      "eventIndex": 39,
+      "timestampUtc": "2026-05-14T17:31:50.650381+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 54,
+      "rawBytes": [
+        176,
+        3,
+        54
+      ]
+    },
+    {
+      "eventIndex": 40,
+      "timestampUtc": "2026-05-14T17:31:50.651112+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 53,
+      "rawBytes": [
+        176,
+        3,
+        53
+      ]
+    },
+    {
+      "eventIndex": 41,
+      "timestampUtc": "2026-05-14T17:31:50.651907+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 52,
+      "rawBytes": [
+        176,
+        3,
+        52
+      ]
+    },
+    {
+      "eventIndex": 42,
+      "timestampUtc": "2026-05-14T17:31:50.653248+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 52,
+      "rawBytes": [
+        176,
+        3,
+        52
+      ]
+    },
+    {
+      "eventIndex": 43,
+      "timestampUtc": "2026-05-14T17:31:50.654540+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 51,
+      "rawBytes": [
+        176,
+        3,
+        51
+      ]
+    },
+    {
+      "eventIndex": 44,
+      "timestampUtc": "2026-05-14T17:31:50.655465+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 50,
+      "rawBytes": [
+        176,
+        3,
+        50
+      ]
+    },
+    {
+      "eventIndex": 45,
+      "timestampUtc": "2026-05-14T17:31:50.656496+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 49,
+      "rawBytes": [
+        176,
+        3,
+        49
+      ]
+    },
+    {
+      "eventIndex": 46,
+      "timestampUtc": "2026-05-14T17:31:50.657286+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 48,
+      "rawBytes": [
+        176,
+        3,
+        48
+      ]
+    },
+    {
+      "eventIndex": 47,
+      "timestampUtc": "2026-05-14T17:31:50.658026+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 48,
+      "rawBytes": [
+        176,
+        3,
+        48
+      ]
+    },
+    {
+      "eventIndex": 48,
+      "timestampUtc": "2026-05-14T17:31:50.658694+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 47,
+      "rawBytes": [
+        176,
+        3,
+        47
+      ]
+    },
+    {
+      "eventIndex": 49,
+      "timestampUtc": "2026-05-14T17:31:50.659371+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 46,
+      "rawBytes": [
+        176,
+        3,
+        46
+      ]
+    },
+    {
+      "eventIndex": 50,
+      "timestampUtc": "2026-05-14T17:31:50.660048+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 45,
+      "rawBytes": [
+        176,
+        3,
+        45
+      ]
+    },
+    {
+      "eventIndex": 51,
+      "timestampUtc": "2026-05-14T17:31:50.661176+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 45,
+      "rawBytes": [
+        176,
+        3,
+        45
+      ]
+    },
+    {
+      "eventIndex": 52,
+      "timestampUtc": "2026-05-14T17:31:50.661926+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 3,
+      "data2": 44,
+      "rawBytes": [
+        176,
+        3,
+        44
+      ]
+    },
+    {
+      "eventIndex": 53,
+      "timestampUtc": "2026-05-14T17:31:53.519416+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 95,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        95,
+        127
+      ]
+    },
+    {
+      "eventIndex": 54,
+      "timestampUtc": "2026-05-14T17:32:00.104512+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 97,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        97,
+        127
+      ]
+    },
+    {
+      "eventIndex": 55,
+      "timestampUtc": "2026-05-14T17:32:08.645218+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 96,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        96,
+        127
+      ]
+    },
+    {
+      "eventIndex": 56,
+      "timestampUtc": "2026-05-14T17:32:17.624873+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 102,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        102,
+        127
+      ]
+    },
+    {
+      "eventIndex": 57,
+      "timestampUtc": "2026-05-14T17:32:24.788701+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 104,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        104,
+        127
+      ]
+    },
+    {
+      "eventIndex": 58,
+      "timestampUtc": "2026-05-14T17:32:30.984803+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 103,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        103,
+        127
+      ]
+    },
+    {
+      "eventIndex": 59,
+      "timestampUtc": "2026-05-14T17:32:38.198381+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 109,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        109,
+        127
+      ]
+    },
+    {
+      "eventIndex": 60,
+      "timestampUtc": "2026-05-14T17:32:45.252663+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 108,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        108,
+        127
+      ]
+    },
+    {
+      "eventIndex": 61,
+      "timestampUtc": "2026-05-14T17:32:55.958076+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 110,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        110,
+        127
+      ]
+    },
+    {
+      "eventIndex": 62,
+      "timestampUtc": "2026-05-14T17:33:09.288086+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 113,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        113,
+        127
+      ]
+    },
+    {
+      "eventIndex": 63,
+      "timestampUtc": "2026-05-14T17:33:17.010628+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 115,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        115,
+        127
+      ]
+    },
+    {
+      "eventIndex": 64,
+      "timestampUtc": "2026-05-14T17:33:23.446347+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 118,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        118,
+        127
+      ]
+    },
+    {
+      "eventIndex": 65,
+      "timestampUtc": "2026-05-14T17:33:33.233938+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 120,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        120,
+        127
+      ]
+    },
+    {
+      "eventIndex": 66,
+      "timestampUtc": "2026-05-14T17:33:44.787806+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 121,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        121,
+        127
+      ]
+    },
+    {
+      "eventIndex": 67,
+      "timestampUtc": "2026-05-14T17:33:51.273132+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 122,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        122,
+        127
+      ]
+    },
+    {
+      "eventIndex": 68,
+      "timestampUtc": "2026-05-14T17:33:56.491609+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 124,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        124,
+        127
+      ]
+    },
+    {
+      "eventIndex": 69,
+      "timestampUtc": "2026-05-14T17:34:07.396668+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 50,
+      "rawBytes": [
+        176,
+        4,
+        50
+      ]
+    },
+    {
+      "eventIndex": 70,
+      "timestampUtc": "2026-05-14T17:34:13.898795+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 49,
+      "rawBytes": [
+        176,
+        4,
+        49
+      ]
+    },
+    {
+      "eventIndex": 71,
+      "timestampUtc": "2026-05-14T17:34:13.900162+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 48,
+      "rawBytes": [
+        176,
+        4,
+        48
+      ]
+    },
+    {
+      "eventIndex": 72,
+      "timestampUtc": "2026-05-14T17:34:13.902066+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 47,
+      "rawBytes": [
+        176,
+        4,
+        47
+      ]
+    },
+    {
+      "eventIndex": 73,
+      "timestampUtc": "2026-05-14T17:34:13.903816+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 47,
+      "rawBytes": [
+        176,
+        4,
+        47
+      ]
+    },
+    {
+      "eventIndex": 74,
+      "timestampUtc": "2026-05-14T17:34:13.905023+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 46,
+      "rawBytes": [
+        176,
+        4,
+        46
+      ]
+    },
+    {
+      "eventIndex": 75,
+      "timestampUtc": "2026-05-14T17:34:13.906069+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 45,
+      "rawBytes": [
+        176,
+        4,
+        45
+      ]
+    },
+    {
+      "eventIndex": 76,
+      "timestampUtc": "2026-05-14T17:34:13.907100+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 44,
+      "rawBytes": [
+        176,
+        4,
+        44
+      ]
+    },
+    {
+      "eventIndex": 77,
+      "timestampUtc": "2026-05-14T17:34:13.908126+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 44,
+      "rawBytes": [
+        176,
+        4,
+        44
+      ]
+    },
+    {
+      "eventIndex": 78,
+      "timestampUtc": "2026-05-14T17:34:13.909327+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 4,
+      "data2": 43,
+      "rawBytes": [
+        176,
+        4,
+        43
+      ]
+    },
+    {
+      "eventIndex": 79,
+      "timestampUtc": "2026-05-14T17:34:15.837613+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 76,
+      "rawBytes": [
+        176,
+        5,
+        76
+      ]
+    },
+    {
+      "eventIndex": 80,
+      "timestampUtc": "2026-05-14T17:34:20.224320+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 75,
+      "rawBytes": [
+        176,
+        5,
+        75
+      ]
+    },
+    {
+      "eventIndex": 81,
+      "timestampUtc": "2026-05-14T17:34:20.225887+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 75,
+      "rawBytes": [
+        176,
+        5,
+        75
+      ]
+    },
+    {
+      "eventIndex": 82,
+      "timestampUtc": "2026-05-14T17:34:20.227339+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 74,
+      "rawBytes": [
+        176,
+        5,
+        74
+      ]
+    },
+    {
+      "eventIndex": 83,
+      "timestampUtc": "2026-05-14T17:34:20.229223+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 73,
+      "rawBytes": [
+        176,
+        5,
+        73
+      ]
+    },
+    {
+      "eventIndex": 84,
+      "timestampUtc": "2026-05-14T17:34:20.231070+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 72,
+      "rawBytes": [
+        176,
+        5,
+        72
+      ]
+    },
+    {
+      "eventIndex": 85,
+      "timestampUtc": "2026-05-14T17:34:20.232556+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 71,
+      "rawBytes": [
+        176,
+        5,
+        71
+      ]
+    },
+    {
+      "eventIndex": 86,
+      "timestampUtc": "2026-05-14T17:34:20.233928+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 71,
+      "rawBytes": [
+        176,
+        5,
+        71
+      ]
+    },
+    {
+      "eventIndex": 87,
+      "timestampUtc": "2026-05-14T17:34:20.235101+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 70,
+      "rawBytes": [
+        176,
+        5,
+        70
+      ]
+    },
+    {
+      "eventIndex": 88,
+      "timestampUtc": "2026-05-14T17:34:20.236813+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 69,
+      "rawBytes": [
+        176,
+        5,
+        69
+      ]
+    },
+    {
+      "eventIndex": 89,
+      "timestampUtc": "2026-05-14T17:34:20.237962+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 68,
+      "rawBytes": [
+        176,
+        5,
+        68
+      ]
+    },
+    {
+      "eventIndex": 90,
+      "timestampUtc": "2026-05-14T17:34:20.239274+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 67,
+      "rawBytes": [
+        176,
+        5,
+        67
+      ]
+    },
+    {
+      "eventIndex": 91,
+      "timestampUtc": "2026-05-14T17:34:20.240369+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 66,
+      "rawBytes": [
+        176,
+        5,
+        66
+      ]
+    },
+    {
+      "eventIndex": 92,
+      "timestampUtc": "2026-05-14T17:34:20.241403+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 66,
+      "rawBytes": [
+        176,
+        5,
+        66
+      ]
+    },
+    {
+      "eventIndex": 93,
+      "timestampUtc": "2026-05-14T17:34:20.242764+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 65,
+      "rawBytes": [
+        176,
+        5,
+        65
+      ]
+    },
+    {
+      "eventIndex": 94,
+      "timestampUtc": "2026-05-14T17:34:20.243912+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 5,
+      "data2": 64,
+      "rawBytes": [
+        176,
+        5,
+        64
+      ]
+    },
+    {
+      "eventIndex": 95,
+      "timestampUtc": "2026-05-14T17:34:21.515069+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 6,
+      "data2": 47,
+      "rawBytes": [
+        176,
+        6,
+        47
+      ]
+    },
+    {
+      "eventIndex": 96,
+      "timestampUtc": "2026-05-14T17:34:27.340097+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 6,
+      "data2": 46,
+      "rawBytes": [
+        176,
+        6,
+        46
+      ]
+    },
+    {
+      "eventIndex": 97,
+      "timestampUtc": "2026-05-14T17:34:27.341778+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 6,
+      "data2": 45,
+      "rawBytes": [
+        176,
+        6,
+        45
+      ]
+    },
+    {
+      "eventIndex": 98,
+      "timestampUtc": "2026-05-14T17:34:27.343640+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 6,
+      "data2": 44,
+      "rawBytes": [
+        176,
+        6,
+        44
+      ]
+    },
+    {
+      "eventIndex": 99,
+      "timestampUtc": "2026-05-14T17:34:27.345513+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 6,
+      "data2": 43,
+      "rawBytes": [
+        176,
+        6,
+        43
+      ]
+    },
+    {
+      "eventIndex": 100,
+      "timestampUtc": "2026-05-14T17:34:30.055744+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 3,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        3,
+        127
+      ]
+    },
+    {
+      "eventIndex": 101,
+      "timestampUtc": "2026-05-14T17:34:38.736156+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 0,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        0,
+        127
+      ]
+    },
+    {
+      "eventIndex": 102,
+      "timestampUtc": "2026-05-14T17:34:43.914028+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 1,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        1,
+        127
+      ]
+    },
+    {
+      "eventIndex": 103,
+      "timestampUtc": "2026-05-14T17:34:49.680968+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 2,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        2,
+        127
+      ]
+    },
+    {
+      "eventIndex": 104,
+      "timestampUtc": "2026-05-14T17:35:01.344994+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 33,
+      "rawBytes": [
+        176,
+        8,
+        33
+      ]
+    },
+    {
+      "eventIndex": 105,
+      "timestampUtc": "2026-05-14T17:35:06.104872+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 34,
+      "rawBytes": [
+        176,
+        8,
+        34
+      ]
+    },
+    {
+      "eventIndex": 106,
+      "timestampUtc": "2026-05-14T17:35:06.106362+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 35,
+      "rawBytes": [
+        176,
+        8,
+        35
+      ]
+    },
+    {
+      "eventIndex": 107,
+      "timestampUtc": "2026-05-14T17:35:06.107789+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 36,
+      "rawBytes": [
+        176,
+        8,
+        36
+      ]
+    },
+    {
+      "eventIndex": 108,
+      "timestampUtc": "2026-05-14T17:35:06.109368+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 37,
+      "rawBytes": [
+        176,
+        8,
+        37
+      ]
+    },
+    {
+      "eventIndex": 109,
+      "timestampUtc": "2026-05-14T17:35:06.110760+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 38,
+      "rawBytes": [
+        176,
+        8,
+        38
+      ]
+    },
+    {
+      "eventIndex": 110,
+      "timestampUtc": "2026-05-14T17:35:06.112102+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 39,
+      "rawBytes": [
+        176,
+        8,
+        39
+      ]
+    },
+    {
+      "eventIndex": 111,
+      "timestampUtc": "2026-05-14T17:35:06.113954+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 39,
+      "rawBytes": [
+        176,
+        8,
+        39
+      ]
+    },
+    {
+      "eventIndex": 112,
+      "timestampUtc": "2026-05-14T17:35:06.115523+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 40,
+      "rawBytes": [
+        176,
+        8,
+        40
+      ]
+    },
+    {
+      "eventIndex": 113,
+      "timestampUtc": "2026-05-14T17:35:06.116912+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 41,
+      "rawBytes": [
+        176,
+        8,
+        41
+      ]
+    },
+    {
+      "eventIndex": 114,
+      "timestampUtc": "2026-05-14T17:35:06.118539+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 8,
+      "data2": 42,
+      "rawBytes": [
+        176,
+        8,
+        42
+      ]
+    },
+    {
+      "eventIndex": 115,
+      "timestampUtc": "2026-05-14T17:35:07.680409+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 9,
+      "data2": 52,
+      "rawBytes": [
+        176,
+        9,
+        52
+      ]
+    },
+    {
+      "eventIndex": 116,
+      "timestampUtc": "2026-05-14T17:35:12.814768+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 9,
+      "data2": 53,
+      "rawBytes": [
+        176,
+        9,
+        53
+      ]
+    },
+    {
+      "eventIndex": 117,
+      "timestampUtc": "2026-05-14T17:35:12.816776+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 9,
+      "data2": 54,
+      "rawBytes": [
+        176,
+        9,
+        54
+      ]
+    },
+    {
+      "eventIndex": 118,
+      "timestampUtc": "2026-05-14T17:35:12.819341+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 9,
+      "data2": 54,
+      "rawBytes": [
+        176,
+        9,
+        54
+      ]
+    },
+    {
+      "eventIndex": 119,
+      "timestampUtc": "2026-05-14T17:35:12.821130+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 9,
+      "data2": 55,
+      "rawBytes": [
+        176,
+        9,
+        55
+      ]
+    },
+    {
+      "eventIndex": 120,
+      "timestampUtc": "2026-05-14T17:35:14.225603+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "data2": 46,
+      "rawBytes": [
+        176,
+        10,
+        46
+      ]
+    },
+    {
+      "eventIndex": 121,
+      "timestampUtc": "2026-05-14T17:35:19.008571+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "data2": 46,
+      "rawBytes": [
+        176,
+        10,
+        46
+      ]
+    },
+    {
+      "eventIndex": 122,
+      "timestampUtc": "2026-05-14T17:35:19.010909+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "data2": 47,
+      "rawBytes": [
+        176,
+        10,
+        47
+      ]
+    },
+    {
+      "eventIndex": 123,
+      "timestampUtc": "2026-05-14T17:35:19.013023+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "data2": 48,
+      "rawBytes": [
+        176,
+        10,
+        48
+      ]
+    },
+    {
+      "eventIndex": 124,
+      "timestampUtc": "2026-05-14T17:35:19.014809+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "data2": 49,
+      "rawBytes": [
+        176,
+        10,
+        49
+      ]
+    },
+    {
+      "eventIndex": 125,
+      "timestampUtc": "2026-05-14T17:35:19.016541+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "data2": 50,
+      "rawBytes": [
+        176,
+        10,
+        50
+      ]
+    },
+    {
+      "eventIndex": 126,
+      "timestampUtc": "2026-05-14T17:35:19.018231+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "data2": 51,
+      "rawBytes": [
+        176,
+        10,
+        51
+      ]
+    },
+    {
+      "eventIndex": 127,
+      "timestampUtc": "2026-05-14T17:35:19.020147+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "data2": 52,
+      "rawBytes": [
+        176,
+        10,
+        52
+      ]
+    },
+    {
+      "eventIndex": 128,
+      "timestampUtc": "2026-05-14T17:35:19.021560+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 10,
+      "data2": 53,
+      "rawBytes": [
+        176,
+        10,
+        53
+      ]
+    },
+    {
+      "eventIndex": 129,
+      "timestampUtc": "2026-05-14T17:35:20.571276+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 7,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        7,
+        127
+      ]
+    },
+    {
+      "eventIndex": 130,
+      "timestampUtc": "2026-05-14T17:35:26.088892+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 4,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        4,
+        127
+      ]
+    },
+    {
+      "eventIndex": 131,
+      "timestampUtc": "2026-05-14T17:35:32.643966+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 5,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        5,
+        127
+      ]
+    },
+    {
+      "eventIndex": 132,
+      "timestampUtc": "2026-05-14T17:35:37.862331+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 6,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        6,
+        127
+      ]
+    },
+    {
+      "eventIndex": 133,
+      "timestampUtc": "2026-05-14T17:35:53.057819+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 12,
+      "data2": 51,
+      "rawBytes": [
+        176,
+        12,
+        51
+      ]
+    },
+    {
+      "eventIndex": 134,
+      "timestampUtc": "2026-05-14T17:36:01.180228+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 12,
+      "data2": 52,
+      "rawBytes": [
+        176,
+        12,
+        52
+      ]
+    },
+    {
+      "eventIndex": 135,
+      "timestampUtc": "2026-05-14T17:36:01.182058+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 12,
+      "data2": 53,
+      "rawBytes": [
+        176,
+        12,
+        53
+      ]
+    },
+    {
+      "eventIndex": 136,
+      "timestampUtc": "2026-05-14T17:36:01.184183+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 12,
+      "data2": 54,
+      "rawBytes": [
+        176,
+        12,
+        54
+      ]
+    },
+    {
+      "eventIndex": 137,
+      "timestampUtc": "2026-05-14T17:36:01.185922+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 12,
+      "data2": 54,
+      "rawBytes": [
+        176,
+        12,
+        54
+      ]
+    },
+    {
+      "eventIndex": 138,
+      "timestampUtc": "2026-05-14T17:36:01.187595+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 12,
+      "data2": 55,
+      "rawBytes": [
+        176,
+        12,
+        55
+      ]
+    },
+    {
+      "eventIndex": 139,
+      "timestampUtc": "2026-05-14T17:36:01.189667+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 12,
+      "data2": 56,
+      "rawBytes": [
+        176,
+        12,
+        56
+      ]
+    },
+    {
+      "eventIndex": 140,
+      "timestampUtc": "2026-05-14T17:36:01.191587+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 12,
+      "data2": 57,
+      "rawBytes": [
+        176,
+        12,
+        57
+      ]
+    },
+    {
+      "eventIndex": 141,
+      "timestampUtc": "2026-05-14T17:36:02.396685+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 13,
+      "data2": 53,
+      "rawBytes": [
+        176,
+        13,
+        53
+      ]
+    },
+    {
+      "eventIndex": 142,
+      "timestampUtc": "2026-05-14T17:36:06.998331+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 13,
+      "data2": 54,
+      "rawBytes": [
+        176,
+        13,
+        54
+      ]
+    },
+    {
+      "eventIndex": 143,
+      "timestampUtc": "2026-05-14T17:36:07.000869+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 13,
+      "data2": 55,
+      "rawBytes": [
+        176,
+        13,
+        55
+      ]
+    },
+    {
+      "eventIndex": 144,
+      "timestampUtc": "2026-05-14T17:36:07.003718+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 13,
+      "data2": 55,
+      "rawBytes": [
+        176,
+        13,
+        55
+      ]
+    },
+    {
+      "eventIndex": 145,
+      "timestampUtc": "2026-05-14T17:36:07.005819+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 13,
+      "data2": 56,
+      "rawBytes": [
+        176,
+        13,
+        56
+      ]
+    },
+    {
+      "eventIndex": 146,
+      "timestampUtc": "2026-05-14T17:36:08.213737+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "data2": 105,
+      "rawBytes": [
+        176,
+        14,
+        105
+      ]
+    },
+    {
+      "eventIndex": 147,
+      "timestampUtc": "2026-05-14T17:36:13.213043+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "data2": 104,
+      "rawBytes": [
+        176,
+        14,
+        104
+      ]
+    },
+    {
+      "eventIndex": 148,
+      "timestampUtc": "2026-05-14T17:36:13.215640+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "data2": 103,
+      "rawBytes": [
+        176,
+        14,
+        103
+      ]
+    },
+    {
+      "eventIndex": 149,
+      "timestampUtc": "2026-05-14T17:36:13.218602+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "data2": 102,
+      "rawBytes": [
+        176,
+        14,
+        102
+      ]
+    },
+    {
+      "eventIndex": 150,
+      "timestampUtc": "2026-05-14T17:36:13.220752+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "data2": 101,
+      "rawBytes": [
+        176,
+        14,
+        101
+      ]
+    },
+    {
+      "eventIndex": 151,
+      "timestampUtc": "2026-05-14T17:36:13.223011+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "data2": 100,
+      "rawBytes": [
+        176,
+        14,
+        100
+      ]
+    },
+    {
+      "eventIndex": 152,
+      "timestampUtc": "2026-05-14T17:36:13.225020+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "data2": 100,
+      "rawBytes": [
+        176,
+        14,
+        100
+      ]
+    },
+    {
+      "eventIndex": 153,
+      "timestampUtc": "2026-05-14T17:36:13.226820+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "data2": 98,
+      "rawBytes": [
+        176,
+        14,
+        98
+      ]
+    },
+    {
+      "eventIndex": 154,
+      "timestampUtc": "2026-05-14T17:36:13.228728+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 14,
+      "data2": 97,
+      "rawBytes": [
+        176,
+        14,
+        97
+      ]
+    },
+    {
+      "eventIndex": 155,
+      "timestampUtc": "2026-05-14T17:36:15.107971+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 11,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        11,
+        127
+      ]
+    },
+    {
+      "eventIndex": 156,
+      "timestampUtc": "2026-05-14T17:36:18.919286+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 8,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        8,
+        127
+      ]
+    },
+    {
+      "eventIndex": 157,
+      "timestampUtc": "2026-05-14T17:36:25.265015+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 9,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        9,
+        127
+      ]
+    },
+    {
+      "eventIndex": 158,
+      "timestampUtc": "2026-05-14T17:36:30.513148+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 10,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        10,
+        127
+      ]
+    },
+    {
+      "eventIndex": 159,
+      "timestampUtc": "2026-05-14T17:36:38.375373+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 16,
+      "data2": 23,
+      "rawBytes": [
+        176,
+        16,
+        23
+      ]
+    },
+    {
+      "eventIndex": 160,
+      "timestampUtc": "2026-05-14T17:36:42.883968+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 16,
+      "data2": 24,
+      "rawBytes": [
+        176,
+        16,
+        24
+      ]
+    },
+    {
+      "eventIndex": 161,
+      "timestampUtc": "2026-05-14T17:36:42.886850+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 16,
+      "data2": 25,
+      "rawBytes": [
+        176,
+        16,
+        25
+      ]
+    },
+    {
+      "eventIndex": 162,
+      "timestampUtc": "2026-05-14T17:36:42.889871+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 16,
+      "data2": 26,
+      "rawBytes": [
+        176,
+        16,
+        26
+      ]
+    },
+    {
+      "eventIndex": 163,
+      "timestampUtc": "2026-05-14T17:36:42.892103+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 16,
+      "data2": 27,
+      "rawBytes": [
+        176,
+        16,
+        27
+      ]
+    },
+    {
+      "eventIndex": 164,
+      "timestampUtc": "2026-05-14T17:36:42.894095+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 16,
+      "data2": 27,
+      "rawBytes": [
+        176,
+        16,
+        27
+      ]
+    },
+    {
+      "eventIndex": 165,
+      "timestampUtc": "2026-05-14T17:36:42.896389+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 16,
+      "data2": 28,
+      "rawBytes": [
+        176,
+        16,
+        28
+      ]
+    },
+    {
+      "eventIndex": 166,
+      "timestampUtc": "2026-05-14T17:36:44.431944+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 17,
+      "data2": 68,
+      "rawBytes": [
+        176,
+        17,
+        68
+      ]
+    },
+    {
+      "eventIndex": 167,
+      "timestampUtc": "2026-05-14T17:36:51.392886+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 17,
+      "data2": 69,
+      "rawBytes": [
+        176,
+        17,
+        69
+      ]
+    },
+    {
+      "eventIndex": 168,
+      "timestampUtc": "2026-05-14T17:36:51.396074+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 17,
+      "data2": 70,
+      "rawBytes": [
+        176,
+        17,
+        70
+      ]
+    },
+    {
+      "eventIndex": 169,
+      "timestampUtc": "2026-05-14T17:36:51.398590+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 17,
+      "data2": 71,
+      "rawBytes": [
+        176,
+        17,
+        71
+      ]
+    },
+    {
+      "eventIndex": 170,
+      "timestampUtc": "2026-05-14T17:36:52.982385+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "data2": 54,
+      "rawBytes": [
+        176,
+        18,
+        54
+      ]
+    },
+    {
+      "eventIndex": 171,
+      "timestampUtc": "2026-05-14T17:37:02.454381+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "data2": 55,
+      "rawBytes": [
+        176,
+        18,
+        55
+      ]
+    },
+    {
+      "eventIndex": 172,
+      "timestampUtc": "2026-05-14T17:37:02.457604+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "data2": 56,
+      "rawBytes": [
+        176,
+        18,
+        56
+      ]
+    },
+    {
+      "eventIndex": 173,
+      "timestampUtc": "2026-05-14T17:37:02.460110+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "data2": 57,
+      "rawBytes": [
+        176,
+        18,
+        57
+      ]
+    },
+    {
+      "eventIndex": 174,
+      "timestampUtc": "2026-05-14T17:37:02.462186+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "data2": 58,
+      "rawBytes": [
+        176,
+        18,
+        58
+      ]
+    },
+    {
+      "eventIndex": 175,
+      "timestampUtc": "2026-05-14T17:37:02.464929+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "data2": 59,
+      "rawBytes": [
+        176,
+        18,
+        59
+      ]
+    },
+    {
+      "eventIndex": 176,
+      "timestampUtc": "2026-05-14T17:37:02.466859+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "data2": 59,
+      "rawBytes": [
+        176,
+        18,
+        59
+      ]
+    },
+    {
+      "eventIndex": 177,
+      "timestampUtc": "2026-05-14T17:37:02.468698+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "data2": 60,
+      "rawBytes": [
+        176,
+        18,
+        60
+      ]
+    },
+    {
+      "eventIndex": 178,
+      "timestampUtc": "2026-05-14T17:37:02.470742+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 18,
+      "data2": 61,
+      "rawBytes": [
+        176,
+        18,
+        61
+      ]
+    },
+    {
+      "eventIndex": 179,
+      "timestampUtc": "2026-05-14T17:37:04.087501+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 15,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        15,
+        127
+      ]
+    },
+    {
+      "eventIndex": 180,
+      "timestampUtc": "2026-05-14T17:37:08.607041+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 12,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        12,
+        127
+      ]
+    },
+    {
+      "eventIndex": 181,
+      "timestampUtc": "2026-05-14T17:37:18.215386+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 13,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        13,
+        127
+      ]
+    },
+    {
+      "eventIndex": 182,
+      "timestampUtc": "2026-05-14T17:37:23.543433+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 14,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        14,
+        127
+      ]
+    },
+    {
+      "eventIndex": 183,
+      "timestampUtc": "2026-05-14T17:37:41.472604+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 24,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        24,
+        127
+      ]
+    },
+    {
+      "eventIndex": 184,
+      "timestampUtc": "2026-05-14T17:37:54.822535+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 25,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        25,
+        127
+      ]
+    },
+    {
+      "eventIndex": 185,
+      "timestampUtc": "2026-05-14T17:38:01.627205+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 26,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        26,
+        127
+      ]
+    },
+    {
+      "eventIndex": 186,
+      "timestampUtc": "2026-05-14T17:38:09.050374+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 23,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        23,
+        127
+      ]
+    },
+    {
+      "eventIndex": 187,
+      "timestampUtc": "2026-05-14T17:38:21.063232+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 31,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        31,
+        127
+      ]
+    },
+    {
+      "eventIndex": 188,
+      "timestampUtc": "2026-05-14T17:38:25.822734+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 27,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        27,
+        127
+      ]
+    },
+    {
+      "eventIndex": 189,
+      "timestampUtc": "2026-05-14T17:38:32.647295+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 28,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        28,
+        127
+      ]
+    },
+    {
+      "eventIndex": 190,
+      "timestampUtc": "2026-05-14T17:38:39.830928+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 29,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        29,
+        127
+      ]
+    },
+    {
+      "eventIndex": 191,
+      "timestampUtc": "2026-05-14T17:38:48.311880+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 30,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        30,
+        127
+      ]
+    },
+    {
+      "eventIndex": 192,
+      "timestampUtc": "2026-05-14T17:39:00.185051+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 44,
+      "rawBytes": [
+        176,
+        21,
+        44
+      ]
+    },
+    {
+      "eventIndex": 193,
+      "timestampUtc": "2026-05-14T17:39:02.768693+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 48,
+      "rawBytes": [
+        176,
+        21,
+        48
+      ]
+    },
+    {
+      "eventIndex": 194,
+      "timestampUtc": "2026-05-14T17:39:02.770813+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 53,
+      "rawBytes": [
+        176,
+        21,
+        53
+      ]
+    },
+    {
+      "eventIndex": 195,
+      "timestampUtc": "2026-05-14T17:39:02.772508+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 56,
+      "rawBytes": [
+        176,
+        21,
+        56
+      ]
+    },
+    {
+      "eventIndex": 196,
+      "timestampUtc": "2026-05-14T17:39:02.774381+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 61,
+      "rawBytes": [
+        176,
+        21,
+        61
+      ]
+    },
+    {
+      "eventIndex": 197,
+      "timestampUtc": "2026-05-14T17:39:02.776318+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 63,
+      "rawBytes": [
+        176,
+        21,
+        63
+      ]
+    },
+    {
+      "eventIndex": 198,
+      "timestampUtc": "2026-05-14T17:39:02.778052+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 67,
+      "rawBytes": [
+        176,
+        21,
+        67
+      ]
+    },
+    {
+      "eventIndex": 199,
+      "timestampUtc": "2026-05-14T17:39:02.779764+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 69,
+      "rawBytes": [
+        176,
+        21,
+        69
+      ]
+    },
+    {
+      "eventIndex": 200,
+      "timestampUtc": "2026-05-14T17:39:02.781711+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 72,
+      "rawBytes": [
+        176,
+        21,
+        72
+      ]
+    },
+    {
+      "eventIndex": 201,
+      "timestampUtc": "2026-05-14T17:39:02.783492+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 74,
+      "rawBytes": [
+        176,
+        21,
+        74
+      ]
+    },
+    {
+      "eventIndex": 202,
+      "timestampUtc": "2026-05-14T17:39:02.785166+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 77,
+      "rawBytes": [
+        176,
+        21,
+        77
+      ]
+    },
+    {
+      "eventIndex": 203,
+      "timestampUtc": "2026-05-14T17:39:02.786824+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 78,
+      "rawBytes": [
+        176,
+        21,
+        78
+      ]
+    },
+    {
+      "eventIndex": 204,
+      "timestampUtc": "2026-05-14T17:39:02.788618+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 79,
+      "rawBytes": [
+        176,
+        21,
+        79
+      ]
+    },
+    {
+      "eventIndex": 205,
+      "timestampUtc": "2026-05-14T17:39:02.790317+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 21,
+      "data2": 80,
+      "rawBytes": [
+        176,
+        21,
+        80
+      ]
+    },
+    {
+      "eventIndex": 206,
+      "timestampUtc": "2026-05-14T17:39:05.921812+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "data2": 83,
+      "rawBytes": [
+        176,
+        7,
+        83
+      ]
+    },
+    {
+      "eventIndex": 207,
+      "timestampUtc": "2026-05-14T17:39:19.609983+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "data2": 77,
+      "rawBytes": [
+        176,
+        7,
+        77
+      ]
+    },
+    {
+      "eventIndex": 208,
+      "timestampUtc": "2026-05-14T17:39:19.613643+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "data2": 72,
+      "rawBytes": [
+        176,
+        7,
+        72
+      ]
+    },
+    {
+      "eventIndex": 209,
+      "timestampUtc": "2026-05-14T17:39:19.616439+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "data2": 66,
+      "rawBytes": [
+        176,
+        7,
+        66
+      ]
+    },
+    {
+      "eventIndex": 210,
+      "timestampUtc": "2026-05-14T17:39:19.619369+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "data2": 62,
+      "rawBytes": [
+        176,
+        7,
+        62
+      ]
+    },
+    {
+      "eventIndex": 211,
+      "timestampUtc": "2026-05-14T17:39:19.622091+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "data2": 57,
+      "rawBytes": [
+        176,
+        7,
+        57
+      ]
+    },
+    {
+      "eventIndex": 212,
+      "timestampUtc": "2026-05-14T17:39:19.624345+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "data2": 55,
+      "rawBytes": [
+        176,
+        7,
+        55
+      ]
+    },
+    {
+      "eventIndex": 213,
+      "timestampUtc": "2026-05-14T17:39:19.626492+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "data2": 53,
+      "rawBytes": [
+        176,
+        7,
+        53
+      ]
+    },
+    {
+      "eventIndex": 214,
+      "timestampUtc": "2026-05-14T17:39:19.628688+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 7,
+      "data2": 52,
+      "rawBytes": [
+        176,
+        7,
+        52
+      ]
+    },
+    {
+      "eventIndex": 215,
+      "timestampUtc": "2026-05-14T17:39:20.708249+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 81,
+      "rawBytes": [
+        176,
+        11,
+        81
+      ]
+    },
+    {
+      "eventIndex": 216,
+      "timestampUtc": "2026-05-14T17:39:26.134276+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 80,
+      "rawBytes": [
+        176,
+        11,
+        80
+      ]
+    },
+    {
+      "eventIndex": 217,
+      "timestampUtc": "2026-05-14T17:39:26.138202+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 79,
+      "rawBytes": [
+        176,
+        11,
+        79
+      ]
+    },
+    {
+      "eventIndex": 218,
+      "timestampUtc": "2026-05-14T17:39:26.141048+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 75,
+      "rawBytes": [
+        176,
+        11,
+        75
+      ]
+    },
+    {
+      "eventIndex": 219,
+      "timestampUtc": "2026-05-14T17:39:26.144210+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 73,
+      "rawBytes": [
+        176,
+        11,
+        73
+      ]
+    },
+    {
+      "eventIndex": 220,
+      "timestampUtc": "2026-05-14T17:39:26.146544+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 69,
+      "rawBytes": [
+        176,
+        11,
+        69
+      ]
+    },
+    {
+      "eventIndex": 221,
+      "timestampUtc": "2026-05-14T17:39:26.149095+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 65,
+      "rawBytes": [
+        176,
+        11,
+        65
+      ]
+    },
+    {
+      "eventIndex": 222,
+      "timestampUtc": "2026-05-14T17:39:26.151356+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 61,
+      "rawBytes": [
+        176,
+        11,
+        61
+      ]
+    },
+    {
+      "eventIndex": 223,
+      "timestampUtc": "2026-05-14T17:39:26.153411+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 58,
+      "rawBytes": [
+        176,
+        11,
+        58
+      ]
+    },
+    {
+      "eventIndex": 224,
+      "timestampUtc": "2026-05-14T17:39:26.155647+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 55,
+      "rawBytes": [
+        176,
+        11,
+        55
+      ]
+    },
+    {
+      "eventIndex": 225,
+      "timestampUtc": "2026-05-14T17:39:26.157581+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 53,
+      "rawBytes": [
+        176,
+        11,
+        53
+      ]
+    },
+    {
+      "eventIndex": 226,
+      "timestampUtc": "2026-05-14T17:39:26.159473+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 50,
+      "rawBytes": [
+        176,
+        11,
+        50
+      ]
+    },
+    {
+      "eventIndex": 227,
+      "timestampUtc": "2026-05-14T17:39:26.161311+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 46,
+      "rawBytes": [
+        176,
+        11,
+        46
+      ]
+    },
+    {
+      "eventIndex": 228,
+      "timestampUtc": "2026-05-14T17:39:26.163492+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 41,
+      "rawBytes": [
+        176,
+        11,
+        41
+      ]
+    },
+    {
+      "eventIndex": 229,
+      "timestampUtc": "2026-05-14T17:39:26.165545+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 37,
+      "rawBytes": [
+        176,
+        11,
+        37
+      ]
+    },
+    {
+      "eventIndex": 230,
+      "timestampUtc": "2026-05-14T17:39:26.167388+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 33,
+      "rawBytes": [
+        176,
+        11,
+        33
+      ]
+    },
+    {
+      "eventIndex": 231,
+      "timestampUtc": "2026-05-14T17:39:26.169395+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 11,
+      "data2": 32,
+      "rawBytes": [
+        176,
+        11,
+        32
+      ]
+    },
+    {
+      "eventIndex": 232,
+      "timestampUtc": "2026-05-14T17:39:27.512989+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 15,
+      "data2": 68,
+      "rawBytes": [
+        176,
+        15,
+        68
+      ]
+    },
+    {
+      "eventIndex": 233,
+      "timestampUtc": "2026-05-14T17:39:32.472400+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 15,
+      "data2": 74,
+      "rawBytes": [
+        176,
+        15,
+        74
+      ]
+    },
+    {
+      "eventIndex": 234,
+      "timestampUtc": "2026-05-14T17:39:32.475277+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 15,
+      "data2": 77,
+      "rawBytes": [
+        176,
+        15,
+        77
+      ]
+    },
+    {
+      "eventIndex": 235,
+      "timestampUtc": "2026-05-14T17:39:32.478241+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 15,
+      "data2": 79,
+      "rawBytes": [
+        176,
+        15,
+        79
+      ]
+    },
+    {
+      "eventIndex": 236,
+      "timestampUtc": "2026-05-14T17:39:33.749181+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 19,
+      "data2": 125,
+      "rawBytes": [
+        176,
+        19,
+        125
+      ]
+    },
+    {
+      "eventIndex": 237,
+      "timestampUtc": "2026-05-14T17:39:39.107540+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 19,
+      "data2": 122,
+      "rawBytes": [
+        176,
+        19,
+        122
+      ]
+    },
+    {
+      "eventIndex": 238,
+      "timestampUtc": "2026-05-14T17:39:39.111633+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 19,
+      "data2": 117,
+      "rawBytes": [
+        176,
+        19,
+        117
+      ]
+    },
+    {
+      "eventIndex": 239,
+      "timestampUtc": "2026-05-14T17:39:39.114769+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 19,
+      "data2": 114,
+      "rawBytes": [
+        176,
+        19,
+        114
+      ]
+    },
+    {
+      "eventIndex": 240,
+      "timestampUtc": "2026-05-14T17:39:39.117719+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 19,
+      "data2": 109,
+      "rawBytes": [
+        176,
+        19,
+        109
+      ]
+    },
+    {
+      "eventIndex": 241,
+      "timestampUtc": "2026-05-14T17:39:39.120707+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 19,
+      "data2": 107,
+      "rawBytes": [
+        176,
+        19,
+        107
+      ]
+    },
+    {
+      "eventIndex": 242,
+      "timestampUtc": "2026-05-14T17:39:39.123509+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 19,
+      "data2": 106,
+      "rawBytes": [
+        176,
+        19,
+        106
+      ]
+    },
+    {
+      "eventIndex": 243,
+      "timestampUtc": "2026-05-14T17:39:48.445722+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 32,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        32,
+        127
+      ]
+    },
+    {
+      "eventIndex": 244,
+      "timestampUtc": "2026-05-14T17:40:00.977357+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 34,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        34,
+        127
+      ]
+    },
+    {
+      "eventIndex": 245,
+      "timestampUtc": "2026-05-14T17:40:09.418264+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 36,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        36,
+        127
+      ]
+    },
+    {
+      "eventIndex": 246,
+      "timestampUtc": "2026-05-14T17:40:17.749712+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 38,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        38,
+        127
+      ]
+    },
+    {
+      "eventIndex": 247,
+      "timestampUtc": "2026-05-14T17:40:51.265959+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 43,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        43,
+        127
+      ]
+    },
+    {
+      "eventIndex": 248,
+      "timestampUtc": "2026-05-14T17:40:59.028260+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 44,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        44,
+        127
+      ]
+    },
+    {
+      "eventIndex": 249,
+      "timestampUtc": "2026-05-14T17:41:04.735490+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 42,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        42,
+        127
+      ]
+    },
+    {
+      "eventIndex": 250,
+      "timestampUtc": "2026-05-14T17:41:13.206080+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 40,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        40,
+        127
+      ]
+    },
+    {
+      "eventIndex": 251,
+      "timestampUtc": "2026-05-14T17:41:18.304880+00:00",
+      "status": "note",
+      "channel": 1,
+      "data1": 41,
+      "data2": 127,
+      "rawBytes": [
+        144,
+        41,
+        127
+      ]
+    },
+    {
+      "eventIndex": 252,
+      "timestampUtc": "2026-05-14T17:41:24.570670+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 75,
+      "rawBytes": [
+        176,
+        20,
+        75
+      ]
+    },
+    {
+      "eventIndex": 253,
+      "timestampUtc": "2026-05-14T17:41:30.322897+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 76,
+      "rawBytes": [
+        176,
+        20,
+        76
+      ]
+    },
+    {
+      "eventIndex": 254,
+      "timestampUtc": "2026-05-14T17:41:30.327248+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 77,
+      "rawBytes": [
+        176,
+        20,
+        77
+      ]
+    },
+    {
+      "eventIndex": 255,
+      "timestampUtc": "2026-05-14T17:41:30.331976+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 79,
+      "rawBytes": [
+        176,
+        20,
+        79
+      ]
+    },
+    {
+      "eventIndex": 256,
+      "timestampUtc": "2026-05-14T17:41:30.335243+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 79,
+      "rawBytes": [
+        176,
+        20,
+        79
+      ]
+    },
+    {
+      "eventIndex": 257,
+      "timestampUtc": "2026-05-14T17:41:30.338895+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 80,
+      "rawBytes": [
+        176,
+        20,
+        80
+      ]
+    },
+    {
+      "eventIndex": 258,
+      "timestampUtc": "2026-05-14T17:41:30.341325+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 81,
+      "rawBytes": [
+        176,
+        20,
+        81
+      ]
+    },
+    {
+      "eventIndex": 259,
+      "timestampUtc": "2026-05-14T17:41:30.343665+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 82,
+      "rawBytes": [
+        176,
+        20,
+        82
+      ]
+    },
+    {
+      "eventIndex": 260,
+      "timestampUtc": "2026-05-14T17:41:30.346292+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 83,
+      "rawBytes": [
+        176,
+        20,
+        83
+      ]
+    },
+    {
+      "eventIndex": 261,
+      "timestampUtc": "2026-05-14T17:41:30.348466+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 84,
+      "rawBytes": [
+        176,
+        20,
+        84
+      ]
+    },
+    {
+      "eventIndex": 262,
+      "timestampUtc": "2026-05-14T17:41:30.350617+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 85,
+      "rawBytes": [
+        176,
+        20,
+        85
+      ]
+    },
+    {
+      "eventIndex": 263,
+      "timestampUtc": "2026-05-14T17:41:30.353009+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 85,
+      "rawBytes": [
+        176,
+        20,
+        85
+      ]
+    },
+    {
+      "eventIndex": 264,
+      "timestampUtc": "2026-05-14T17:41:30.355173+00:00",
+      "status": "cc",
+      "channel": 1,
+      "data1": 20,
+      "data2": 86,
+      "rawBytes": [
+        176,
+        20,
+        86
+      ]
+    }
+  ]
+}

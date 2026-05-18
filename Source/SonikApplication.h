@@ -27,6 +27,7 @@
 #include "MidiHandlers/MixerMidiHandler.h"
 #include "MidiHandlers/LibraryMidiHandler.h"
 #include "MidiHandlers/CompositeMidiCommandHandler.h"
+#include "Features/Midi/UI/MidiSettingsWindow.h"
 #include <memory>
 
 class MainWindow final : public juce::DocumentWindow
@@ -95,8 +96,8 @@ private:
 
     // PRD-0040 diagnostic logger: prints device hot-plug events to the JUCE
     // log (Console.app on macOS) so manual testing can observe enumeration
-    // and hot-plug without a dedicated UI. Will be replaced by the
-    // Settings → MIDI panel in a later PRD.
+    // and hot-plug without a dedicated UI. Coexists with the Settings → MIDI
+    // panel (PRD-0048).
     struct MidiDiagnosticLogger final : public sonik::midi::DeviceListChangeListener
     {
         sonik::midi::MidiDeviceManager* manager { nullptr };
@@ -121,7 +122,10 @@ private:
     std::unique_ptr<LibraryAnalysisQueue>   libraryAnalysisQueue;
     std::unique_ptr<WatchFolderScanner>    watchFolderScanner;
     std::unique_ptr<MainWindow>            mainWindow;
+    std::unique_ptr<sonik::midi::MidiSettingsWindow> midiSettingsWindow;  // PRD-0048
     bool                                   quitSaveActive = false;
+
+    void openMidiSettingsWindow();  // PRD-0048
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SonikApplication)
 };

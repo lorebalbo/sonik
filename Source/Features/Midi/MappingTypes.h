@@ -144,6 +144,11 @@ namespace sonik::midi
     {
         int                     schemaVersion { 0 };
         DeviceMatch             deviceMatch;
+
+        // Human-readable name for the Settings → MIDI panel (PRD-0048). Optional;
+        // when empty the UI falls back to the mapping's stable id.
+        juce::String            displayName;
+
         std::vector<Binding>    bindings;
         std::vector<Modifier>   modifiers;
 

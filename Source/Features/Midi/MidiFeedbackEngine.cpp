@@ -233,7 +233,7 @@ namespace sonik::midi
                 // Coarse: read the deck's `pitch` or `gain` property as float.
                 // PRD-0047 only requires the Continuous CC computation; the
                 // exact source ValueTree path per-category is intentionally
-                // pluggable. For the Reloop CE bundled profile, no continuous
+                // pluggable. For the DDM4000 bundled profile, no continuous
                 // feedback is declared today, so this branch is exercised by
                 // tests only.
                 const auto v = deck.getProperty (IDs::pitch, 0.0);

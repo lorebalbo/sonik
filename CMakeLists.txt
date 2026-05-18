@@ -251,6 +251,21 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/MappingSerializer.cpp
     Source/Features/Midi/MappingStore.h
     Source/Features/Midi/MappingStore.cpp
+    Source/Features/Midi/UI/MidiSettingsWindow.h
+    Source/Features/Midi/UI/MidiSettingsWindow.cpp
+    Source/Features/Midi/UI/MidiSettingsPanel.h
+    Source/Features/Midi/UI/MidiSettingsPanel.cpp
+    Source/Features/Midi/UI/Atoms/DevicePill.h
+    Source/Features/Midi/UI/Atoms/ProfileDropdown.h
+    Source/Features/Midi/UI/Atoms/LearnButton.h
+    Source/Features/Midi/UI/Atoms/LoadErrorBanner.h
+    Source/Features/Midi/UI/Atoms/ModifierBanner.h
+    Source/Features/Midi/UI/Atoms/DisengagedList.h
+    Source/Features/Midi/UI/Molecules/TargetPicker.h
+    Source/Features/Midi/UI/Molecules/DeviceHeader.h
+    Source/Features/Midi/UI/Molecules/DeviceHeader.cpp
+    Source/Features/Midi/UI/Molecules/BindingTable.h
+    Source/Features/Midi/UI/Molecules/BindingTable.cpp
     Source/Features/Midi/MidiFeedbackEngine.h
     Source/Features/Midi/MidiFeedbackEngine.cpp
     Source/Features/Midi/MidiOutputThread.h
@@ -354,6 +369,7 @@ add_executable(SonikTests
     Tests/ModifierLayerTests.cpp
     Tests/SoftTakeoverManagerTests.cpp
     Tests/MidiFeedbackEngineTests.cpp
+    Tests/MidiSettingsPanelTests.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
     Source/Features/Library/LibraryAnalysisQueue.cpp
@@ -408,6 +424,10 @@ add_executable(SonikTests
     Source/Features/Midi/BindingResolver.cpp
     Source/Features/Midi/MappingSerializer.cpp
     Source/Features/Midi/MappingStore.cpp
+    Source/Features/Midi/UI/MidiSettingsWindow.cpp
+    Source/Features/Midi/UI/MidiSettingsPanel.cpp
+    Source/Features/Midi/UI/Molecules/DeviceHeader.cpp
+    Source/Features/Midi/UI/Molecules/BindingTable.cpp
     Source/Features/Midi/MidiFeedbackEngine.cpp
     Source/Features/Midi/MidiOutputThread.cpp
     Source/Features/Midi/MidiInboundRouter.cpp

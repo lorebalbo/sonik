@@ -1,5 +1,6 @@
 {
   "schemaVersion": 1,
+  "displayName": "Behringer DDM4000",
   "device": {
     "manufacturer": "Behringer",
     "product": "DDM4000 (MIDI)",

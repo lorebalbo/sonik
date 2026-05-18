@@ -94,6 +94,9 @@ namespace sonik::midi
                                  "createDirectory failed: " + result.getErrorMessage());
         }
 
+        // PRD-0048: load per-device active overrides (best-effort, sync).
+        loadActiveOverridesFromDisk();
+
         if (loadUserProfilesAsync)
         {
             threadPool = std::make_unique<juce::ThreadPool> (1);
@@ -190,6 +193,11 @@ namespace sonik::midi
 
         for (const auto& file : files)
         {
+            // PRD-0048: underscore-prefixed files are internal state (e.g.
+            // `_active-mappings.json`), not user-authored mappings.
+            if (file.getFileName().startsWithChar ('_'))
+                continue;
+
             const auto size = file.getSize();
             if (size <= 0 || size > kMaxFileSizeBytes)
             {
@@ -279,11 +287,27 @@ namespace sonik::midi
         std::unordered_map<juce::String, std::shared_ptr<const Mapping>> userSnap;
         std::unordered_map<juce::String, std::shared_ptr<const Mapping>> bundledSnap;
         juce::String genericId;
+        juce::String overrideId;
         {
             std::shared_lock lock (stateMutex);
             userSnap    = userProfiles;
             bundledSnap = bundledProfiles;
             genericId   = genericProfileId;
+            if (auto it = activeOverrideByDevice.find (rec.deviceId);
+                it != activeOverrideByDevice.end())
+                overrideId = it->second;
+        }
+
+        // PRD-0048: explicit per-device override wins.
+        if (overrideId.isNotEmpty())
+        {
+            if (auto it = userSnap.find (overrideId); it != userSnap.end() && it->second != nullptr)
+                return it->second;
+            if (auto it = bundledSnap.find (overrideId); it != bundledSnap.end() && it->second != nullptr)
+                return it->second;
+            // Stale override (referenced mapping no longer exists). Fall through
+            // to automatic resolution; the override is cleaned up lazily by
+            // deleteUserMapping; we do not mutate here under a reader lock.
         }
 
         for (const auto& [stem, mapping] : userSnap)
@@ -411,10 +435,13 @@ namespace sonik::midi
         auto pr = MappingParser::parse (root, target.getFullPathName());
         auto sp = std::make_shared<const Mapping> (std::move (pr.mapping));
 
+        const auto stem = target.getFileNameWithoutExtension();
+        bool wasNew = false;
         std::vector<std::uint64_t> affected;
         {
             std::unique_lock lock (stateMutex);
-            userProfiles[target.getFileNameWithoutExtension()] = sp;
+            wasNew = userProfiles.find (stem) == userProfiles.end();
+            userProfiles[stem] = sp;
         }
         // Re-resolve devices.
         for (const auto& rec : deviceManager.getDevices())
@@ -433,6 +460,8 @@ namespace sonik::midi
         }
 
         fireUserMappingSaved (juce::String (filename), SaveResult::Ok);
+        if (wasNew)
+            fireMappingAdded (stem);
         for (auto id : affected)
             fireActiveMappingChanged (id);
 
@@ -444,6 +473,17 @@ namespace sonik::midi
     {
         std::shared_lock lock (stateMutex);
         return loadErrors;
+    }
+
+    void MappingStore::reloadUserMappings()
+    {
+        {
+            std::unique_lock lock (stateMutex);
+            loadErrors.clear();
+            userProfiles.clear();
+        }
+        userProfilesReady.store (false, std::memory_order_release);
+        enumerateUserProfilesAsync();
     }
 
     void MappingStore::addListener (MappingStoreListener* l)
@@ -484,5 +524,379 @@ namespace sonik::midi
     void MappingStore::fireUserMappingSaved (juce::String filename, SaveResult r)
     {
         for (auto* l : listeners) l->userMappingSaved (filename, r);
+    }
+
+    void MappingStore::fireMappingAdded (juce::String id)
+    {
+        for (auto* l : listeners) l->mappingAdded (id);
+    }
+
+    void MappingStore::fireMappingRemoved (juce::String id)
+    {
+        for (auto* l : listeners) l->mappingRemoved (id);
+    }
+
+    //--------------------------------------------------------------------------
+    // PRD-0048: profile-management & active-override helpers.
+
+    juce::File MappingStore::activeOverridesFile() const
+    {
+        return userDir.getChildFile ("_active-mappings.json");
+    }
+
+    void MappingStore::loadActiveOverridesFromDisk()
+    {
+        const auto f = activeOverridesFile();
+        if (! f.existsAsFile())
+            return;
+
+        const auto size = f.getSize();
+        if (size <= 0 || size > kMaxFileSizeBytes)
+        {
+            recordLoadError (f.getFullPathName(), "active-overrides: size out of bounds");
+            return;
+        }
+
+        const auto root = juce::JSON::parse (f.loadFileAsString());
+        if (! root.isObject())
+            return;
+
+        const auto active = root.getProperty ("active", juce::var());
+        if (! active.isObject())
+            return;
+
+        std::unordered_map<std::uint64_t, juce::String> loaded;
+        if (auto* obj = active.getDynamicObject())
+        {
+            for (const auto& prop : obj->getProperties())
+            {
+                const juce::String keyStr = prop.name.toString();
+                const auto         valStr = prop.value.toString();
+                if (keyStr.isEmpty() || valStr.isEmpty())
+                    continue;
+                // Keys are hex, no 0x prefix.
+                const auto deviceId = (std::uint64_t) keyStr.getHexValue64();
+                if (deviceId == 0)
+                    continue;
+                loaded.emplace (deviceId, valStr);
+            }
+        }
+
+        std::unique_lock lock (stateMutex);
+        activeOverrideByDevice = std::move (loaded);
+    }
+
+    void MappingStore::saveActiveOverridesToDisk()
+    {
+        std::unordered_map<std::uint64_t, juce::String> snap;
+        {
+            std::shared_lock lock (stateMutex);
+            snap = activeOverrideByDevice;
+        }
+
+        auto* obj    = new juce::DynamicObject();
+        auto* active = new juce::DynamicObject();
+        for (const auto& [deviceId, mappingId] : snap)
+            active->setProperty (juce::Identifier (juce::String::toHexString ((juce::int64) deviceId)),
+                                 mappingId);
+        obj->setProperty ("version", 1);
+        obj->setProperty ("active",  juce::var (active));
+
+        const auto json = juce::JSON::toString (juce::var (obj), false);
+
+        if (! userDir.exists())
+            userDir.createDirectory();
+
+        const auto target = activeOverridesFile();
+        const auto tmp    = target.getSiblingFile (target.getFileName() + ".tmp");
+        if (tmp.existsAsFile()) tmp.deleteFile();
+        if (! tmp.replaceWithText (json))
+            return;
+        if (target.existsAsFile()) target.deleteFile();
+        if (! tmp.moveFileTo (target))
+            tmp.deleteFile();
+    }
+
+    std::shared_ptr<const Mapping> MappingStore::findMappingById (const juce::String& id) const
+    {
+        std::shared_lock lock (stateMutex);
+        if (auto it = userProfiles.find (id); it != userProfiles.end())
+            return it->second;
+        if (auto it = bundledProfiles.find (id); it != bundledProfiles.end())
+            return it->second;
+        return {};
+    }
+
+    juce::String MappingStore::idForMappingLocked (const std::shared_ptr<const Mapping>& m) const
+    {
+        if (m == nullptr) return {};
+        for (const auto& [id, mp] : bundledProfiles)
+            if (mp == m) return id;
+        for (const auto& [id, mp] : userProfiles)
+            if (mp == m) return id;
+        return {};
+    }
+
+    juce::String MappingStore::sanitiseFilenameStem (juce::StringRef raw) noexcept
+    {
+        const juce::String s = juce::String (raw).trim();
+        if (s.isEmpty()) return {};
+
+        juce::String out;
+        out.preallocateBytes (s.getNumBytesAsUTF8());
+        for (auto c : s)
+        {
+            if (juce::CharacterFunctions::isLetterOrDigit (c) || c == '-' || c == '_')
+                out += juce::String::charToString (c);
+            else if (c == ' ' || c == '.')
+                out += "-";
+            // drop everything else.
+        }
+        // Strip leading dots/dashes and double-dot sequences.
+        while (out.startsWithChar ('.') || out.startsWithChar ('-'))
+            out = out.substring (1);
+        while (out.contains (".."))
+            out = out.replace ("..", "-");
+
+        return out.substring (0, 64);
+    }
+
+    //--------------------------------------------------------------------------
+    juce::String MappingStore::getActiveMappingIdForDevice (std::uint64_t deviceId) const
+    {
+        std::shared_lock lock (stateMutex);
+        const auto it = activeByDevice.find (deviceId);
+        if (it == activeByDevice.end()) return {};
+        return idForMappingLocked (it->second);
+    }
+
+    std::vector<MappingProfileSummary>
+    MappingStore::listAvailableMappings (std::uint64_t deviceId) const
+    {
+        MidiDeviceRecord rec;
+        for (const auto& r : deviceManager.getDevices())
+            if (r.deviceId == deviceId) { rec = r; break; }
+
+        std::vector<MappingProfileSummary> out;
+        std::shared_lock lock (stateMutex);
+
+        out.reserve (bundledProfiles.size() + userProfiles.size());
+
+        for (const auto& [id, m] : bundledProfiles)
+        {
+            MappingProfileSummary s;
+            s.id            = id;
+            s.displayName   = (m != nullptr && m->displayName.isNotEmpty()) ? m->displayName : id;
+            s.origin        = MappingOrigin::Bundled;
+            s.readOnly      = true;
+            s.matchesDevice = (m != nullptr && rec.deviceId != 0 && deviceMatchAccepts (*m, rec));
+            out.push_back (std::move (s));
+        }
+        for (const auto& [id, m] : userProfiles)
+        {
+            MappingProfileSummary s;
+            s.id            = id;
+            s.displayName   = (m != nullptr && m->displayName.isNotEmpty()) ? m->displayName : id;
+            s.origin        = MappingOrigin::User;
+            s.readOnly      = false;
+            s.matchesDevice = (m != nullptr && rec.deviceId != 0 && deviceMatchAccepts (*m, rec));
+            out.push_back (std::move (s));
+        }
+
+        std::sort (out.begin(), out.end(),
+                   [] (const MappingProfileSummary& a, const MappingProfileSummary& b)
+                   {
+                       if (a.origin != b.origin)
+                           return a.origin == MappingOrigin::Bundled;
+                       return a.id.compareIgnoreCase (b.id) < 0;
+                   });
+        return out;
+    }
+
+    //--------------------------------------------------------------------------
+    CreateUserCopyResult MappingStore::createUserCopy (juce::StringRef sourceMappingId,
+                                                       juce::StringRef newDisplayName,
+                                                       juce::String*   outNewMappingId)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD
+
+        const juce::String srcId  = sourceMappingId;
+        const juce::String rawNm  = newDisplayName;
+
+        auto src = findMappingById (srcId);
+        if (src == nullptr)
+            return CreateUserCopyResult::UnknownSource;
+
+        const juce::String stem = sanitiseFilenameStem (rawNm);
+        if (stem.isEmpty())
+            return CreateUserCopyResult::InvalidName;
+
+        // Find a unique stem on disk + in-memory.
+        juce::String finalStem = stem;
+        {
+            std::shared_lock lock (stateMutex);
+            int suffix = 2;
+            while (userProfiles.find (finalStem) != userProfiles.end()
+                   || userDir.getChildFile (finalStem + ".json").existsAsFile()
+                   || bundledProfiles.find (finalStem) != bundledProfiles.end())
+            {
+                finalStem = stem + "-" + juce::String (suffix++);
+                if (suffix > 1024)
+                    return CreateUserCopyResult::DuplicateName;
+            }
+        }
+
+        // Build the new Mapping copy and stamp its displayName.
+        Mapping copy = *src;
+        copy.displayName = rawNm.trim();
+
+        juce::var root;
+        try { root = MappingSerializer::serialize (copy); }
+        catch (...) { return CreateUserCopyResult::SerializeFailure; }
+
+        const auto filename = finalStem + ".json";
+        const auto target   = userDir.getChildFile (filename);
+        const auto tmp      = userDir.getChildFile (filename + ".tmp");
+
+        const auto json = juce::JSON::toString (root, false);
+        if (tmp.existsAsFile()) tmp.deleteFile();
+        if (! tmp.replaceWithText (json))
+            return CreateUserCopyResult::IoFailure;
+        if (target.existsAsFile()) target.deleteFile();
+        if (! tmp.moveFileTo (target))
+        {
+            tmp.deleteFile();
+            return CreateUserCopyResult::IoFailure;
+        }
+
+        // Re-parse from disk so the in-memory state matches the canonical file.
+        auto pr = MappingParser::parse (root, target.getFullPathName());
+        auto sp = std::make_shared<const Mapping> (std::move (pr.mapping));
+
+        {
+            std::unique_lock lock (stateMutex);
+            userProfiles[finalStem] = sp;
+        }
+
+        if (outNewMappingId != nullptr) *outNewMappingId = finalStem;
+        fireMappingAdded (finalStem);
+        return CreateUserCopyResult::Ok;
+    }
+
+    //--------------------------------------------------------------------------
+    DeleteUserMappingResult MappingStore::deleteUserMapping (juce::StringRef mappingId)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD
+
+        const juce::String id = mappingId;
+        if (id.isEmpty())
+            return DeleteUserMappingResult::UnknownMapping;
+
+        bool existed = false;
+        {
+            std::unique_lock lock (stateMutex);
+            if (auto it = userProfiles.find (id); it != userProfiles.end())
+            {
+                userProfiles.erase (it);
+                existed = true;
+            }
+        }
+        if (! existed)
+            return DeleteUserMappingResult::UnknownMapping;
+
+        const auto file = userDir.getChildFile (id + ".json");
+        bool ioOk = true;
+        if (file.existsAsFile() && ! file.deleteFile())
+            ioOk = false;
+
+        // Drop any active overrides referring to this id, collect affected devices.
+        std::vector<std::uint64_t> overrideCleared;
+        {
+            std::unique_lock lock (stateMutex);
+            for (auto it = activeOverrideByDevice.begin(); it != activeOverrideByDevice.end(); )
+            {
+                if (it->second == id)
+                {
+                    overrideCleared.push_back (it->first);
+                    it = activeOverrideByDevice.erase (it);
+                }
+                else { ++it; }
+            }
+        }
+        if (! overrideCleared.empty())
+            saveActiveOverridesToDisk();
+
+        // Re-resolve every active device (deletion can change auto-resolution too,
+        // e.g. if the user profile was the active mapping by deviceMatch).
+        std::vector<std::uint64_t> changed;
+        for (const auto& rec : deviceManager.getDevices())
+        {
+            if (! rec.isInput) continue;
+            auto fresh = resolveForRecord (rec);
+            std::shared_ptr<const Mapping> previous;
+            {
+                std::unique_lock lock (stateMutex);
+                previous = activeByDevice[rec.deviceId];
+                activeByDevice[rec.deviceId] = fresh;
+            }
+            if (fresh != previous)
+                changed.push_back (rec.deviceId);
+        }
+
+        fireMappingRemoved (id);
+        for (auto d : changed)
+            fireActiveMappingChanged (d);
+
+        return ioOk ? DeleteUserMappingResult::Ok : DeleteUserMappingResult::IoFailure;
+    }
+
+    //--------------------------------------------------------------------------
+    SetActiveMappingResult MappingStore::setActiveMapping (std::uint64_t   deviceId,
+                                                           juce::StringRef mappingId)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD
+
+        // Validate device.
+        MidiDeviceRecord rec;
+        for (const auto& r : deviceManager.getDevices())
+            if (r.deviceId == deviceId) { rec = r; break; }
+        if (rec.deviceId == 0)
+            return SetActiveMappingResult::UnknownDevice;
+
+        const juce::String id = mappingId;
+
+        if (id.isNotEmpty())
+        {
+            // Validate mapping exists.
+            std::shared_lock lock (stateMutex);
+            if (userProfiles.find (id) == userProfiles.end()
+                && bundledProfiles.find (id) == bundledProfiles.end())
+                return SetActiveMappingResult::UnknownMapping;
+        }
+
+        // Apply override (or clear when empty).
+        std::shared_ptr<const Mapping> previous;
+        {
+            std::unique_lock lock (stateMutex);
+            previous = activeByDevice[deviceId];
+            if (id.isEmpty())
+                activeOverrideByDevice.erase (deviceId);
+            else
+                activeOverrideByDevice[deviceId] = id;
+        }
+
+        saveActiveOverridesToDisk();
+
+        // Re-resolve and update active table.
+        auto fresh = resolveForRecord (rec);
+        {
+            std::unique_lock lock (stateMutex);
+            activeByDevice[deviceId] = fresh;
+        }
+
+        if (fresh != previous)
+            fireActiveMappingChanged (deviceId);
+
+        return SetActiveMappingResult::Ok;
     }
 }

@@ -28,6 +28,18 @@ public:
         };
         addAndMakeVisible (addDeckButton);
 
+        // PRD-0048: MIDI settings button.
+        midiButton.setButtonText ("MIDI");
+        midiButton.setColour (juce::TextButton::buttonColourId, juce::Colours::black);
+        midiButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xFFF9F9F9));
+        midiButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xFFF9F9F9));
+        midiButton.onClick = [this]()
+        {
+            if (onMidiClicked)
+                onMidiClicked();
+        };
+        addAndMakeVisible (midiButton);
+
         updateButtons();
     }
 
@@ -42,6 +54,8 @@ public:
         auto bounds = getLocalBounds().reduced (8, 0);
         titleLabel.setBounds (bounds.removeFromLeft (200));
         addDeckButton.setBounds (bounds.removeFromRight (100).withSizeKeepingCentre (100, 28));
+        bounds.removeFromRight (8); // gap
+        midiButton.setBounds (bounds.removeFromRight (80).withSizeKeepingCentre (80, 28));
     }
 
     void updateAddDeckButton()
@@ -57,11 +71,13 @@ public:
     }
 
     std::function<void()> onAddDeckClicked;
+    std::function<void()> onMidiClicked;
 
 private:
     DeckStateManager& deckStateManager;
     juce::Label       titleLabel;
     juce::TextButton  addDeckButton;
+    juce::TextButton  midiButton;
 
     static constexpr int toolbarHeight = 40;
 

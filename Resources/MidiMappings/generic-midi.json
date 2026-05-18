@@ -1,10 +1,25 @@
 {
   "schemaVersion": 1,
+  "displayName": "Generic MIDI",
   "device": {
     "manufacturer": ".*",
     "product": ".*",
     "match": { "midiName": ".*" }
   },
-  "modifiers": [],
-  "bindings": []
+  "modifiers": [
+    {
+      "id": "shift",
+      "binding": { "channel": 1, "status": "note", "data1": 12, "style": "momentary" }
+    },
+    {
+      "id": "fx",
+      "binding": { "channel": 1, "status": "note", "data1": 13, "style": "latching" }
+    }
+  ],
+  "bindings": [
+    { "target": "deck.A.gain",           "midi": { "channel": 1, "status": "cc",   "data1":  7 }, "transform": "linear" },
+    { "target": "deck.A.transport.play", "midi": { "channel": 1, "status": "note", "data1": 12 }, "transform": "momentary" },
+    { "target": "deck.B.transport.play", "midi": { "channel": 1, "status": "note", "data1": 12 }, "transform": "momentary", "modifier": "shift" },
+    { "target": "deck.A.pitch", "midi": { "channel": 1, "status": "cc", "data1": 30 }, "transform": "linear", "softTakeover": "pickup" }
+  ]
 }

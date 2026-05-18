@@ -245,6 +245,10 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     if (auto* content = mainWindow->getContent())
         content->registerScannerWithLibrary (*watchFolderScanner);
 
+    // PRD-0048: wire toolbar MIDI button.
+    if (auto* content = mainWindow->getContent())
+        content->setOnMidiClicked ([this]() { openMidiSettingsWindow(); });
+
     watchFolderScanner->startScan();
 }
 
@@ -256,6 +260,7 @@ void SonikApplication::shutdown()
     if (deckStateManager != nullptr)
         deckStateManager->saveSession();
 
+    midiSettingsWindow.reset();  // PRD-0048
     mainWindow.reset();
 
     // Stop the watch-folder scanner before the database is torn down.
@@ -373,3 +378,27 @@ void SonikApplication::MidiDiagnosticLogger::midiDeviceClosed (std::uint64_t dev
 {
     DBG ("[MIDI]  CLOSED  id=" << juce::String::toHexString ((juce::int64) deviceId));
 }
+
+//==============================================================================
+// PRD-0048: MIDI Settings window lifecycle.
+void SonikApplication::openMidiSettingsWindow()
+{
+    if (midiSettingsWindow != nullptr)
+    {
+        midiSettingsWindow->toFront (true);
+        return;
+    }
+
+    if (mappingStore == nullptr || midiDeviceManager == nullptr
+        || midiInboundRouter == nullptr || softTakeoverManager == nullptr)
+        return;
+
+    midiSettingsWindow = std::make_unique<sonik::midi::MidiSettingsWindow> (
+        *mappingStore, *midiDeviceManager, *midiInboundRouter, *softTakeoverManager);
+
+    midiSettingsWindow->onClose = [this]()
+    {
+        midiSettingsWindow.reset();
+    };
+}
+

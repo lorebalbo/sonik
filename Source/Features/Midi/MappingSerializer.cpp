@@ -81,6 +81,9 @@ namespace sonik::midi
         auto* root = new juce::DynamicObject();
         root->setProperty ("schemaVersion", m.schemaVersion);
 
+        if (m.displayName.isNotEmpty())
+            root->setProperty ("displayName", m.displayName);
+
         // ---- device --------------------------------------------------
         {
             auto* device = new juce::DynamicObject();
@@ -112,6 +115,13 @@ namespace sonik::midi
             juce::Array<juce::var> bArr;
             for (const auto& b : m.bindings)
             {
+                // Skip in-flight rows that have not yet been bound to a
+                // concrete target (PRD-0048 Add Binding flow). Writing them
+                // would dereference an out-of-range registry slot.
+                if (b.target == InvalidTargetIndex
+                    || b.target >= ControlTargetRegistry::size())
+                    continue;
+
                 auto* obj = new juce::DynamicObject();
 
                 const auto& target = ControlTargetRegistry::get (b.target);
