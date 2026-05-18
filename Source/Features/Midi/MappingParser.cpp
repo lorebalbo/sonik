@@ -1,6 +1,7 @@
 #include "MappingParser.h"
 
 #include "ControlTargetRegistry.h"
+#include "Migrations/MigrationRegistry.h"
 
 #include <algorithm>
 #include <unordered_map>
@@ -10,8 +11,6 @@ namespace sonik::midi
 {
     namespace
     {
-        constexpr int kSupportedSchemaVersion = 1;
-
         ValidationError makeError (ValidationError::Kind kind,
                                    const juce::String&   detail,
                                    juce::StringRef       sourcePath,
@@ -124,12 +123,12 @@ namespace sonik::midi
 
         // ---- schemaVersion ------------------------------------------------
         const int schemaVersion = static_cast<int> (root.getProperty ("schemaVersion", 0));
-        if (schemaVersion != kSupportedSchemaVersion)
+        if (schemaVersion != kCurrentSchemaVersion)
         {
             result.errors.push_back (makeError (ValidationError::Kind::UnsupportedSchemaVersion,
                                                 "got " + juce::String (schemaVersion)
                                                     + ", supported = "
-                                                    + juce::String (kSupportedSchemaVersion),
+                                                    + juce::String (kCurrentSchemaVersion),
                                                 sourcePath));
             return result;
         }

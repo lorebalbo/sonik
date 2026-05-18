@@ -12,9 +12,9 @@
 //     creates the user mapping directory if missing, enqueues a background
 //     ThreadPoolJob to enumerate user files. Does NOT block the caller on
 //     disk I/O.
-//   * Background ThreadPoolJob: loads + parses every *.json in the user
-//     directory. On completion, schedules a Message-thread callAsync that
-//     swaps userProfiles under the writer lock and fires
+//   * Background ThreadPoolJob: enumerates user files and reads their text.
+//     On completion, schedules a Message-thread callAsync that migrates,
+//     parses, swaps userProfiles under the writer lock, and fires
 //     userProfilesLoaded().
 //   * getActiveMappingForDevice(): callable from ANY thread. Takes the
 //     shared_mutex in shared mode for nanoseconds, copies a shared_ptr,
@@ -24,6 +24,7 @@
 
 #include "DeviceListChangeListener.h"
 #include "MappingTypes.h"
+#include "Migrations/MigrationRegistry.h"
 #include "MidiDeviceRecord.h"
 
 #include <juce_core/juce_core.h>
@@ -32,8 +33,10 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <shared_mutex>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace sonik::midi
@@ -45,8 +48,37 @@ namespace sonik::midi
         getLoadErrors() so the MIDI Learn UI can display a banner. */
     struct MappingLoadError
     {
+        enum class Kind : std::uint8_t
+        {
+            IoFailure,
+            JsonParseFailure,
+            ValidationError,
+            MigrationFailed,
+            UnsupportedSchemaVersion,
+            MigrationProducedInvalidOutput,
+        };
+
+        MappingLoadError() = default;
+
+        MappingLoadError (juce::String path, juce::String text)
+            : sourcePath (std::move (path)),
+              message    (std::move (text))
+        {}
+
+        MappingLoadError (Kind errorKind, juce::String path, juce::String text)
+            : kind       (errorKind),
+              sourcePath (std::move (path)),
+              message    (std::move (text))
+        {}
+
+        Kind         kind { Kind::ValidationError };
         juce::String sourcePath;
         juce::String message;
+        std::optional<MigrationError>  migrationError;
+        std::optional<MigrationStep>   lastMigrationStep;
+        std::optional<ValidationError> parserError;
+        int fromVersion         { 0 };
+        int maxSupportedVersion { kCurrentSchemaVersion };
     };
 
     //--------------------------------------------------------------------------
@@ -74,6 +106,14 @@ namespace sonik::midi
         MappingOrigin origin         { MappingOrigin::User };
         bool          readOnly       { false };
         bool          matchesDevice  { false }; // true if the deviceMatch regex accepts this device.
+    };
+
+    struct MigratedMappingInfo
+    {
+        std::uint64_t              deviceId { 0 };
+        juce::String               mappingId;
+        juce::String               sourcePath;
+        std::vector<MigrationStep> stepsApplied;
     };
 
     //--------------------------------------------------------------------------
@@ -127,7 +167,9 @@ namespace sonik::midi
             synchronously in the constructor. */
         MappingStore (MidiDeviceManager& deviceManager,
                       juce::File         userMappingDirectory       = defaultUserMappingDirectory(),
-                      bool               loadUserProfilesAsync      = true);
+                      bool               loadUserProfilesAsync      = true,
+                      MigrationRegistry  migrationRegistry          = {},
+                      int                currentSchemaVersion       = kCurrentSchemaVersion);
 
         ~MappingStore() override;
 
@@ -146,6 +188,10 @@ namespace sonik::midi
         SaveResult saveUserMapping (const Mapping& mapping, juce::StringRef filename);
 
         std::vector<MappingLoadError> getLoadErrors() const;
+
+        std::vector<MigratedMappingInfo> getMigratedMappings() const;
+
+        bool saveMigratedCopy (const juce::String& mappingId);
 
         /** PRD-0048 Phase 8: Reload user mappings from disk.  Clears the
             current `loadErrors` set, re-scans the user mapping directory,
@@ -217,10 +263,39 @@ namespace sonik::midi
             std::shared_ptr<const Mapping> mapping;
         };
 
+        struct UserProfileSource
+        {
+            juce::File   file;
+            juce::String jsonText;
+        };
+
+        struct MappingJsonLoadResult
+        {
+            Mapping                       mapping;
+            juce::var                     migratedJson;
+            std::vector<MigrationStep>    stepsApplied;
+            std::vector<MappingLoadError> errors;
+            bool                          loaded { false };
+        };
+
+        struct MigratedMappingRecord
+        {
+            juce::String               mappingId;
+            juce::String               sourcePath;
+            std::vector<MigrationStep> stepsApplied;
+            juce::var                  migratedJson;
+        };
+
         void loadBundledProfiles();
         void enumerateUserProfilesAsync();
         void enumerateUserProfilesNow();
+        std::vector<UserProfileSource> collectUserProfileSources (std::vector<MappingLoadError>& errors) const;
+        void loadUserProfileSources (std::vector<UserProfileSource> sources,
+                                     std::vector<MappingLoadError> errors);
         void onUserProfilesLoaded();
+
+        MappingJsonLoadResult loadMappingFromJson (const juce::var& root,
+                                                   const juce::String& sourcePath) const;
 
         // Picks user profile (first match), then bundled by-device, then generic.
         // Caller must NOT hold the writer lock.
@@ -229,7 +304,9 @@ namespace sonik::midi
         // Returns true if the mapping's deviceMatch regexes accept the record.
         static bool deviceMatchAccepts (const Mapping&, const MidiDeviceRecord&) noexcept;
 
-        void recordLoadError (juce::String path, juce::String message);
+        void recordLoadError (juce::String path,
+                              juce::String message,
+                              MappingLoadError::Kind kind = MappingLoadError::Kind::IoFailure);
 
         void fireUserProfilesLoaded();
         void fireActiveMappingChanged (std::uint64_t);
@@ -256,6 +333,8 @@ namespace sonik::midi
 
         MidiDeviceManager& deviceManager;
         juce::File         userDir;
+        MigrationRegistry  migrations;
+        int                schemaVersionTarget { kCurrentSchemaVersion };
 
         mutable std::shared_mutex stateMutex;
 
@@ -276,6 +355,8 @@ namespace sonik::midi
         std::unordered_map<std::uint64_t, juce::String> activeOverrideByDevice;
 
         std::vector<MappingLoadError> loadErrors;
+
+        std::unordered_map<juce::String, MigratedMappingRecord> migratedUserMappings;
 
         // Listeners are mutated only on the Message thread.
         std::vector<MappingStoreListener*> listeners;

@@ -243,6 +243,8 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/MidiMessageBridge.cpp
     Source/Features/Midi/ControlTargetRegistry.h
     Source/Features/Midi/MappingTypes.h
+    Source/Features/Midi/Migrations/MigrationRegistry.h
+    Source/Features/Midi/Migrations/MigrationRegistry.cpp
     Source/Features/Midi/MappingParser.h
     Source/Features/Midi/MappingParser.cpp
     Source/Features/Midi/BindingResolver.h
@@ -363,6 +365,7 @@ add_executable(SonikTests
     Tests/MidiMessageBridgeTests.cpp
     Tests/ControlTargetRegistryTests.cpp
     Tests/MappingParserTests.cpp
+    Tests/MappingMigrationTests.cpp
     Tests/BindingResolverTests.cpp
     Tests/MappingStoreTests.cpp
     Tests/MidiInboundRouterTests.cpp
@@ -420,6 +423,7 @@ add_executable(SonikTests
     Source/Features/Midi/JuceMidiHost.cpp
     Source/Features/Midi/MidiDeviceManager.cpp
     Source/Features/Midi/MidiMessageBridge.cpp
+    Source/Features/Midi/Migrations/MigrationRegistry.cpp
     Source/Features/Midi/MappingParser.cpp
     Source/Features/Midi/BindingResolver.cpp
     Source/Features/Midi/MappingSerializer.cpp

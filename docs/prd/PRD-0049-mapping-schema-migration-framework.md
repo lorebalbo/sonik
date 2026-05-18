@@ -1,5 +1,5 @@
 ---
-status: Not Implemented
+status: Implemented
 epic: EPIC-0006
 depends-on: [PRD-0042, PRD-0043]
 ---

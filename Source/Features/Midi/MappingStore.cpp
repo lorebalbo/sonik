@@ -79,9 +79,13 @@ namespace sonik::midi
     //--------------------------------------------------------------------------
     MappingStore::MappingStore (MidiDeviceManager& mgr,
                                 juce::File         dir,
-                                bool               loadUserProfilesAsync)
+                          bool               loadUserProfilesAsync,
+                          MigrationRegistry  migrationRegistry,
+                          int                currentSchemaVersion)
         : deviceManager (mgr),
-          userDir       (std::move (dir))
+            userDir (std::move (dir)),
+            migrations (std::move (migrationRegistry)),
+            schemaVersionTarget (currentSchemaVersion)
     {
         loadBundledProfiles();
 
@@ -169,16 +173,37 @@ namespace sonik::midi
 
         threadPool->addJob ([this]() noexcept
         {
-            try { enumerateUserProfilesNow(); }
+            std::vector<MappingLoadError> errors;
+            std::vector<UserProfileSource> sources;
+            try { sources = collectUserProfileSources (errors); }
             catch (...) { /* never propagate */ }
-            juce::MessageManager::callAsync ([this]() { onUserProfilesLoaded(); });
+
+            juce::MessageManager::callAsync ([this,
+                                              sources = std::move (sources),
+                                              errors  = std::move (errors)]() mutable
+            {
+                loadUserProfileSources (std::move (sources), std::move (errors));
+                onUserProfilesLoaded();
+            });
         });
     }
 
     void MappingStore::enumerateUserProfilesNow()
     {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        std::vector<MappingLoadError> errors;
+        auto sources = collectUserProfileSources (errors);
+        loadUserProfileSources (std::move (sources), std::move (errors));
+    }
+
+    std::vector<MappingStore::UserProfileSource>
+    MappingStore::collectUserProfileSources (std::vector<MappingLoadError>& errors) const
+    {
+        std::vector<UserProfileSource> sources;
+
         if (! userDir.exists() || ! userDir.isDirectory())
-            return;
+            return sources;
 
         juce::Array<juce::File> files;
         userDir.findChildFiles (files, juce::File::findFiles, false, "*.json");
@@ -187,9 +212,6 @@ namespace sonik::midi
         std::sort (files.begin(), files.end(),
                    [] (const juce::File& a, const juce::File& b)
                    { return a.getFileName().compareIgnoreCase (b.getFileName()) < 0; });
-
-        std::unordered_map<juce::String, std::shared_ptr<const Mapping>> loaded;
-        std::vector<MappingLoadError> errors;
 
         for (const auto& file : files)
         {
@@ -201,36 +223,147 @@ namespace sonik::midi
             const auto size = file.getSize();
             if (size <= 0 || size > kMaxFileSizeBytes)
             {
-                errors.push_back ({ file.getFullPathName(),
-                                    "skipped: size out of bounds (" + juce::String (size) + " bytes)" });
+                errors.emplace_back (MappingLoadError::Kind::IoFailure,
+                                     file.getFullPathName(),
+                                     "skipped: size out of bounds (" + juce::String (size) + " bytes)");
                 continue;
             }
 
-            const auto text = file.loadFileAsString();
-            const auto root = juce::JSON::parse (text);
+            sources.push_back ({ file, file.loadFileAsString() });
+        }
+
+        return sources;
+    }
+
+    void MappingStore::loadUserProfileSources (std::vector<UserProfileSource> sources,
+                                               std::vector<MappingLoadError> errors)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        std::unordered_map<juce::String, std::shared_ptr<const Mapping>> loaded;
+        std::unordered_map<juce::String, MigratedMappingRecord> migratedRecords;
+
+        for (const auto& source : sources)
+        {
+            const auto root = juce::JSON::parse (source.jsonText);
             if (root.isVoid())
             {
-                errors.push_back ({ file.getFullPathName(), "JSON parse failure" });
+                errors.emplace_back (MappingLoadError::Kind::JsonParseFailure,
+                                     source.file.getFullPathName(),
+                                     "JSON parse failure");
                 continue;
             }
 
-            auto pr = MappingParser::parse (root, file.getFullPathName());
-            for (const auto& e : pr.errors)
-                errors.push_back ({ file.getFullPathName(),
-                                    "validation: " + e.detail });
+            auto loadResult = loadMappingFromJson (root, source.file.getFullPathName());
+            for (auto&& e : loadResult.errors)
+                errors.push_back (std::move (e));
+
+            if (! loadResult.loaded)
+                continue;
+
+            const auto stem = source.file.getFileNameWithoutExtension();
 
             // Accept partially-valid mapping; loader is tolerant per PRD-0042.
-            loaded.emplace (file.getFileNameWithoutExtension(),
-                            std::make_shared<const Mapping> (std::move (pr.mapping)));
+            loaded.emplace (stem,
+                            std::make_shared<const Mapping> (std::move (loadResult.mapping)));
+
+            if (! loadResult.stepsApplied.empty())
+            {
+                MigratedMappingRecord record;
+                record.mappingId    = stem;
+                record.sourcePath   = source.file.getFullPathName();
+                record.stepsApplied = std::move (loadResult.stepsApplied);
+                record.migratedJson = std::move (loadResult.migratedJson);
+                migratedRecords.emplace (stem, std::move (record));
+            }
         }
 
         {
             std::unique_lock lock (stateMutex);
             userProfiles = std::move (loaded);
+            migratedUserMappings = std::move (migratedRecords);
             for (auto&& e : errors)
                 loadErrors.push_back (std::move (e));
         }
         userProfilesReady.store (true, std::memory_order_release);
+    }
+
+    MappingStore::MappingJsonLoadResult
+    MappingStore::loadMappingFromJson (const juce::var& root, const juce::String& sourcePath) const
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        MappingJsonLoadResult result;
+
+        if (! root.isObject())
+        {
+            auto pr = MappingParser::parse (root, sourcePath);
+            for (const auto& e : pr.errors)
+            {
+                MappingLoadError loadError (MappingLoadError::Kind::ValidationError,
+                                            sourcePath,
+                                            "validation: " + e.detail);
+                loadError.parserError = e;
+                result.errors.push_back (std::move (loadError));
+            }
+            result.mapping = std::move (pr.mapping);
+            result.loaded  = true;
+            return result;
+        }
+
+        const int fromVersion = static_cast<int> (root.getProperty ("schemaVersion", 0));
+        auto migrationResult = migrations.apply (root, fromVersion, schemaVersionTarget, sourcePath);
+
+        if (migrationResult.error.has_value())
+        {
+            const bool newerThanSupported = fromVersion > schemaVersionTarget;
+            MappingLoadError loadError (newerThanSupported
+                                            ? MappingLoadError::Kind::UnsupportedSchemaVersion
+                                            : MappingLoadError::Kind::MigrationFailed,
+                                        sourcePath,
+                                        newerThanSupported
+                                            ? ("unsupported schema version: got v" + juce::String (fromVersion)
+                                               + ", supported up to v" + juce::String (schemaVersionTarget))
+                                            : ("migration failed: " + migrationResult.error->reason));
+            loadError.migrationError      = migrationResult.error;
+            loadError.fromVersion         = fromVersion;
+            loadError.maxSupportedVersion = schemaVersionTarget;
+            result.errors.push_back (std::move (loadError));
+            return result;
+        }
+
+        result.migratedJson = migrationResult.migratedJson;
+        result.stepsApplied = std::move (migrationResult.stepsApplied);
+
+        auto pr = MappingParser::parse (result.migratedJson, sourcePath);
+        if (! pr.errors.empty() && ! result.stepsApplied.empty())
+        {
+            const auto& parserError = pr.errors.front();
+            MappingLoadError loadError (MappingLoadError::Kind::MigrationProducedInvalidOutput,
+                                        sourcePath,
+                                        "migration produced invalid output: " + parserError.detail);
+            loadError.parserError         = parserError;
+            loadError.fromVersion         = fromVersion;
+            loadError.maxSupportedVersion = schemaVersionTarget;
+            loadError.lastMigrationStep   = result.stepsApplied.back();
+            result.errors.push_back (std::move (loadError));
+            return result;
+        }
+
+        for (const auto& e : pr.errors)
+        {
+            MappingLoadError loadError (MappingLoadError::Kind::ValidationError,
+                                        sourcePath,
+                                        "validation: " + e.detail);
+            loadError.parserError         = e;
+            loadError.fromVersion         = fromVersion;
+            loadError.maxSupportedVersion = schemaVersionTarget;
+            result.errors.push_back (std::move (loadError));
+        }
+
+        result.mapping = std::move (pr.mapping);
+        result.loaded  = true;
+        return result;
     }
 
     void MappingStore::onUserProfilesLoaded()
@@ -379,7 +512,7 @@ namespace sonik::midi
     //--------------------------------------------------------------------------
     SaveResult MappingStore::saveUserMapping (const Mapping& mapping, juce::StringRef filename)
     {
-        JUCE_ASSERT_MESSAGE_THREAD
+        JUCE_ASSERT_MESSAGE_THREAD;
 
         if (! isValidUserMappingFilename (filename))
         {
@@ -442,6 +575,7 @@ namespace sonik::midi
             std::unique_lock lock (stateMutex);
             wasNew = userProfiles.find (stem) == userProfiles.end();
             userProfiles[stem] = sp;
+            migratedUserMappings.erase (stem);
         }
         // Re-resolve devices.
         for (const auto& rec : deviceManager.getDevices())
@@ -475,12 +609,87 @@ namespace sonik::midi
         return loadErrors;
     }
 
+    std::vector<MigratedMappingInfo> MappingStore::getMigratedMappings() const
+    {
+        std::shared_lock lock (stateMutex);
+
+        std::vector<MigratedMappingInfo> out;
+        out.reserve (migratedUserMappings.size());
+
+        for (const auto& [mappingId, record] : migratedUserMappings)
+        {
+            MigratedMappingInfo info;
+            info.mappingId    = mappingId;
+            info.sourcePath   = record.sourcePath;
+            info.stepsApplied = record.stepsApplied;
+
+            for (const auto& [deviceId, mapping] : activeByDevice)
+            {
+                if (idForMappingLocked (mapping) == mappingId)
+                {
+                    info.deviceId = deviceId;
+                    break;
+                }
+            }
+
+            out.push_back (std::move (info));
+        }
+
+        std::sort (out.begin(), out.end(), [] (const auto& a, const auto& b)
+        {
+            return a.mappingId.compareIgnoreCase (b.mappingId) < 0;
+        });
+
+        return out;
+    }
+
+    bool MappingStore::saveMigratedCopy (const juce::String& mappingId)
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+
+        MigratedMappingRecord record;
+        {
+            std::shared_lock lock (stateMutex);
+            const auto it = migratedUserMappings.find (mappingId);
+            if (it == migratedUserMappings.end())
+                return false;
+            record = it->second;
+        }
+
+        if (record.sourcePath.isEmpty())
+            return false;
+
+        const juce::File target (record.sourcePath);
+        const auto tmp = target.getSiblingFile (target.getFileName() + ".tmp");
+
+        if (tmp.existsAsFile())
+            tmp.deleteFile();
+
+        const auto json = juce::JSON::toString (record.migratedJson, false);
+        if (! tmp.replaceWithText (json))
+            return false;
+
+        if (! tmp.replaceFileIn (target))
+        {
+            tmp.deleteFile();
+            return false;
+        }
+
+        {
+            std::unique_lock lock (stateMutex);
+            migratedUserMappings.erase (mappingId);
+        }
+
+        return true;
+    }
+
     void MappingStore::reloadUserMappings()
     {
         {
             std::unique_lock lock (stateMutex);
             loadErrors.clear();
             userProfiles.clear();
+            migratedUserMappings.clear();
         }
         userProfilesReady.store (false, std::memory_order_release);
         enumerateUserProfilesAsync();
@@ -505,10 +714,12 @@ namespace sonik::midi
             threadPool->removeAllJobs (false, 5000);
     }
 
-    void MappingStore::recordLoadError (juce::String path, juce::String message)
+    void MappingStore::recordLoadError (juce::String path,
+                                        juce::String message,
+                                        MappingLoadError::Kind kind)
     {
         std::unique_lock lock (stateMutex);
-        loadErrors.push_back ({ std::move (path), std::move (message) });
+        loadErrors.emplace_back (kind, std::move (path), std::move (message));
     }
 
     void MappingStore::fireUserProfilesLoaded()
@@ -718,7 +929,7 @@ namespace sonik::midi
                                                        juce::StringRef newDisplayName,
                                                        juce::String*   outNewMappingId)
     {
-        JUCE_ASSERT_MESSAGE_THREAD
+        JUCE_ASSERT_MESSAGE_THREAD;
 
         const juce::String srcId  = sourceMappingId;
         const juce::String rawNm  = newDisplayName;
@@ -776,6 +987,7 @@ namespace sonik::midi
         {
             std::unique_lock lock (stateMutex);
             userProfiles[finalStem] = sp;
+            migratedUserMappings.erase (finalStem);
         }
 
         if (outNewMappingId != nullptr) *outNewMappingId = finalStem;
@@ -786,7 +998,7 @@ namespace sonik::midi
     //--------------------------------------------------------------------------
     DeleteUserMappingResult MappingStore::deleteUserMapping (juce::StringRef mappingId)
     {
-        JUCE_ASSERT_MESSAGE_THREAD
+        JUCE_ASSERT_MESSAGE_THREAD;
 
         const juce::String id = mappingId;
         if (id.isEmpty())
@@ -798,6 +1010,7 @@ namespace sonik::midi
             if (auto it = userProfiles.find (id); it != userProfiles.end())
             {
                 userProfiles.erase (it);
+                migratedUserMappings.erase (id);
                 existed = true;
             }
         }
@@ -854,7 +1067,7 @@ namespace sonik::midi
     SetActiveMappingResult MappingStore::setActiveMapping (std::uint64_t   deviceId,
                                                            juce::StringRef mappingId)
     {
-        JUCE_ASSERT_MESSAGE_THREAD
+        JUCE_ASSERT_MESSAGE_THREAD;
 
         // Validate device.
         MidiDeviceRecord rec;
