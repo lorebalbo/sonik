@@ -8,10 +8,39 @@ bool LibraryMidiHandler::tryHandle (const MidiMessageEvent& event)
     switch (event.category)
     {
         case MidiTargetCategory::LibraryScrollUp:
+        {
+            if (event.normalisedValue < 0.5f) return true; // ignore note-off
+            if (onScrollUp) onScrollUp();
+            return true;
+        }
         case MidiTargetCategory::LibraryScrollDown:
-        case MidiTargetCategory::LibraryLoadDeck:
+        {
+            if (event.normalisedValue < 0.5f) return true;
+            if (onScrollDown) onScrollDown();
+            return true;
+        }
         case MidiTargetCategory::LibraryFocusSearch:
-            return false; // Library wiring lands in PRD-0048; defer to composite warning.
+        {
+            if (event.normalisedValue < 0.5f) return true;
+            if (onFocusSearch) onFocusSearch();
+            return true;
+        }
+        case MidiTargetCategory::LibraryLoadDeck:
+        {
+            if (event.normalisedValue < 0.5f) return true;
+            if (onLoadDeck && event.deckIndex < 4)
+                onLoadDeck (static_cast<int> (event.deckIndex));
+            return true;
+        }
+        case MidiTargetCategory::LibraryBrowse:
+        {
+            // intDelta is populated by SignedBitDelta or TwosComplementDelta
+            // transforms. Positive = encoder turned CW (scroll down the list),
+            // negative = CCW (scroll up).
+            if (event.intDelta == 0) return true;
+            if (onBrowse) onBrowse (static_cast<int> (event.intDelta));
+            return true;
+        }
         default:
             return false;
     }

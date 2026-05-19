@@ -92,8 +92,8 @@ namespace sonik::midi::ui
 
         // PRD-0050: Import / Export toolbar + services.
         juce::Component                             toolbar;
-        juce::TextButton                            importButton { "Import\xE2\x80\xA6" };
-        juce::TextButton                            exportButton { "Export\xE2\x80\xA6" };
+        juce::TextButton                            importButton { "Import..." };
+        juce::TextButton                            exportButton { "Export..." };
         juce::TextButton                            swapPortsButton { "SWAP PROFILES BETWEEN PORTS" };
         juce::ThreadPool                            ioPool { 1 };
         std::unique_ptr<MappingExportService>       exportService;

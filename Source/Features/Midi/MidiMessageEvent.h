@@ -20,6 +20,7 @@ namespace sonik::midi
         std::int16_t       intDelta;
         std::uint64_t      deviceId;
         SoftTakeoverPolicy softTakeover; // PRD-0044: passed through for PRD-0045 to consult.
+        TargetIndex        targetIndex = InvalidTargetIndex; // Registry index for size/pad extraction.
     };
 
     static_assert (std::is_trivially_copyable_v<MidiMessageEvent>,

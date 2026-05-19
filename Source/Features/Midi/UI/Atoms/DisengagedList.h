@@ -61,6 +61,11 @@ namespace sonik::midi::ui
                 {
                     if (b.target == InvalidTargetIndex) continue;
                     if (b.softTakeover == SoftTakeoverPolicy::Never) continue;
+                    // Only show targets whose hardware has been touched at
+                    // least once since the last mapping switch.  A target with
+                    // no entry in the manager is simply "not yet seen" — not
+                    // meaningfully disengaged — and should not appear here.
+                    if (! softTakeover.hasEntry (deviceId, b.target)) continue;
                     if (softTakeover.getState (deviceId, b.target)
                         == TakeoverState::Disengaged)
                     {
@@ -90,7 +95,7 @@ namespace sonik::midi::ui
             g.drawRect (getLocalBounds(), 2);
 
             g.setFont (juce::Font (juce::FontOptions { "Space Mono", 11.0f, juce::Font::plain }));
-            g.drawText ("DISENGAGED (SOFT-TAKEOVER) — " + juce::String ((int) disengagedTargets.size()),
+            g.drawText ("DISENGAGED (SOFT-TAKEOVER) - " + juce::String ((int) disengagedTargets.size()),
                         getLocalBounds().reduced (8, 2).withHeight (kHeader),
                         juce::Justification::centredLeft, true);
         }

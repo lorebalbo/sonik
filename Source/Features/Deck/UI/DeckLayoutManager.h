@@ -12,6 +12,7 @@
 #include <memory>
 
 class StemSeparationManager;
+class DeckMidiHandler;  // forward-declared to avoid circular include
 
 class DeckLayoutManager final : public juce::Component,
                                  private juce::ValueTree::Listener
@@ -39,6 +40,11 @@ public:
         return 2 * kPreferredDeckH + deckGap;
     }
 
+    /** Connect the MIDI handler so that deck engine references are registered
+        whenever a DeckShellComponent is created or destroyed.
+        Call this once from SonikApplication after both objects exist. */
+    void setDeckMidiHandler (DeckMidiHandler* handler);
+
 private:
     // ValueTree::Listener
     void valueTreeChildAdded (juce::ValueTree& parent,
@@ -61,6 +67,7 @@ private:
     StemSeparationManager& stemSeparationManager;
     MasterClockManager&   masterClockManager;
     juce::ValueTree   decksNode;
+    DeckMidiHandler*  deckMidiHandler = nullptr;
 
     std::vector<std::unique_ptr<DeckShellComponent>> deckShells;
 

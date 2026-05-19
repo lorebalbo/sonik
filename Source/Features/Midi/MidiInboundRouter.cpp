@@ -158,7 +158,8 @@ namespace sonik::midi
                          rb.normalisedValue,
                          rb.intDelta,
                          event.deviceId,
-                         rb.softTakeover);
+                         rb.softTakeover,
+                         rb.target);
     }
 
     //--------------------------------------------------------------------------

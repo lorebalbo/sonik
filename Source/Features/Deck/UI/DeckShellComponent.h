@@ -53,6 +53,11 @@ public:
     /// Called when this deck should check whether it is the active deck.
     void updateActiveState();
 
+    /// Engine accessors for MIDI handler registration (message thread only).
+    BeatJumpEngine* getBeatJumpEngine() const noexcept { return beatJumpEngine.get(); }
+    LoopEngine*     getLoopEngine()     const noexcept { return loopEngine.get(); }
+    HotCueManager*  getHotCueManager()  const noexcept { return hotCueManager.get(); }
+
     // juce::Component
     void paint (juce::Graphics& g) override;
     void resized() override;

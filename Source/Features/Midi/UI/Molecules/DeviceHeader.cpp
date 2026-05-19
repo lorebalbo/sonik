@@ -686,7 +686,23 @@ namespace sonik::midi::ui
         {
             pendingPlaceholders[phIdx].midiKey  = learnedKey;
             pendingPlaceholders[phIdx].lsbData1 = 0xFFu;
-            pushSnapshotToTable();
+
+            // Promote to a real binding if the target was already assigned
+            // (the user set target first, then learned the MIDI key).
+            if (pendingPlaceholders[phIdx].target != InvalidTargetIndex)
+            {
+                beginEdit();
+                if (pendingEdit == nullptr) return;
+                pendingEdit->bindings.push_back (pendingPlaceholders[phIdx]);
+                pendingPlaceholders.erase (pendingPlaceholders.begin()
+                                            + (std::ptrdiff_t) phIdx);
+                pushPendingToTable();
+                scheduleDebouncedSave();
+            }
+            else
+            {
+                pushSnapshotToTable();
+            }
             return;
         }
 
@@ -738,6 +754,16 @@ namespace sonik::midi::ui
             if (currentPhIdx >= pendingPlaceholders.size()) return;
             pendingPlaceholders[currentPhIdx].midiKey  = learnedKey;
             pendingPlaceholders[currentPhIdx].lsbData1 = 0xFFu;
+
+            // Promote if the target was already assigned.
+            if (pendingPlaceholders[currentPhIdx].target != InvalidTargetIndex)
+            {
+                beginEdit();
+                if (pendingEdit == nullptr) return;
+                pendingEdit->bindings.push_back (pendingPlaceholders[currentPhIdx]);
+                pendingPlaceholders.erase (pendingPlaceholders.begin()
+                                            + (std::ptrdiff_t) currentPhIdx);
+            }
         }
         else
         {

@@ -249,6 +249,40 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     if (auto* content = mainWindow->getContent())
         content->setOnMidiClicked ([this]() { openMidiSettingsWindow(); });
 
+    // Wire AudioEngine into DeckMidiHandler (needed for TransportCue, PositionSeek).
+    if (deckMidiHandler != nullptr && audioEngine != nullptr)
+        deckMidiHandler->setAudioEngine (audioEngine.get());
+
+    // Wire MixerMidiHandler to the root state tree.
+    if (mixerMidiHandler != nullptr)
+        mixerMidiHandler->setStateTree (deckStateManager->getStateTree());
+
+    // Wire DeckLayoutManager → DeckMidiHandler so deck engines are registered.
+    // This also retroactively registers the engines for all decks created
+    // during mainWindow construction.
+    if (auto* content = mainWindow->getContent())
+        content->getLayoutManager().setDeckMidiHandler (deckMidiHandler.get());
+
+    // Wire LibraryMidiHandler callbacks to LibraryComponent.
+    if (auto* content = mainWindow->getContent())
+    {
+        if (auto* lib = content->getLibraryComponent())
+        {
+            libraryMidiHandler->onScrollUp    = [lib]() { lib->scrollLibraryUp(); };
+            libraryMidiHandler->onScrollDown  = [lib]() { lib->scrollLibraryDown(); };
+            libraryMidiHandler->onFocusSearch = [lib]() { lib->focusSearch(); };
+            libraryMidiHandler->onLoadDeck    = [lib] (int idx) { lib->loadSelectedTrackToDeck (idx); };
+            libraryMidiHandler->onBrowse      = [lib] (int steps)
+            {
+                for (int i = 0, n = std::abs (steps); i < n; ++i)
+                {
+                    if (steps > 0) lib->scrollLibraryDown();
+                    else           lib->scrollLibraryUp();
+                }
+            };
+        }
+    }
+
     watchFolderScanner->startScan();
 }
 

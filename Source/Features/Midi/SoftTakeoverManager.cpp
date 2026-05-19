@@ -179,6 +179,12 @@ namespace sonik::midi
         return it == entries.end() ? TakeoverState::Disengaged : it->second.state;
     }
 
+    bool SoftTakeoverManager::hasEntry (std::uint64_t deviceId, TargetIndex target) const
+    {
+        JUCE_ASSERT_MESSAGE_THREAD;
+        return entries.find (Key { deviceId, target }) != entries.end();
+    }
+
     void SoftTakeoverManager::addListener (SoftTakeoverManagerListener* l)
     {
         JUCE_ASSERT_MESSAGE_THREAD;

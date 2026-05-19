@@ -60,6 +60,7 @@ namespace sonik::midi
         LibraryScrollDown,
         LibraryLoadDeck,
         LibraryFocusSearch,
+        LibraryBrowse,    // encoder delta: intDelta > 0 → scroll down, < 0 → scroll up
 
         // ---- Resolver-internal (consumed by PRD-0044's mask manager) -------
         ModifierSet,

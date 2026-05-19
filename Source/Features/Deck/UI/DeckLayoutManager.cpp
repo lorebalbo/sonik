@@ -1,4 +1,5 @@
 #include "DeckLayoutManager.h"
+#include "../../../MidiHandlers/DeckMidiHandler.h"
 
 DeckLayoutManager::DeckLayoutManager (DeckStateManager& deckState,
                                       AudioEngine& engine,
@@ -23,6 +24,26 @@ DeckLayoutManager::DeckLayoutManager (DeckStateManager& deckState,
 DeckLayoutManager::~DeckLayoutManager()
 {
     decksNode.removeListener (this);
+}
+
+// --- MIDI handler wiring ---
+
+void DeckLayoutManager::setDeckMidiHandler (DeckMidiHandler* handler)
+{
+    deckMidiHandler = handler;
+    if (deckMidiHandler == nullptr)
+        return;
+
+    // Register all currently-alive shells with the handler.
+    auto ids = deckStateManager.getDeckIds();
+    for (int i = 0; i < static_cast<int> (deckShells.size()) && i < 4; ++i)
+    {
+        deckMidiHandler->registerDeckEngines (
+            static_cast<std::uint8_t> (i),
+            deckShells[static_cast<std::size_t> (i)]->getBeatJumpEngine(),
+            deckShells[static_cast<std::size_t> (i)]->getLoopEngine(),
+            deckShells[static_cast<std::size_t> (i)]->getHotCueManager());
+    }
 }
 
 // --- Rebuild shells from state ---
@@ -76,6 +97,21 @@ void DeckLayoutManager::addDeckShell (const juce::String& deckId)
     addAndMakeVisible (*shell);
     deckShells.push_back (std::move (shell));
 
+    // Register engines with the MIDI handler now that the shell exists.
+    if (deckMidiHandler != nullptr)
+    {
+        const auto newIndex = static_cast<std::uint8_t> (deckShells.size() - 1);
+        if (newIndex < 4)
+        {
+            auto& newShell = *deckShells.back();
+            deckMidiHandler->registerDeckEngines (
+                newIndex,
+                newShell.getBeatJumpEngine(),
+                newShell.getLoopEngine(),
+                newShell.getHotCueManager());
+        }
+    }
+
     if (getWidth() > 0 && getHeight() > 0)
         applyLayout();
 }
@@ -86,6 +122,14 @@ void DeckLayoutManager::removeDeckShell (const juce::String& deckId)
     {
         if ((*it)->getDeckId() == deckId)
         {
+            // Deregister engines before destroying the shell.
+            if (deckMidiHandler != nullptr)
+            {
+                const auto idx = static_cast<std::uint8_t> (std::distance (deckShells.begin(), it));
+                if (idx < 4)
+                    deckMidiHandler->deregisterDeckEngines (idx);
+            }
+
             removeChildComponent (it->get());
             deckShells.erase (it);
             break;

@@ -109,6 +109,7 @@ namespace sonik::midi
         /* LibraryScrollDown   */ RoutingClass::MessageThread,
         /* LibraryLoadDeck     */ RoutingClass::MessageThread,
         /* LibraryFocusSearch  */ RoutingClass::MessageThread,
+        /* LibraryBrowse       */ RoutingClass::MessageThread,
         /* ModifierSet         */ RoutingClass::MessageThread,
         /* ModifierClear       */ RoutingClass::MessageThread,
         /* ModifierToggle      */ RoutingClass::MessageThread,
@@ -138,7 +139,8 @@ namespace sonik::midi
                                     float              normalisedValue,
                                     std::int16_t       intDelta,
                                     std::uint64_t      deviceId,
-                                    SoftTakeoverPolicy softTakeover = SoftTakeoverPolicy::Pickup) noexcept;
+                                    SoftTakeoverPolicy softTakeover   = SoftTakeoverPolicy::Pickup,
+                                    TargetIndex        targetIndex    = InvalidTargetIndex) noexcept;
 
         // ---- Consumer (Audio thread) ---------------------------------------
         // Drains every ready event in FIFO order, including the wrap-around

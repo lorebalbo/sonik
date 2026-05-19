@@ -149,9 +149,10 @@ namespace sonik::midi
             SONIK_TARGET("mixer.deck.D.headphoneCue.toggle", HeadphoneCueToggle, Toggle, Global, 3),
 
             // ---- Library navigation --------------------------------------
-            SONIK_TARGET("library.scroll.up",     LibraryScrollUp,    Momentary, Global, GlobalDeckIndex),
-            SONIK_TARGET("library.scroll.down",   LibraryScrollDown,  Momentary, Global, GlobalDeckIndex),
-            SONIK_TARGET("library.focus.search",  LibraryFocusSearch, Momentary, Global, GlobalDeckIndex),
+            SONIK_TARGET("library.scroll.up",     LibraryScrollUp,    Momentary,   Global, GlobalDeckIndex),
+            SONIK_TARGET("library.scroll.down",   LibraryScrollDown,  Momentary,   Global, GlobalDeckIndex),
+            SONIK_TARGET("library.focus.search",  LibraryFocusSearch, Momentary,   Global, GlobalDeckIndex),
+            SONIK_TARGET("library.browse",         LibraryBrowse,      Continuous,  Global, GlobalDeckIndex),
             SONIK_TARGET("library.load.deck.A",   LibraryLoadDeck,    Momentary, Global, 0),
             SONIK_TARGET("library.load.deck.B",   LibraryLoadDeck,    Momentary, Global, 1),
             SONIK_TARGET("library.load.deck.C",   LibraryLoadDeck,    Momentary, Global, 2),

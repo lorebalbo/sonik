@@ -23,7 +23,8 @@ namespace sonik::midi
                                                    float              normalisedValue,
                                                    std::int16_t       intDelta,
                                                    std::uint64_t      deviceId,
-                                                   SoftTakeoverPolicy softTakeover) noexcept
+                                                   SoftTakeoverPolicy softTakeover,
+                                                   TargetIndex        targetIndex) noexcept
     {
         // Bounds-check the enum: a producer using a category value outside the
         // table (e.g. via a buggy cast) drops silently rather than indexing
@@ -76,7 +77,7 @@ namespace sonik::midi
             return BridgeWriteResult::Ok;
         }
 
-        const MidiMessageEvent event { category, deckIndex, normalisedValue, intDelta, deviceId, softTakeover };
+        const MidiMessageEvent event { category, deckIndex, normalisedValue, intDelta, deviceId, softTakeover, targetIndex };
         juce::MessageManager::callAsync ([sink, event]
         {
             sink->onMidiMessageThreadEvent (event);

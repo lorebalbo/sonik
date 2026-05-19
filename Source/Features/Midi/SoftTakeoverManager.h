@@ -113,6 +113,13 @@ namespace sonik::midi
 
         TakeoverState getState (std::uint64_t deviceId, TargetIndex target) const;
 
+        /** Returns true only if the hardware has produced at least one sample
+            for this (device, target) pair since the last reset.  A fresh
+            mapping with no hardware input yet has no entry, so it is neither
+            Engaged nor meaningfully Disengaged — the DisengagedList should
+            hide it until the user actually touches the control. */
+        bool hasEntry (std::uint64_t deviceId, TargetIndex target) const;
+
         //-- Listeners (Message thread only) -------------------------------
         void addListener    (SoftTakeoverManagerListener* l);
         void removeListener (SoftTakeoverManagerListener* l);

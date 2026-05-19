@@ -492,7 +492,7 @@ namespace sonik::midi::ui
                 {
                     if (i == kColActions && readOnly)
                     {
-                        drawCellText (g, "—", cell, juce::Colour (kMuted),
+                        drawCellText (g, "-", cell, juce::Colour (kMuted),
                                       juce::Justification::centred);
                     }
                     else

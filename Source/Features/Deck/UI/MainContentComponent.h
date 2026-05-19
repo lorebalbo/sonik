@@ -92,6 +92,12 @@ public:
         toolbar.onMidiClicked = std::move (cb);
     }
 
+    /** Access the library component for MIDI control wiring. */
+    LibraryComponent* getLibraryComponent() const noexcept { return libraryComponent.get(); }
+
+    /** Access the layout manager for MIDI handler engine registration. */
+    DeckLayoutManager& getLayoutManager() noexcept { return layoutManager; }
+
     void savePreparationListBeforeQuit (std::function<void(bool)> completion)
     {
         if (libraryComponent != nullptr)

@@ -48,6 +48,16 @@ public:
     void scanCompleted () override;
     void savePreparationListBeforeQuit (std::function<void(bool)> completion);
 
+    // ---- MIDI control interface (wired by SonikApplication) ----------------
+    /** Move the track table selection one row up. */
+    void scrollLibraryUp();
+    /** Move the track table selection one row down. */
+    void scrollLibraryDown();
+    /** Focus the search bar so the user can type a query. */
+    void focusSearch() { filterBar.focusSearchBar(); }
+    /** Load the currently selected track into the deck at the given 0-based index. */
+    void loadSelectedTrackToDeck (int deckIndex);
+
 private:
     // juce::ValueTree::Listener
     void valueTreePropertyChanged (juce::ValueTree& tree,

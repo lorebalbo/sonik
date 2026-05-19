@@ -588,6 +588,44 @@ void LibraryComponent::savePreparationListBeforeQuit (std::function<void(bool)> 
 }
 
 // =============================================================================
+// MIDI control interface
+// =============================================================================
+
+void LibraryComponent::scrollLibraryUp()
+{
+    const int current = trackTable.getSelectedRow();
+    const int total   = static_cast<int> (trackTable.resultBuffer.size());
+    if (total <= 0) return;
+    const int next = (current <= 0) ? 0 : current - 1;
+    trackTable.selectRow (next);
+    trackTable.scrollToRow (next);
+}
+
+void LibraryComponent::scrollLibraryDown()
+{
+    const int current = trackTable.getSelectedRow();
+    const int total   = static_cast<int> (trackTable.resultBuffer.size());
+    if (total <= 0) return;
+    const int next = (current < 0) ? 0 : std::min (current + 1, total - 1);
+    trackTable.selectRow (next);
+    trackTable.scrollToRow (next);
+}
+
+void LibraryComponent::loadSelectedTrackToDeck (int deckIndex)
+{
+    const int rowIndex = trackTable.getSelectedRow();
+    if (rowIndex < 0) return;
+
+    auto decksNode = rootState.getChildWithName (IDs::Decks);
+    if (deckIndex < 0 || deckIndex >= decksNode.getNumChildren()) return;
+
+    const auto deckId = decksNode.getChild (deckIndex).getProperty (IDs::id).toString();
+    if (deckId.isEmpty()) return;
+
+    loadTrackToDeck (rowIndex, deckId);
+}
+
+// =============================================================================
 // ValueTree::Listener
 // =============================================================================
 

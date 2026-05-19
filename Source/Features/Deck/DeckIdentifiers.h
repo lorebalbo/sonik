@@ -104,6 +104,17 @@ DECLARE_ID (masterDeckIndex)  // root-level int: Decks-array index of current ma
 // Active controller tab: "loop" | "cue" | "jump" | "grid"
 DECLARE_ID (controllerTab)
 
+// Per-deck EQ (message-thread state; audio engine reads on next processBlock)
+DECLARE_ID (eqHigh)  // normalised 0..1 (default 1.0 = flat)
+DECLARE_ID (eqMid)   // normalised 0..1 (default 1.0 = flat)
+DECLARE_ID (eqLow)   // normalised 0..1 (default 1.0 = flat)
+
+// Global mixer (written by MixerMidiHandler, read by audio engine)
+DECLARE_ID (crossfader)      // normalised 0..1 (0.5 = centre)
+DECLARE_ID (masterGain)      // normalised 0..1 (default 1.0)
+DECLARE_ID (headphonesGain)  // normalised 0..1 (default 1.0)
+DECLARE_ID (headphoneCueEnabled) // bool per-deck
+
 // Track loading protocol (PRD-0034)
 DECLARE_ID (pendingLoadPath)   // Library writes this; DeckShellComponent watches & calls AudioFileLoader
 DECLARE_ID (loadedFilePath)    // Set by DeckShellComponent after initiating a successful load
