@@ -292,6 +292,51 @@ target_sources(Sonik PRIVATE
     Source/Features/Midi/MidiInboundRouter.cpp
     Source/Features/Midi/SoftTakeoverManager.h
     Source/Features/Midi/SoftTakeoverManager.cpp
+    Source/Features/Mixer/State/MixerIdentifiers.h
+    Source/Features/Mixer/State/MixerIdentifiers.cpp
+    Source/Features/Mixer/State/MixerParam.h
+    Source/Features/Mixer/State/MixerAtomicSnapshot.h
+    Source/Features/Mixer/State/MixerMeterSnapshot.h
+    Source/Features/Mixer/State/MixerStateSchema.h
+    Source/Features/Mixer/State/MixerStateSchema.cpp
+    Source/Features/Mixer/State/MixerStateBridge.h
+    Source/Features/Mixer/State/MixerStateBridge.cpp
+    Source/Features/Mixer/Routing/ChannelStripSnapshot.h
+    Source/Features/Mixer/Routing/CrossfaderSnapshot.h
+    Source/Features/Mixer/Routing/MasterSnapshot.h
+    Source/Features/Mixer/Routing/ChannelStripProcessor.h
+    Source/Features/Mixer/Routing/ChannelStripProcessor.cpp
+    Source/Features/Mixer/Dsp/ThreeBandEq.h
+    Source/Features/Mixer/Dsp/ThreeBandEq.cpp
+    Source/Features/Mixer/Dsp/ChannelFilter.h
+    Source/Features/Mixer/Dsp/ChannelFilter.cpp
+    Source/Features/Mixer/Routing/ABBus.h
+    Source/Features/Mixer/Routing/CrossfaderStage.h
+    Source/Features/Mixer/Routing/MasterStage.h
+    Source/Features/Mixer/Routing/MasterStage.cpp
+    Source/Features/Mixer/Routing/ChannelMeter.h
+    Source/Features/Mixer/Ui/Atoms/MixRotaryKnob.h
+    Source/Features/Mixer/Ui/Atoms/MixRotaryKnob.cpp
+    Source/Features/Mixer/Ui/Atoms/MixKillButton.h
+    Source/Features/Mixer/Ui/Atoms/MixKillButton.cpp
+    Source/Features/Mixer/Ui/Atoms/MixAssignButton.h
+    Source/Features/Mixer/Ui/Atoms/MixAssignButton.cpp
+    Source/Features/Mixer/Ui/Atoms/MixLevelMeter.h
+    Source/Features/Mixer/Ui/Atoms/MixLevelMeter.cpp
+    Source/Features/Mixer/Ui/Atoms/MixFader.h
+    Source/Features/Mixer/Ui/Atoms/MixFader.cpp
+    Source/Features/Mixer/Ui/Molecules/ChannelStripEqSection.h
+    Source/Features/Mixer/Ui/Molecules/ChannelStripEqSection.cpp
+    Source/Features/Mixer/Ui/Molecules/ChannelStripMeter.h
+    Source/Features/Mixer/Ui/Molecules/ChannelStripMeter.cpp
+    Source/Features/Mixer/Ui/Molecules/CrossfaderRail.h
+    Source/Features/Mixer/Ui/Molecules/CrossfaderRail.cpp
+    Source/Features/Mixer/Ui/Organisms/ChannelStrip.h
+    Source/Features/Mixer/Ui/Organisms/ChannelStrip.cpp
+    Source/Features/Mixer/Ui/Organisms/MasterSection.h
+    Source/Features/Mixer/Ui/Organisms/MasterSection.cpp
+    Source/Features/Mixer/Ui/Organisms/MixerComponent.h
+    Source/Features/Mixer/Ui/Organisms/MixerComponent.cpp
     Source/MidiHandlers/DeckMidiHandler.h
     Source/MidiHandlers/DeckMidiHandler.cpp
     Source/MidiHandlers/MixerMidiHandler.h
@@ -388,8 +433,23 @@ add_executable(SonikTests
     Tests/ModifierLayerTests.cpp
     Tests/SoftTakeoverManagerTests.cpp
     Tests/MidiFeedbackEngineTests.cpp
+    Tests/MixerMidiWiringTests.cpp
     Tests/MidiSettingsPanelTests.cpp
     Tests/UsbPortDisambiguationTests.cpp
+    Tests/MixerStateSchemaTests.cpp
+    Tests/SignalFlowTests.cpp
+    Tests/CrossfaderTests.cpp
+    Tests/ChannelStripTests.cpp
+    Tests/ThreeBandEqTests.cpp
+    Tests/ChannelFilterTests.cpp
+    Tests/MasterMeterTests.cpp
+    Tests/MixerUiAtomsTests.cpp
+    Tests/MixerComponentTests.cpp
+    Tests/ChannelStripUiTests.cpp
+    Source/Features/Mixer/Routing/ChannelStripProcessor.cpp
+    Source/Features/Mixer/Routing/MasterStage.cpp
+    Source/Features/Mixer/Dsp/ThreeBandEq.cpp
+    Source/Features/Mixer/Dsp/ChannelFilter.cpp
     Source/Features/Library/LibraryQueryThread.cpp
     Source/Features/Library/LibraryAnalysisService.cpp
     Source/Features/Library/LibraryAnalysisQueue.cpp
@@ -459,6 +519,20 @@ add_executable(SonikTests
     Source/Features/Midi/MidiOutputThread.cpp
     Source/Features/Midi/MidiInboundRouter.cpp
     Source/Features/Midi/SoftTakeoverManager.cpp
+    Source/Features/Mixer/State/MixerStateSchema.cpp
+    Source/Features/Mixer/State/MixerStateBridge.cpp
+    Source/Features/Mixer/State/MixerIdentifiers.cpp
+    Source/Features/Mixer/Ui/Atoms/MixRotaryKnob.cpp
+    Source/Features/Mixer/Ui/Atoms/MixKillButton.cpp
+    Source/Features/Mixer/Ui/Atoms/MixAssignButton.cpp
+    Source/Features/Mixer/Ui/Atoms/MixLevelMeter.cpp
+    Source/Features/Mixer/Ui/Atoms/MixFader.cpp
+    Source/Features/Mixer/Ui/Molecules/ChannelStripEqSection.cpp
+    Source/Features/Mixer/Ui/Molecules/ChannelStripMeter.cpp
+    Source/Features/Mixer/Ui/Molecules/CrossfaderRail.cpp
+    Source/Features/Mixer/Ui/Organisms/ChannelStrip.cpp
+    Source/Features/Mixer/Ui/Organisms/MasterSection.cpp
+    Source/Features/Mixer/Ui/Organisms/MixerComponent.cpp
     Source/MidiHandlers/DeckMidiHandler.cpp
     Source/MidiHandlers/MixerMidiHandler.cpp
     Source/MidiHandlers/LibraryMidiHandler.cpp

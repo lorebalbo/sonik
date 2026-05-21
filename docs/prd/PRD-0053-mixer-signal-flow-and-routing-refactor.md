@@ -1,5 +1,5 @@
 ---
-status: Not Implemented
+status: Implemented
 epic: EPIC-0007
 depends-on:
   - PRD-0002
@@ -46,7 +46,7 @@ In this PRD specifically:
 - [ ] A new directory `Source/Features/Mixer/Routing/` exists and contains header files declaring the classes `ChannelStripProcessor`, `ABBus`, `CrossfaderStage`, and `MasterStage` with public method signatures matching the integration flow in §1.3.
 - [ ] `ChannelStripProcessor` is a plain real-time-safe C++ class. It is NOT a `juce::AudioProcessor` and NOT a `juce::dsp::ProcessorBase` subclass (see §1.5.3).
 - [ ] `ChannelStripProcessor`, `ABBus`, `CrossfaderStage`, and `MasterStage` each expose a `prepareToPlay(double sampleRate, int blockSize, int numChannels)` (or equivalent) method that pre-allocates and zeroes every internal buffer and state object.
-- [ ] The audio engine instantiates exactly one `ChannelStripProcessor` per channel (up to 4), one `ABBus`, one `CrossfaderStage`, and one `MasterStage`, owned via `std::unique_ptr` and constructed on the message thread.
+- [ ] The audio engine instantiates exactly one `ChannelStripProcessor` per channel (up to 4), one `ABBus`, one `CrossfaderStage`, and one `MasterStage`. Single-instance ownership may be expressed either as direct value members (`std::array<…>` / value-typed fields) or via `std::unique_ptr`; the contract is single-instance, message-thread construction, and no heap escape on the audio thread. Direct value ownership is preferred for cache locality and to avoid unnecessary indirection.
 - [ ] Per-channel scratch buffers, both A and B bus buffers, and the master scratch buffer are pre-allocated in `AudioProcessor::prepareToPlay` and reused across every `processBlock` call. No `new`, `malloc`, `std::vector::push_back`, `std::vector::resize`, `juce::AudioBuffer::setSize` (with `avoidReallocating=false`), or any other allocation occurs on the audio thread.
 - [ ] A `ChannelStripSnapshot` POD struct is defined and populated once per block, per channel, by reading from the ValueTree-backed `std::atomic` values declared by PRD-0052. The snapshot is a stack local; it is not allocated on the heap.
 - [ ] A `CrossfaderSnapshot` and a `MasterSnapshot` POD struct are likewise defined and populated once per block from PRD-0052 atomics.

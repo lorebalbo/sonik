@@ -21,6 +21,36 @@ namespace sonik::midi::ui
             return key;
         }
 
+        // When the user learns a MIDI key on a newly-added row, the placeholder
+        // defaults to Transform::Momentary (suitable for buttons). But Momentary
+        // quantizes the value to {0.0, 1.0}, which pins continuous controls
+        // (knobs, faders, pitch wheels) to either min or max on every move.
+        //
+        // We infer a more useful default from the message status byte:
+        //   0xB0 (CC)          → Linear   (7-bit)
+        //   0xE0 (Pitch Bend)  → Linear14 (14-bit)
+        //   anything else      → leave Momentary (Note On/Off)
+        //
+        // We only overwrite when the current transform is still the placeholder
+        // default (Momentary) — if the user has explicitly chosen a transform
+        // in the BindingTable combo, we never clobber it.
+        // (Definition lives on DeviceHeader as a static member so tests can
+        // exercise it directly without going through the UI.)
+    }
+
+    Transform DeviceHeader::inferDefaultTransform (std::uint32_t midiKey,
+                                                    Transform current) noexcept
+    {
+        if (current != Transform::Momentary) return current;
+        const std::uint8_t status = (std::uint8_t) ((midiKey >> 8) & 0xF0u);
+        if (status == 0xB0u) return Transform::Linear;
+        if (status == 0xE0u) return Transform::Linear14;
+        return Transform::Momentary;
+    }
+
+    namespace
+    {
+
         juce::String formatDeviceId (std::uint64_t id)
         {
             return juce::String::toHexString ((juce::int64) id).paddedLeft ('0', 16).toUpperCase();
@@ -686,6 +716,8 @@ namespace sonik::midi::ui
         {
             pendingPlaceholders[phIdx].midiKey  = learnedKey;
             pendingPlaceholders[phIdx].lsbData1 = 0xFFu;
+            pendingPlaceholders[phIdx].transform =
+                inferDefaultTransform (learnedKey, pendingPlaceholders[phIdx].transform);
 
             // Promote to a real binding if the target was already assigned
             // (the user set target first, then learned the MIDI key).
@@ -712,6 +744,8 @@ namespace sonik::midi::ui
 
         pendingEdit->bindings[bindingIndex].midiKey  = learnedKey;
         pendingEdit->bindings[bindingIndex].lsbData1 = 0xFFu;
+        pendingEdit->bindings[bindingIndex].transform =
+            inferDefaultTransform (learnedKey, pendingEdit->bindings[bindingIndex].transform);
 
         pushPendingToTable();
         scheduleDebouncedSave();
@@ -754,6 +788,8 @@ namespace sonik::midi::ui
             if (currentPhIdx >= pendingPlaceholders.size()) return;
             pendingPlaceholders[currentPhIdx].midiKey  = learnedKey;
             pendingPlaceholders[currentPhIdx].lsbData1 = 0xFFu;
+            pendingPlaceholders[currentPhIdx].transform =
+                inferDefaultTransform (learnedKey, pendingPlaceholders[currentPhIdx].transform);
 
             // Promote if the target was already assigned.
             if (pendingPlaceholders[currentPhIdx].target != InvalidTargetIndex)
@@ -775,6 +811,8 @@ namespace sonik::midi::ui
             if (currentBindingIndex >= pendingEdit->bindings.size()) return;
             pendingEdit->bindings[currentBindingIndex].midiKey  = learnedKey;
             pendingEdit->bindings[currentBindingIndex].lsbData1 = 0xFFu;
+            pendingEdit->bindings[currentBindingIndex].transform =
+                inferDefaultTransform (learnedKey, pendingEdit->bindings[currentBindingIndex].transform);
         }
 
         // Step 3: push & save (only if we touched real bindings).
@@ -930,7 +968,7 @@ namespace sonik::midi::ui
         b.lsbData1             = 0xFFu;
         b.transform            = Transform::Momentary;
         b.requiredModifierMask = 0u;
-        b.softTakeover         = SoftTakeoverPolicy::Pickup;
+        b.softTakeover         = SoftTakeoverPolicy::Always;
         b.feedback             = BindingFeedback {};
         b.disengagedFeedback   = BindingFeedback {};
         pendingPlaceholders.push_back (b);

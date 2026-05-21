@@ -11,6 +11,10 @@
 #include "DeckLayoutManager.h"
 #include "Features/Library/UI/LibraryComponent.h"
 #include "Features/Library/WatchFolderScanner.h"
+#include "Features/Mixer/State/MixerStateSchema.h"
+#include "Features/Mixer/State/MixerMeterSnapshot.h"
+#include "Features/Mixer/Ui/Organisms/MixerComponent.h"
+#include "Features/Deck/DeckIdentifiers.h"
 #include <functional>
 #include <memory>
 
@@ -29,13 +33,17 @@ public:
                           StemSeparationManager& stemMgr,
                           MasterClockManager& clockMgr,
                           LibraryAnalysisQueue& analysisQueue,
-                          TrackDatabase& trackDb)
+                          TrackDatabase& trackDb,
+                          MixerStateSchema& mixerSchema,
+                          MixerMeterSnapshot& mixerMeters)
         : deckStateManager (deckState),
           audioEngine (engine),
           audioFileLoader (loader),
           rootState (deckState.getStateTree()),
-          toolbar (deckState),
+          toolbar (deckState, mixerSchema, mixerMeters),
           layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr, clockMgr),
+          mixerComponent (mixerSchema, mixerMeters,
+                          rootState.getChildWithName (IDs::Decks)),
           libraryComponent (std::make_unique<LibraryComponent> (rootState, trackDb, analysisQueue))
     {
         setOpaque (true);
@@ -48,6 +56,7 @@ public:
 
         addAndMakeVisible (toolbar);
         addAndMakeVisible (layoutManager);
+        addAndMakeVisible (mixerComponent);
         addAndMakeVisible (*libraryComponent);
 
         rootState.addListener (this);
@@ -76,7 +85,23 @@ public:
         deckArea.removeFromRight (8);
         layoutManager.setBounds (deckArea);
 
-        // Library fills all remaining vertical space flush to the deck area.
+        // PRD-0060 (revised): the mixer no longer occupies a separate band
+        // beneath the deck rack — it sits in the centre column carved out by
+        // DeckLayoutManager so it visually anchors between deck A and deck B.
+        // We translate the manager-local mixer rect to parent coordinates.
+        auto mixerCol = layoutManager.getMixerColumnArea();
+        if (! mixerCol.isEmpty())
+        {
+            mixerCol.translate (layoutManager.getX(), layoutManager.getY());
+            mixerComponent.setBounds (mixerCol);
+            mixerComponent.setVisible (true);
+        }
+        else
+        {
+            mixerComponent.setVisible (false);
+        }
+
+        // Library fills all remaining vertical space flush below the deck rack.
         libraryComponent->setBounds (b);
     }
 
@@ -226,6 +251,7 @@ private:
 
     GlobalToolbar      toolbar;
     DeckLayoutManager  layoutManager;
+    MixerComponent     mixerComponent;
     juce::TooltipWindow tooltipWindow { this };
 
     // ---- Library panel ----------------------------------------------------

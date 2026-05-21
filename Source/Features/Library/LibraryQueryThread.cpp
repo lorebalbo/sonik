@@ -13,7 +13,7 @@ namespace
 /// "date_added" so user input can never be interpolated into SQL.
 const char* kAllowedSortColumns[] = {
     "date_added", "bpm", "title", "artist", "album",
-    "rating", "duration_seconds", "play_count", nullptr
+    "rating", "duration_seconds", "play_count", "key_index", nullptr
 };
 
 bool isSafeColumn (const juce::String& col)
@@ -1148,8 +1148,28 @@ juce::String LibraryQueryThread::buildSql (const QueryParams& params, std::vecto
         const juce::String safeCol = isSafeColumn (params.sortColumn)
                                          ? params.sortColumn
                                          : "date_added";
-        sql += " ORDER BY lt." + safeCol;
-        sql += params.sortAscending ? " ASC" : " DESC";
+
+        if (safeCol == "key_index")
+        {
+            // Camelot-aware sort.
+            // DB encoding: 0..11 = 1A..12A (A=minor), 12..23 = 1B..12B (B=major).
+            // NULL / -1 = unanalysed → always sort last.
+            // COALESCE normalises NULL to -1 so all CASE guards work correctly.
+            const char* dir = params.sortAscending ? "ASC" : "DESC";
+            sql += " ORDER BY "
+                   "CASE WHEN COALESCE(lt.key_index,-1) < 0 THEN 1 ELSE 0 END ASC, "
+                   "CASE WHEN COALESCE(lt.key_index,-1) < 12 "
+                   "     THEN COALESCE(lt.key_index,-1) + 1 "
+                   "     ELSE COALESCE(lt.key_index,-1) - 11 END "
+                   + juce::String (dir) + ", "
+                   "CASE WHEN COALESCE(lt.key_index,-1) >= 12 THEN 1 ELSE 0 END "
+                   + juce::String (dir);
+        }
+        else
+        {
+            sql += " ORDER BY lt." + safeCol;
+            sql += params.sortAscending ? " ASC" : " DESC";
+        }
     }
 
     return sql;

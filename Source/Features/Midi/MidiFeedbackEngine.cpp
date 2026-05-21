@@ -1,6 +1,7 @@
 #include "MidiFeedbackEngine.h"
 
 #include "../Deck/DeckIdentifiers.h"
+#include "../Mixer/State/MixerIdentifiers.h"
 
 #include <algorithm>
 #include <cstring>
@@ -127,6 +128,32 @@ namespace sonik::midi
             case MidiTargetCategory::HeadphonesGain:
                 out.kind = SourceKind::Continuous;
                 break;
+
+            // PRD-0061: per-channel mixer boolean LEDs.
+            case MidiTargetCategory::ChannelKillHigh:
+                out.kind = SourceKind::MixerChannelBool;
+                out.auxIndex = static_cast<std::uint8_t> (MixerBoolProp::KillHigh);
+                break;
+            case MidiTargetCategory::ChannelKillMid:
+                out.kind = SourceKind::MixerChannelBool;
+                out.auxIndex = static_cast<std::uint8_t> (MixerBoolProp::KillMid);
+                break;
+            case MidiTargetCategory::ChannelKillLow:
+                out.kind = SourceKind::MixerChannelBool;
+                out.auxIndex = static_cast<std::uint8_t> (MixerBoolProp::KillLow);
+                break;
+            case MidiTargetCategory::ChannelAssignA:
+                out.kind = SourceKind::MixerChannelBool;
+                out.auxIndex = static_cast<std::uint8_t> (MixerBoolProp::AssignA);
+                break;
+            case MidiTargetCategory::ChannelAssignB:
+                out.kind = SourceKind::MixerChannelBool;
+                out.auxIndex = static_cast<std::uint8_t> (MixerBoolProp::AssignB);
+                break;
+            case MidiTargetCategory::ChannelCue:
+                out.kind = SourceKind::MixerChannelBool;
+                out.auxIndex = static_cast<std::uint8_t> (MixerBoolProp::Cue);
+                break;
             default:
                 break;
         }
@@ -178,6 +205,49 @@ namespace sonik::midi
         SourceValue out {};
         if (key.kind == SourceKind::None || key.deckIndex > 3)
             return out;
+
+        // PRD-0061: mixer per-channel boolean sources read from MixerIDs::Mixer tree.
+        if (key.kind == SourceKind::MixerChannelBool)
+        {
+            auto mixer = root.getChildWithName (MixerIDs::Mixer);
+            if (! mixer.isValid()) return out;
+            auto chContainer = mixer.getChildWithName (MixerIDs::channel);
+            if (! chContainer.isValid()) return out;
+            const juce::Identifier letters[] = { MixerIDs::A, MixerIDs::B, MixerIDs::C, MixerIDs::D };
+            auto ch = chContainer.getChildWithName (letters[key.deckIndex]);
+            if (! ch.isValid()) return out;
+
+            const auto prop = static_cast<MixerBoolProp> (key.auxIndex);
+            switch (prop)
+            {
+                case MixerBoolProp::AssignA:
+                    out.boolValue = static_cast<bool> (ch.getProperty (MixerIDs::assignA, false));
+                    out.valid = true;
+                    return out;
+                case MixerBoolProp::AssignB:
+                    out.boolValue = static_cast<bool> (ch.getProperty (MixerIDs::assignB, false));
+                    out.valid = true;
+                    return out;
+                case MixerBoolProp::Cue:
+                    out.boolValue = static_cast<bool> (ch.getProperty (MixerIDs::cue, false));
+                    out.valid = true;
+                    return out;
+                case MixerBoolProp::KillHigh:
+                case MixerBoolProp::KillMid:
+                case MixerBoolProp::KillLow:
+                {
+                    auto eq = ch.getChildWithName (MixerIDs::eq);
+                    if (! eq.isValid()) return out;
+                    const auto id = (prop == MixerBoolProp::KillHigh) ? MixerIDs::killHigh
+                                  : (prop == MixerBoolProp::KillMid)  ? MixerIDs::killMid
+                                                                      : MixerIDs::killLow;
+                    out.boolValue = static_cast<bool> (eq.getProperty (id, false));
+                    out.valid = true;
+                    return out;
+                }
+            }
+            return out;
+        }
 
         auto deck = deckTreeFor (key.deckIndex);
         if (! deck.isValid())
@@ -418,6 +488,52 @@ namespace sonik::midi
                 dispatchSourceChanged (key);
             }
         }
+        else
+        {
+            // PRD-0061: mixer channel tree (MixerIDs::A/B/C/D) — top-level
+            // properties (assignA/B, cue) live here; kill* lives on the
+            // nested MixerIDs::eq tree.
+            auto mixerChannelIndex = [] (const juce::Identifier& id) -> int
+            {
+                if (id == MixerIDs::A) return 0;
+                if (id == MixerIDs::B) return 1;
+                if (id == MixerIDs::C) return 2;
+                if (id == MixerIDs::D) return 3;
+                return -1;
+            };
+
+            const int idxFromSelf = mixerChannelIndex (type);
+            if (idxFromSelf >= 0)
+            {
+                std::uint8_t aux = 0;
+                if (property == MixerIDs::assignA) aux = static_cast<std::uint8_t> (MixerBoolProp::AssignA);
+                else if (property == MixerIDs::assignB) aux = static_cast<std::uint8_t> (MixerBoolProp::AssignB);
+                else if (property == MixerIDs::cue)     aux = static_cast<std::uint8_t> (MixerBoolProp::Cue);
+                if (aux != 0)
+                {
+                    key = { SourceKind::MixerChannelBool,
+                            static_cast<std::uint8_t> (idxFromSelf), aux };
+                    dispatchSourceChanged (key);
+                }
+            }
+            else if (type == MixerIDs::eq)
+            {
+                const int idxFromParent = mixerChannelIndex (tree.getParent().getType());
+                if (idxFromParent >= 0)
+                {
+                    std::uint8_t aux = 0;
+                    if (property == MixerIDs::killHigh) aux = static_cast<std::uint8_t> (MixerBoolProp::KillHigh);
+                    else if (property == MixerIDs::killMid)  aux = static_cast<std::uint8_t> (MixerBoolProp::KillMid);
+                    else if (property == MixerIDs::killLow)  aux = static_cast<std::uint8_t> (MixerBoolProp::KillLow);
+                    if (aux != 0)
+                    {
+                        key = { SourceKind::MixerChannelBool,
+                                static_cast<std::uint8_t> (idxFromParent), aux };
+                        dispatchSourceChanged (key);
+                    }
+                }
+            }
+        }
     }
 
     void MidiFeedbackEngine::dispatchSourceChanged (const SourceKey& key)
@@ -441,6 +557,8 @@ namespace sonik::midi
                 if (bk.deckIndex != key.deckIndex) continue;
                 if ((bk.kind == SourceKind::HotCueValid || bk.kind == SourceKind::HotCueColour)
                     && bk.auxIndex != key.auxIndex)
+                    continue;
+                if (bk.kind == SourceKind::MixerChannelBool && bk.auxIndex != key.auxIndex)
                     continue;
 
                 // Reject styles that don't match this kind (Colour binding

@@ -184,7 +184,7 @@ private:
     static constexpr int kBelowFrameGap    = 12;   // gap between Frame 50 and rows below
     static constexpr int kHeaderH          = 59;   // Deck Header height
     static constexpr int kControlRowH      = 23;   // MASTER / SYNC / QUANT / SLIP row height
-    static constexpr int kMainH            = 113;  // Stems / Waveform / Pitch section height
+    static constexpr int kMainH            = 193;  // Stems / Waveform / Pitch section height
     static constexpr int kControllerH      = 23;   // LOOP strip height (was 86)
     static constexpr int kCuePadsH         = 23;   // Hot cue pads row height
     static constexpr int kStemsSidebarW    = 23;   // Vertical stems sidebar width

@@ -26,6 +26,9 @@ public:
     /// Called when the user clicks the trash icon that appears on badge hover.
     std::function<void()> onRemoveRequested;
 
+    /// Called when the user confirms a new BPM via the inline edit popup.
+    std::function<void(double)> onBpmEditRequested;
+
 private:
     // ValueTree::Listener
     void valueTreePropertyChanged (juce::ValueTree& tree,
@@ -50,8 +53,14 @@ private:
     void paintBpmKeyInfo  (juce::Graphics& g, juce::Rectangle<int> area);
     void paintDeckBadge   (juce::Graphics& g, juce::Rectangle<int> area);
     void paintTrashIcon   (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour col);
+    void paintPencilIcon  (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour col);
 
     bool canRemoveDeck() const;
+
+    /// Computes the screen-space bounds of the orig-BPM row used for hover/click detection.
+    juce::Rectangle<int> computeOrigBpmArea() const;
+
+    void showBpmEditPopup();
 
     juce::ValueTree   deckTree;
     DeckStateManager& deckStateManager;
@@ -72,6 +81,7 @@ private:
     // Scrolling state (title)
     bool  isHovering         = false;
     bool  badgeHovered       = false;   // true only when mouse is over badge AND can remove
+    bool  bpmHovering        = false;   // true when mouse is over the orig-BPM row
     float titleScrollOffset  = 0.0f;
     float artistScrollOffset = 0.0f;
     float scrollPauseTimer   = 0.0f;

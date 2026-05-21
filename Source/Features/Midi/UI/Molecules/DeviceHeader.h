@@ -61,6 +61,18 @@ namespace sonik::midi::ui
             Read by the parent `MidiSettingsPanel::Content` layout. */
         int getPreferredHeight() const noexcept;
 
+        /** Pure helper (exposed for unit tests). Given a freshly-learned
+            midiKey and the current Transform of the row, returns the
+            Transform that should be stored. If the row is still at the
+            placeholder default (Momentary), this promotes CC keys to
+            Linear and Pitch-Bend keys to Linear14, so continuous controls
+            (knobs, faders, wheels) move smoothly instead of pinning to
+            min/max. If the user has already chosen a transform explicitly,
+            it is preserved.
+            See PRD note "MIDI learn binds but on-screen knobs don't move". */
+        static Transform inferDefaultTransform (std::uint32_t midiKey,
+                                                Transform current) noexcept;
+
     private:
         void rebuildProfileList();
         void refreshPortBindingControls();

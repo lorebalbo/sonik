@@ -410,8 +410,13 @@ namespace sonik::midi
                         continue;
                 }
 
-                // softTakeover (optional)
-                SoftTakeoverPolicy soft = SoftTakeoverPolicy::Pickup;
+                // softTakeover (optional). When the JSON omits this field, new
+                // bindings default to Always (write-through) so a freshly-learned
+                // hardware control writes to the ValueTree on the very first
+                // event — the user never sees a silent UI while waiting to
+                // "cross" the software value. Bundled mappings that need
+                // Pickup must declare it explicitly.
+                SoftTakeoverPolicy soft = SoftTakeoverPolicy::Always;
                 if (bVar.hasProperty ("softTakeover"))
                 {
                     const auto softStr = bVar.getProperty ("softTakeover", "").toString();

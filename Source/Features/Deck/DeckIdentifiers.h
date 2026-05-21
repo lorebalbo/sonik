@@ -119,6 +119,10 @@ DECLARE_ID (headphoneCueEnabled) // bool per-deck
 DECLARE_ID (pendingLoadPath)   // Library writes this; DeckShellComponent watches & calls AudioFileLoader
 DECLARE_ID (loadedFilePath)    // Set by DeckShellComponent after initiating a successful load
 
+// Signals that a track's BPM was manually edited and persisted to the DB;
+// root-level property consumed by LibraryComponent to refresh its query.
+DECLARE_ID (trackBpmManuallyChanged)
+
 #undef DECLARE_ID
 
 } // namespace IDs

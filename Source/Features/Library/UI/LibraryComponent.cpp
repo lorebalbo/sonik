@@ -632,6 +632,14 @@ void LibraryComponent::loadSelectedTrackToDeck (int deckIndex)
 void LibraryComponent::valueTreePropertyChanged (juce::ValueTree&         tree,
                                                   const juce::Identifier& property)
 {
+    // Root-level signal: a track's BPM was manually edited and the DB has been
+    // updated — force an immediate re-query so the table reflects the new value.
+    if (property == IDs::trackBpmManuallyChanged)
+    {
+        dispatchCurrentQuery (true);
+        return;
+    }
+
     // We care about changes on Deck nodes or their immediate children
     // (BeatGrid, TrackMetadata, KeyInfo).
     const juce::ValueTree& parent = tree.getParent();

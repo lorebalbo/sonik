@@ -110,6 +110,18 @@ namespace sonik::midi
         /* LibraryLoadDeck     */ RoutingClass::MessageThread,
         /* LibraryFocusSearch  */ RoutingClass::MessageThread,
         /* LibraryBrowse       */ RoutingClass::MessageThread,
+        /* ChannelGain         */ RoutingClass::MessageThread,
+        /* ChannelEqHigh       */ RoutingClass::MessageThread,
+        /* ChannelEqMid        */ RoutingClass::MessageThread,
+        /* ChannelEqLow        */ RoutingClass::MessageThread,
+        /* ChannelKillHigh     */ RoutingClass::MessageThread,
+        /* ChannelKillMid      */ RoutingClass::MessageThread,
+        /* ChannelKillLow      */ RoutingClass::MessageThread,
+        /* ChannelFilter       */ RoutingClass::MessageThread,
+        /* ChannelFader        */ RoutingClass::MessageThread,
+        /* ChannelAssignA      */ RoutingClass::MessageThread,
+        /* ChannelAssignB      */ RoutingClass::MessageThread,
+        /* ChannelCue          */ RoutingClass::MessageThread,
         /* ModifierSet         */ RoutingClass::MessageThread,
         /* ModifierClear       */ RoutingClass::MessageThread,
         /* ModifierToggle      */ RoutingClass::MessageThread,
@@ -139,7 +151,7 @@ namespace sonik::midi
                                     float              normalisedValue,
                                     std::int16_t       intDelta,
                                     std::uint64_t      deviceId,
-                                    SoftTakeoverPolicy softTakeover   = SoftTakeoverPolicy::Pickup,
+                                    SoftTakeoverPolicy softTakeover   = SoftTakeoverPolicy::Always,
                                     TargetIndex        targetIndex    = InvalidTargetIndex) noexcept;
 
         // ---- Consumer (Audio thread) ---------------------------------------

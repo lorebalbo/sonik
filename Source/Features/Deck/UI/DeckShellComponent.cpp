@@ -32,6 +32,7 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
         if (onRemoveRequested)
             onRemoveRequested (deckId);
     };
+    trackInfoComponent->onBpmEditRequested = [this] (double bpm) { handleBpmSave (bpm); };
     addAndMakeVisible (*trackInfoComponent);
 
     // -----------------------------------------------------------------------
@@ -348,6 +349,16 @@ void DeckShellComponent::handleBpmSave (double newBpm)
 
     double newInterval = sr * 60.0 / newBpm;
 
+    // --- Update library_tracks.bpm BEFORE writing the ValueTree so that any
+    //     listener-triggered query sees the fresh value already in the DB.
+    {
+        auto meta        = deckTree.getChildWithName (IDs::TrackMetadata);
+        auto filePath    = meta.getProperty (IDs::filePath,    "").toString();
+        auto contentHash = meta.getProperty (IDs::contentHash, "").toString();
+        if (filePath.isNotEmpty() && contentHash.isNotEmpty())
+            deckStateManager.getDatabase().updateLibraryTrackBpm (filePath, contentHash, newBpm);
+    }
+
     // Update ValueTree (message thread — mandatory per AGENTS.md)
     beatTree.setProperty (IDs::bpm,                 newBpm,      nullptr);
     beatTree.setProperty (IDs::beatIntervalSamples, newInterval, nullptr);
@@ -365,8 +376,15 @@ void DeckShellComponent::handleBpmSave (double newBpm)
     if (waveformComponent != nullptr && bgData != nullptr)
         waveformComponent->setBeatGridData (bgData);
 
-    // Persist to SQLite
+    // Persist beatgrid JSON to track_data table
     persistBeatGridToDb();
+
+    // Signal LibraryComponent to refresh: set a root-state property that
+    // LibraryComponent::valueTreePropertyChanged listens for.
+    rootState.setProperty (IDs::trackBpmManuallyChanged,
+                           deckTree.getChildWithName (IDs::TrackMetadata)
+                                   .getProperty (IDs::filePath, "").toString(),
+                           nullptr);
 }
 
 void DeckShellComponent::persistBeatGridToDb()

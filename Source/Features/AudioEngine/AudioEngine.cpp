@@ -22,6 +22,28 @@ AudioEngine::AudioEngine (juce::ValueTree parentState)
     audioDeviceNode.setProperty (IDs::cpuOverload,      false,   nullptr);
     audioDeviceNode.setProperty (IDs::deviceError,      "",      nullptr);
     rootState.addChild (audioDeviceNode, -1, nullptr);
+
+    // PRD-0053: Pre-allocate pipeline scratch buffers to a conservative
+    // default size so the audio callback is safe even when invoked in tests
+    // without a preceding audioDeviceAboutToStart call. The real device
+    // call will resize these to the true block size in audioDeviceAboutToStart.
+    constexpr size_t kDefaultBlockSize = 2048;
+    for (size_t s = 0; s < 4; ++s)
+    {
+        deckScratchL[s].assign (kDefaultBlockSize, 0.0f);
+        deckScratchR[s].assign (kDefaultBlockSize, 0.0f);
+        channelScratchL[s].assign (kDefaultBlockSize, 0.0f);
+        channelScratchR[s].assign (kDefaultBlockSize, 0.0f);
+        channelStrips[s].prepareToPlay (44100.0, static_cast<int>(kDefaultBlockSize), 2);
+    }
+    busAL.assign (kDefaultBlockSize, 0.0f);
+    busAR.assign (kDefaultBlockSize, 0.0f);
+    busBL.assign (kDefaultBlockSize, 0.0f);
+    busBR.assign (kDefaultBlockSize, 0.0f);
+    masterScratchL.assign (kDefaultBlockSize, 0.0f);
+    masterScratchR.assign (kDefaultBlockSize, 0.0f);
+    crossfaderStage.prepareToPlay (44100.0, static_cast<int>(kDefaultBlockSize), 2);
+    masterStage.prepareToPlay     (44100.0, static_cast<int>(kDefaultBlockSize), 2);
 }
 
 AudioEngine::~AudioEngine()
@@ -127,6 +149,27 @@ void AudioEngine::setMidiMessageBridge (sonik::midi::MidiMessageBridge* bridge)
 {
     JUCE_ASSERT_MESSAGE_THREAD;
     midiBridge.store (bridge, std::memory_order_release);
+}
+
+void AudioEngine::setMixerAtomicSnapshot (MixerAtomicSnapshot* snapshot) noexcept
+{
+    // Store with release so the audio thread's acquire-load sees the
+    // fully-constructed snapshot object.
+    mixerAtomicSnapshot.store (snapshot, std::memory_order_release);
+}
+
+void AudioEngine::setMixerMeterSnapshot (MixerMeterSnapshot* snapshot) noexcept
+{
+    // PRD-0058: wire each ChannelStripProcessor and the MasterStage with the
+    // slot they will publish into. Called once from the message thread
+    // before the audio device starts; the meter slot pointers are stable
+    // for the lifetime of the application.
+    JUCE_ASSERT_MESSAGE_THREAD;
+    mixerMeterSnapshot.store (snapshot, std::memory_order_release);
+    for (int i = 0; i < 4; ++i)
+        channelStrips[static_cast<size_t> (i)].setMeterSlot (
+            snapshot != nullptr ? &snapshot->channels[i] : nullptr);
+    masterStage.setMeterSlot (snapshot != nullptr ? &snapshot->master : nullptr);
 }
 
 void AudioEngine::applyAudioMidiEvent (const sonik::midi::MidiAudioEvent& event) noexcept
@@ -599,6 +642,16 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
     for (int ch = 0; ch < numOutputChannels; ++ch)
         juce::FloatVectorOperations::clear (outputChannelData[ch], numSamples);
 
+    // PRD-0053: clear per-deck scratch buffers so paused/stopped decks do not
+    // bleed stale audio from the previous block through the mixer pipeline.
+    // (The deck loop only writes to deckScratchL/R when actively generating
+    // samples; a paused deck skips that write entirely.)
+    for (size_t s = 0; s < 4; ++s)
+    {
+        juce::FloatVectorOperations::clear (deckScratchL[s].data(), numSamples);
+        juce::FloatVectorOperations::clear (deckScratchR[s].data(), numSamples);
+    }
+
     if (numOutputChannels < 2 || numSamples == 0)
         return;
 
@@ -985,7 +1038,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         }
 
         // 5. Generate samples
-        float gain   = audioState->gain.load (std::memory_order_relaxed);
+        // PRD-0054: gain is now applied inside ChannelStripProcessor with smoothing.
+        // audioState->gain is no longer consumed on the audio thread.
         float sPeakL = 0.0f, sPeakR = 0.0f;
         float sumSqL = 0.0f, sumSqR = 0.0f;
 
@@ -1688,9 +1742,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             sumSqL += rawL * rawL;
             sumSqR += rawR * rawR;
 
-            // Post-gain+fade accumulation
-            outL[i] += rawL * gain * fadeGain;
-            outR[i] += rawR * gain * fadeGain;
+            // PRD-0053: Write into per-deck scratch buffer instead of directly
+            // into the output bus. The mixer pipeline stages accumulate these
+            // buffers into the output after all decks have been processed.
+            // PRD-0054: gain removed from here; ChannelStripProcessor applies it
+            // with per-sample smoothing (7 ms ramp) to prevent zipper noise.
+            deckScratchL[slot][static_cast<size_t>(i)] = rawL * fadeGain;
+            deckScratchR[slot][static_cast<size_t>(i)] = rawR * fadeGain;
 
             // Advance playhead
             // In stretched mode, we still advance per-sample by speed (same as vinyl).
@@ -1767,6 +1825,124 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         source->rmsR.store  (std::sqrt (sumSqR * invN), std::memory_order_relaxed);
     }
 
+    // -------------------------------------------------------------------------
+    // PRD-0053 + PRD-0057: Mixer pipeline
+    //   1. Clear A/B bus accumulators.
+    //   2. Snapshot per-block mixer parameters from PRD-0052 atomics.
+    //   3. For each active channel: ChannelStripProcessor → ABBus (PRD-0057
+    //      honours assignA/assignB; channels with both flags false are silent).
+    //   4. CrossfaderStage: per-sample equal-power (smooth) / hard-cut (sharp)
+    //      curve law with a 7 ms one-pole position smoother (PRD-0057 §1.5.6).
+    //   5. MasterStage: copy masterScratch → output bus.
+    //   6. Hard clip (unchanged from PRD-0002, runs AFTER MasterStage).
+    //
+    // §1.5.5: Inactive channels (no deck / no buffer) are skipped entirely;
+    // their absence produces silence in the bus (not zero-summed, simply absent).
+    // The channelActive check uses the same state already probed in the deck loop
+    // above — we re-probe it here once per channel, never per-sample.
+    // -------------------------------------------------------------------------
+
+    juce::FloatVectorOperations::clear (busAL.data(), numSamples);
+    juce::FloatVectorOperations::clear (busAR.data(), numSamples);
+    juce::FloatVectorOperations::clear (busBL.data(), numSamples);
+    juce::FloatVectorOperations::clear (busBR.data(), numSamples);
+
+    // Snapshot block-level mixer parameters once (lock-free, no allocation).
+    auto* const mxSnapshot = mixerAtomicSnapshot.load (std::memory_order_acquire);
+
+    CrossfaderSnapshot xfSnap;
+    MasterSnapshot     masterSnap;
+    if (mxSnapshot != nullptr)
+    {
+        xfSnap.crossfader     = mxSnapshot->crossfader.load (std::memory_order_relaxed);
+        // PRD-0057: translate the int-mirrored enum back into the strongly-
+        // typed CrossfaderCurve. Values outside the known range fall back
+        // to Smooth (the documented default).
+        const int curveEnc = mxSnapshot->crossfaderCurve.load (std::memory_order_relaxed);
+        xfSnap.curve = (curveEnc == 1) ? CrossfaderCurve::Sharp
+                                       : CrossfaderCurve::Smooth;
+        masterSnap.masterGain = mxSnapshot->masterGain.load (std::memory_order_relaxed);
+    }
+    else
+    {
+        // PRD-0057 §1.5.5 / pre-PRD-0053 identity fallback: when no mixer
+        // atomic snapshot has been installed (test harnesses, early start-up),
+        // the crossfader must behave as an identity passthrough so the audio
+        // engine remains testable in isolation. We force the internal Linear
+        // curve at the centred position; combined with the unconditional
+        // dual-assign below, this yields master = (busA + busB) * 0.5 = channel.
+        xfSnap.crossfader = 0.5f;
+        xfSnap.curve      = CrossfaderCurve::Linear;
+    }
+
+    for (size_t slot = 0; slot < 4; ++slot)
+    {
+        // §1.5.5: re-probe active state (same logic as the deck loop).
+        auto* src = deckSlots[slot].load (std::memory_order_acquire);
+        if (src == nullptr) continue;
+        if (src->audioState == nullptr) continue;
+        const bool hasBuffer =
+            (src->channelL.load (std::memory_order_acquire) != nullptr)
+            && (src->channelR.load (std::memory_order_acquire) != nullptr)
+            && (src->bufferNumFrames.load (std::memory_order_relaxed) > 0);
+        if (! hasBuffer) continue;
+
+        // Populate per-channel snapshot from mixer atomics.
+        ChannelStripSnapshot chSnap;
+        if (mxSnapshot != nullptr)
+        {
+            const auto& atomCh = mxSnapshot->channels[slot];
+            chSnap.gain     = atomCh.gain.load     (std::memory_order_relaxed);
+            chSnap.eqHigh   = atomCh.eqHigh.load   (std::memory_order_relaxed);
+            chSnap.eqMid    = atomCh.eqMid.load    (std::memory_order_relaxed);
+            chSnap.eqLow    = atomCh.eqLow.load    (std::memory_order_relaxed);
+            chSnap.filter   = atomCh.filter.load   (std::memory_order_relaxed);
+            chSnap.fader    = atomCh.fader.load    (std::memory_order_relaxed);
+            chSnap.killHigh = atomCh.killHigh.load (std::memory_order_relaxed);
+            chSnap.killMid  = atomCh.killMid.load  (std::memory_order_relaxed);
+            chSnap.killLow  = atomCh.killLow.load  (std::memory_order_relaxed);
+            chSnap.assignA  = atomCh.assignA.load  (std::memory_order_relaxed);
+            chSnap.assignB  = atomCh.assignB.load  (std::memory_order_relaxed);
+        }
+        else
+        {
+            // PRD-0057 identity fallback (see crossfader fallback above):
+            // route every active channel to both buses so the test harness
+            // pipeline matches the pre-PRD-0053 direct-sum reference.
+            chSnap.assignA = true;
+            chSnap.assignB = true;
+        }
+
+        // PRD-0053 pass-through strip: copies deckScratch → channelScratch.
+        channelStrips[slot].process (
+            deckScratchL[slot].data(), deckScratchR[slot].data(),
+            channelScratchL[slot].data(), channelScratchR[slot].data(),
+            numSamples, chSnap);
+
+        // PRD-0057 §1.5.1: route the per-channel signal into bus A and/or
+        // bus B according to the snapshot's assign flags.
+        ABBus::accumulate (
+            channelScratchL[slot].data(), channelScratchR[slot].data(),
+            chSnap.assignA, chSnap.assignB,
+            busAL.data(), busAR.data(),
+            busBL.data(), busBR.data(),
+            numSamples);
+    }
+
+    // PRD-0057: per-sample (gainA * busA + gainB * busB) with smoothed
+    // position and the curve selected by xfSnap.curve.
+    crossfaderStage.process (
+        busAL.data(), busAR.data(),
+        busBL.data(), busBR.data(),
+        masterScratchL.data(), masterScratchR.data(),
+        numSamples, xfSnap);
+
+    // Identity copy to output bus (PRD-0053 pass-through).
+    masterStage.process (
+        masterScratchL.data(), masterScratchR.data(),
+        outL, outR,
+        numSamples, masterSnap);
+
     // Hard clip output to [-1, 1].
     for (int i = 0; i < numSamples; ++i)
     {
@@ -1813,6 +1989,32 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
         currentSampleRate.store (device->getCurrentSampleRate(), std::memory_order_relaxed);
         currentBufferSize.store (device->getCurrentBufferSizeSamples(), std::memory_order_relaxed);
     }
+
+    // PRD-0053: Pre-allocate all mixer pipeline scratch buffers on the message
+    // thread before the audio callback resumes. No allocation ever occurs on
+    // the audio thread (AGENTS.md immutable rule).
+    const int blockSize   = currentBufferSize.load (std::memory_order_relaxed);
+    const double sr       = currentSampleRate.load (std::memory_order_relaxed);
+    constexpr int numCh   = 2;
+
+    for (int ch = 0; ch < 4; ++ch)
+    {
+        deckScratchL[static_cast<size_t>(ch)].assign (static_cast<size_t>(blockSize), 0.0f);
+        deckScratchR[static_cast<size_t>(ch)].assign (static_cast<size_t>(blockSize), 0.0f);
+        channelScratchL[static_cast<size_t>(ch)].assign (static_cast<size_t>(blockSize), 0.0f);
+        channelScratchR[static_cast<size_t>(ch)].assign (static_cast<size_t>(blockSize), 0.0f);
+        channelStrips[static_cast<size_t>(ch)].prepareToPlay (sr, blockSize, numCh);
+    }
+
+    busAL.assign (static_cast<size_t>(blockSize), 0.0f);
+    busAR.assign (static_cast<size_t>(blockSize), 0.0f);
+    busBL.assign (static_cast<size_t>(blockSize), 0.0f);
+    busBR.assign (static_cast<size_t>(blockSize), 0.0f);
+    masterScratchL.assign (static_cast<size_t>(blockSize), 0.0f);
+    masterScratchR.assign (static_cast<size_t>(blockSize), 0.0f);
+
+    crossfaderStage.prepareToPlay (sr, blockSize, numCh);
+    masterStage.prepareToPlay     (sr, blockSize, numCh);
 }
 
 void AudioEngine::audioDeviceStopped()

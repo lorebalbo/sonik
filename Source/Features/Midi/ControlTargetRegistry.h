@@ -87,6 +87,22 @@ namespace sonik::midi
             SONIK_PER_DECK("beatjump.minus." #sz, BeatJumpMinus, Momentary), \
             SONIK_PER_DECK("beatjump.plus."  #sz, BeatJumpPlus,  Momentary)
 
+        // Expands to 11 control-target rows for a single mixer channel.
+        // letter: "A", "B", "C", or "D"   idx: 0, 1, 2, or 3
+        #define SONIK_MIXER_CHANNEL(letter, idx) \
+            SONIK_TARGET("mixer.channel." letter ".gain",      ChannelGain,     Continuous, Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".eq.high",   ChannelEqHigh,   Continuous, Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".eq.mid",    ChannelEqMid,    Continuous, Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".eq.low",    ChannelEqLow,    Continuous, Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".eq.killHigh", ChannelKillHigh, Toggle,   Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".eq.killMid",  ChannelKillMid,  Toggle,   Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".eq.killLow",  ChannelKillLow,  Toggle,   Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".filter",    ChannelFilter,   Continuous, Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".fader",     ChannelFader,    Continuous, Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".assignA",   ChannelAssignA,  Toggle,     Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".assignB",   ChannelAssignB,  Toggle,     Global, idx), \
+            SONIK_TARGET("mixer.channel." letter ".cue",       ChannelCue,      Toggle,     Global, idx)
+
         inline constexpr ControlTarget kRegistry[] = {
             // ---- Per-deck transport --------------------------------------
             SONIK_PER_DECK("transport.play", TransportPlay, Momentary),
@@ -148,6 +164,12 @@ namespace sonik::midi
             SONIK_TARGET("mixer.deck.C.headphoneCue.toggle", HeadphoneCueToggle, Toggle, Global, 2),
             SONIK_TARGET("mixer.deck.D.headphoneCue.toggle", HeadphoneCueToggle, Toggle, Global, 3),
 
+            // ---- Mixer channel strips (PRD-0052) -------------------------
+            SONIK_MIXER_CHANNEL("A", 0),
+            SONIK_MIXER_CHANNEL("B", 1),
+            SONIK_MIXER_CHANNEL("C", 2),
+            SONIK_MIXER_CHANNEL("D", 3),
+
             // ---- Library navigation --------------------------------------
             SONIK_TARGET("library.scroll.up",     LibraryScrollUp,    Momentary,   Global, GlobalDeckIndex),
             SONIK_TARGET("library.scroll.down",   LibraryScrollDown,  Momentary,   Global, GlobalDeckIndex),
@@ -161,6 +183,7 @@ namespace sonik::midi
 
         #undef SONIK_BEATJUMP_ROW
         #undef SONIK_HOTCUE_ROW
+        #undef SONIK_MIXER_CHANNEL
         #undef SONIK_PER_DECK
         #undef SONIK_TARGET
         // clang-format on

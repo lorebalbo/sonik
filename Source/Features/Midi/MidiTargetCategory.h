@@ -62,6 +62,20 @@ namespace sonik::midi
         LibraryFocusSearch,
         LibraryBrowse,    // encoder delta: intDelta > 0 → scroll down, < 0 → scroll up
 
+        // ---- Mixer channel-strip (PRD-0052) ----------------------------------
+        ChannelGain,       // per-channel gain (continuous)
+        ChannelEqHigh,     // per-channel HF EQ (continuous)
+        ChannelEqMid,      // per-channel MF EQ (continuous)
+        ChannelEqLow,      // per-channel LF EQ (continuous)
+        ChannelKillHigh,   // per-channel HF kill (toggle)
+        ChannelKillMid,    // per-channel MF kill (toggle)
+        ChannelKillLow,    // per-channel LF kill (toggle)
+        ChannelFilter,     // per-channel filter (continuous, bipolar)
+        ChannelFader,      // per-channel volume fader (continuous)
+        ChannelAssignA,    // crossfader assign to side A (toggle)
+        ChannelAssignB,    // crossfader assign to side B (toggle)
+        ChannelCue,        // per-channel cue/PFL (toggle)
+
         // ---- Resolver-internal (consumed by PRD-0044's mask manager) -------
         ModifierSet,
         ModifierClear,

@@ -8,8 +8,18 @@
 #include "../Deck/DeckIdentifiers.h"
 #include "../../Features/TimeStretch/TimeStretcher.h"
 #include "AudioEngineMidiBridge.h"   // PRD-0041
+#include "../Mixer/State/MixerAtomicSnapshot.h"       // PRD-0053
+#include "../Mixer/State/MixerMeterSnapshot.h"        // PRD-0058
+#include "../Mixer/Routing/ChannelStripSnapshot.h"    // PRD-0053
+#include "../Mixer/Routing/CrossfaderSnapshot.h"      // PRD-0053
+#include "../Mixer/Routing/MasterSnapshot.h"          // PRD-0053
+#include "../Mixer/Routing/ChannelStripProcessor.h"   // PRD-0053
+#include "../Mixer/Routing/ABBus.h"                   // PRD-0053
+#include "../Mixer/Routing/CrossfaderStage.h"         // PRD-0053
+#include "../Mixer/Routing/MasterStage.h"             // PRD-0053
 #include <array>
 #include <atomic>
+#include <vector>
 
 class MasterClockPublisher; // PRD-0026
 class SyncEngine;           // PRD-0027
@@ -104,6 +114,16 @@ public:
     /// downstream jog-control logic lives in PRD-0042/0044.
     void applyAudioMidiEvent (const sonik::midi::MidiAudioEvent&) noexcept override;
 
+    /// PRD-0053: Wire the mixer atomic snapshot so the audio thread can read
+    /// channel-strip, crossfader, and master parameters each block.
+    /// Call from the message thread before starting the audio device.
+    void setMixerAtomicSnapshot (MixerAtomicSnapshot* snapshot) noexcept;
+
+    /// PRD-0058: Wire the mixer meter snapshot so the audio thread can
+    /// publish per-channel and master metering each block. Call from the
+    /// message thread before starting the audio device.
+    void setMixerMeterSnapshot (MixerMeterSnapshot* snapshot) noexcept;
+
     float getCpuLoad() const     { return cpuMonitor.loadPercent.load (std::memory_order_relaxed); }
     bool  getCpuOverload() const { return cpuMonitor.overloadWarning.load (std::memory_order_relaxed); }
 
@@ -147,6 +167,32 @@ private:
     // PRD-0041: Lock-free MIDI bridge pointer. Audio thread reads with acquire
     // every callback; Message thread writes with release in setMidiMessageBridge.
     std::atomic<sonik::midi::MidiMessageBridge*> midiBridge { nullptr };
+
+    // PRD-0053: Mixer pipeline stages (owned on the message thread, read on the
+    // audio thread via pre-allocated scratch buffers and pass-through logic).
+    std::array<ChannelStripProcessor, 4> channelStrips;
+    CrossfaderStage                      crossfaderStage;
+    MasterStage                          masterStage;
+
+    // PRD-0053: Lock-free pointer to the ValueTree-backed atomic snapshot.
+    // Set once on the message thread; read on the audio thread with acquire.
+    std::atomic<MixerAtomicSnapshot*> mixerAtomicSnapshot { nullptr };
+
+    // PRD-0058: Lock-free pointer to the metering snapshot. The audio
+    // thread publishes per-channel and master meter values into this
+    // snapshot every block via relaxed atomic stores.
+    std::atomic<MixerMeterSnapshot*>  mixerMeterSnapshot  { nullptr };
+
+    // PRD-0053: Pre-allocated scratch buffers (sized in audioDeviceAboutToStart).
+    // All are std::vector<float> — allocated on the message thread only, accessed
+    // on the audio thread by raw pointer (no reallocation during a callback).
+    std::array<std::vector<float>, 4> deckScratchL;    ///< per-deck output — left
+    std::array<std::vector<float>, 4> deckScratchR;    ///< per-deck output — right
+    std::array<std::vector<float>, 4> channelScratchL; ///< post-strip output — left
+    std::array<std::vector<float>, 4> channelScratchR; ///< post-strip output — right
+    std::vector<float> busAL, busAR;                   ///< A bus
+    std::vector<float> busBL, busBR;                   ///< B bus
+    std::vector<float> masterScratchL, masterScratchR; ///< master scratch
 
     // CPU load monitoring
     struct CpuLoadMonitor

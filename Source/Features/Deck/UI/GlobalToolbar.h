@@ -2,12 +2,23 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../DeckStateManager.h"
+#include "Features/Mixer/State/MixerStateSchema.h"
+#include "Features/Mixer/State/MixerMeterSnapshot.h"
+#include "Features/Mixer/State/MixerIdentifiers.h"
+#include "Features/Mixer/Ui/Atoms/MixRotaryKnob.h"
+#include "Features/Mixer/Ui/Atoms/MixLevelMeter.h"
 
 class GlobalToolbar final : public juce::Component
 {
 public:
-    explicit GlobalToolbar (DeckStateManager& deckState)
-        : deckStateManager (deckState)
+    GlobalToolbar (DeckStateManager& deckState,
+                   MixerStateSchema& mixerSchema,
+                   MixerMeterSnapshot& mixerMeters)
+        : deckStateManager (deckState),
+          masterKnob  (mixerSchema.getMasterTree(),
+                       MixerIDs::gain,
+                       makeMasterKnobConfig()),
+          masterMeter (mixerMeters.master, juce::String())
     {
         // Title
         titleLabel.setText ("SONIK", juce::dontSendNotification);
@@ -40,6 +51,10 @@ public:
         };
         addAndMakeVisible (midiButton);
 
+        // PRD-0060 (revised): master section in the global toolbar.
+        addAndMakeVisible (masterKnob);
+        addAndMakeVisible (masterMeter);
+
         updateButtons();
     }
 
@@ -56,6 +71,17 @@ public:
         addDeckButton.setBounds (bounds.removeFromRight (100).withSizeKeepingCentre (100, 28));
         bounds.removeFromRight (8); // gap
         midiButton.setBounds (bounds.removeFromRight (80).withSizeKeepingCentre (80, 28));
+        bounds.removeFromRight (6); // gap
+
+        // Master section: compact rotary + thin vertical meter sitting to
+        // the LEFT of the MIDI button. Total footprint ≈ 8 (meter) + 6 + 32
+        // (knob) = 46 px wide, fitting within toolbarHeight (40).
+        const int knobBox = juce::jmin (32, getHeight() - 4);
+        masterKnob.setBounds (bounds.removeFromRight (knobBox)
+                                    .withSizeKeepingCentre (knobBox, knobBox));
+        bounds.removeFromRight (6);
+        masterMeter.setBounds (bounds.removeFromRight (8)
+                                     .withSizeKeepingCentre (8, getHeight() - 8));
     }
 
     void updateAddDeckButton()
@@ -70,14 +96,33 @@ public:
         updateAddDeckButton();
     }
 
+    // Test accessors.
+    MixRotaryKnob& getMasterKnob() noexcept  { return masterKnob; }
+    MixLevelMeter& getMasterMeter() noexcept { return masterMeter; }
+
     std::function<void()> onAddDeckClicked;
     std::function<void()> onMidiClicked;
 
 private:
+    static MixRotaryKnob::Config makeMasterKnobConfig()
+    {
+        MixRotaryKnob::Config cfg;
+        cfg.label          = "MAST";
+        cfg.taper          = MixRotaryKnob::Normalisation::DbTapered;
+        cfg.minValue       = -60.0f;
+        cfg.maxValue       =  12.0f;
+        cfg.defaultValue   =   0.0f;
+        cfg.wheelIncrement =   0.5f;
+        cfg.compact        = true;
+        return cfg;
+    }
+
     DeckStateManager& deckStateManager;
     juce::Label       titleLabel;
     juce::TextButton  addDeckButton;
     juce::TextButton  midiButton;
+    MixRotaryKnob     masterKnob;
+    MixLevelMeter     masterMeter;
 
     static constexpr int toolbarHeight = 40;
 

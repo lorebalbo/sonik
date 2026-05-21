@@ -40,6 +40,13 @@ public:
         return 2 * kPreferredDeckH + deckGap;
     }
 
+    /// Returns the rectangle (in DeckLayoutManager-local coordinates) reserved
+    /// in the centre of the deck row for the mixer column. The mixer column
+    /// always occupies the first deck row only — in 3- and 4-deck layouts
+    /// the second row spans the full width without a mixer break.
+    /// Returns an empty rectangle while no decks exist.
+    juce::Rectangle<int> getMixerColumnArea() const noexcept { return mixerColumnArea; }
+
     /** Connect the MIDI handler so that deck engine references are registered
         whenever a DeckShellComponent is created or destroyed.
         Call this once from SonikApplication after both objects exist. */
@@ -71,12 +78,16 @@ private:
 
     std::vector<std::unique_ptr<DeckShellComponent>> deckShells;
 
+    juce::Rectangle<int> mixerColumnArea;
+
     static constexpr int deckGap         = 4;
+    static constexpr int mixerGap        = 8;
+    static constexpr int mixerColumnMax  = 300;
     static constexpr int minDeckWidth    = 420;
     static constexpr int minDeckHeight   = 280;
     // Fixed preferred height per deck — matches DeckShellComponent::kMinDeckH.
-    // 20 + 59 + 8 + 23 + 8 + 113 + 12 + 23 + 12 + 23 + 20 = 321 px.
-    static constexpr int kPreferredDeckH = 321;
+    // 20 + 59 + 8 + 23 + 8 + 193 + 12 + 23 + 12 + 23 + 20 = 401 px.
+    static constexpr int kPreferredDeckH = 401;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckLayoutManager)
 };

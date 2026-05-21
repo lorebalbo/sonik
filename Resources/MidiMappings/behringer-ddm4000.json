@@ -8,26 +8,52 @@
   },
   "modifiers": [],
   "bindings": [
-    { "target": "deck.A.eq.high", "midi": { "channel": 1, "status": "cc", "data1":  4 }, "transform": "linear" },
-    { "target": "deck.A.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1":  5 }, "transform": "linear" },
-    { "target": "deck.A.eq.low",  "midi": { "channel": 1, "status": "cc", "data1":  6 }, "transform": "linear" },
-    { "target": "deck.A.gain",    "midi": { "channel": 1, "status": "cc", "data1":  7 }, "transform": "linear" },
+    { "target": "mixer.channel.A.eq.high", "midi": { "channel": 1, "status": "cc", "data1":  4 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.A.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1":  5 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.A.eq.low",  "midi": { "channel": 1, "status": "cc", "data1":  6 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.A.fader",   "midi": { "channel": 1, "status": "cc", "data1":  7 }, "transform": "linear", "softTakeover": "pickup" },
 
-    { "target": "deck.B.eq.high", "midi": { "channel": 1, "status": "cc", "data1":  8 }, "transform": "linear" },
-    { "target": "deck.B.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1":  9 }, "transform": "linear" },
-    { "target": "deck.B.eq.low",  "midi": { "channel": 1, "status": "cc", "data1": 10 }, "transform": "linear" },
-    { "target": "deck.B.gain",    "midi": { "channel": 1, "status": "cc", "data1": 11 }, "transform": "linear" },
+    { "target": "mixer.channel.B.eq.high", "midi": { "channel": 1, "status": "cc", "data1":  8 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.B.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1":  9 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.B.eq.low",  "midi": { "channel": 1, "status": "cc", "data1": 10 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.B.fader",   "midi": { "channel": 1, "status": "cc", "data1": 11 }, "transform": "linear", "softTakeover": "pickup" },
 
-    { "target": "deck.C.eq.high", "midi": { "channel": 1, "status": "cc", "data1": 12 }, "transform": "linear" },
-    { "target": "deck.C.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1": 13 }, "transform": "linear" },
-    { "target": "deck.C.eq.low",  "midi": { "channel": 1, "status": "cc", "data1": 14 }, "transform": "linear" },
-    { "target": "deck.C.gain",    "midi": { "channel": 1, "status": "cc", "data1": 15 }, "transform": "linear" },
+    { "target": "mixer.channel.C.eq.high", "midi": { "channel": 1, "status": "cc", "data1": 12 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.C.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1": 13 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.C.eq.low",  "midi": { "channel": 1, "status": "cc", "data1": 14 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.C.fader",   "midi": { "channel": 1, "status": "cc", "data1": 15 }, "transform": "linear", "softTakeover": "pickup" },
 
-    { "target": "deck.D.eq.high", "midi": { "channel": 1, "status": "cc", "data1": 16 }, "transform": "linear" },
-    { "target": "deck.D.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1": 17 }, "transform": "linear" },
-    { "target": "deck.D.eq.low",  "midi": { "channel": 1, "status": "cc", "data1": 18 }, "transform": "linear" },
-    { "target": "deck.D.gain",    "midi": { "channel": 1, "status": "cc", "data1": 19 }, "transform": "linear" },
+    { "target": "mixer.channel.D.eq.high", "midi": { "channel": 1, "status": "cc", "data1": 16 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.D.eq.mid",  "midi": { "channel": 1, "status": "cc", "data1": 17 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.D.eq.low",  "midi": { "channel": 1, "status": "cc", "data1": 18 }, "transform": "linear", "softTakeover": "pickup" },
+    { "target": "mixer.channel.D.fader",   "midi": { "channel": 1, "status": "cc", "data1": 19 }, "transform": "linear", "softTakeover": "pickup" },
 
-    { "target": "mixer.crossfader", "midi": { "channel": 1, "status": "cc", "data1": 21 }, "transform": "linear" }
+    { "target": "mixer.channel.A.eq.killHigh", "midi": { "channel": 1, "status": "note", "data1":  0 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  0, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.A.eq.killMid",  "midi": { "channel": 1, "status": "note", "data1":  1 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  1, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.A.eq.killLow",  "midi": { "channel": 1, "status": "note", "data1":  2 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  2, "onValue": 127, "offValue": 0 } },
+
+    { "target": "mixer.channel.B.eq.killHigh", "midi": { "channel": 1, "status": "note", "data1":  4 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  4, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.B.eq.killMid",  "midi": { "channel": 1, "status": "note", "data1":  5 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  5, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.B.eq.killLow",  "midi": { "channel": 1, "status": "note", "data1":  6 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  6, "onValue": 127, "offValue": 0 } },
+
+    { "target": "mixer.channel.C.eq.killHigh", "midi": { "channel": 1, "status": "note", "data1":  8 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  8, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.C.eq.killMid",  "midi": { "channel": 1, "status": "note", "data1":  9 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  9, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.C.eq.killLow",  "midi": { "channel": 1, "status": "note", "data1": 10 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 10, "onValue": 127, "offValue": 0 } },
+
+    { "target": "mixer.channel.D.eq.killHigh", "midi": { "channel": 1, "status": "note", "data1": 12 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 12, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.D.eq.killMid",  "midi": { "channel": 1, "status": "note", "data1": 13 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 13, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.D.eq.killLow",  "midi": { "channel": 1, "status": "note", "data1": 14 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 14, "onValue": 127, "offValue": 0 } },
+
+    { "target": "mixer.channel.A.assignA", "midi": { "channel": 1, "status": "note", "data1": 32 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 32, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.B.assignA", "midi": { "channel": 1, "status": "note", "data1": 34 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 34, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.C.assignA", "midi": { "channel": 1, "status": "note", "data1": 36 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 36, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.D.assignA", "midi": { "channel": 1, "status": "note", "data1": 38 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 38, "onValue": 127, "offValue": 0 } },
+
+    { "target": "mixer.channel.A.cue", "midi": { "channel": 1, "status": "note", "data1":  3 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  3, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.B.cue", "midi": { "channel": 1, "status": "note", "data1":  7 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1":  7, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.C.cue", "midi": { "channel": 1, "status": "note", "data1": 11 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 11, "onValue": 127, "offValue": 0 } },
+    { "target": "mixer.channel.D.cue", "midi": { "channel": 1, "status": "note", "data1": 15 }, "transform": "momentary", "feedback": { "style": "binary", "channel": 1, "status": "note", "data1": 15, "onValue": 127, "offValue": 0 } },
+
+    { "target": "mixer.crossfader", "midi": { "channel": 1, "status": "cc", "data1": 21 }, "transform": "linear", "softTakeover": "pickup" }
   ]
 }

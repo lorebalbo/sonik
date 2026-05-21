@@ -116,6 +116,19 @@ namespace sonik::midi
             HotCueValid,    // bool
             HotCueColour,   // int 0..15
             Continuous,     // float [0,1]
+            MixerChannelBool, // bool — see auxIndex enum below (PRD-0061)
+        };
+
+        /** auxIndex values for MixerChannelBool. Reuses `deckIndex` slot for
+            the channel index (0..3). */
+        enum class MixerBoolProp : std::uint8_t
+        {
+            KillHigh = 1,
+            KillMid  = 2,
+            KillLow  = 3,
+            AssignA  = 4,
+            AssignB  = 5,
+            Cue      = 6,
         };
 
         struct SourceKey

@@ -1,9 +1,20 @@
 ---
 status: Implemented
 epic: EPIC-0001
+amended-by:
+  - PRD-0053
 ---
 
 # 1. PRD-0002: Audio Engine Core
+
+> **Amendment (PRD-0053, EPIC-0007 Mixer):** The original direct-sum stage
+> described below ("sums the decks' per-deck-gain buffers directly into the
+> stereo output bus") has been superseded by the mixer pipeline introduced
+> in PRD-0053: `decode → deck DSP → channel strip (gain → EQ → kills → filter
+> → fader) → A/B bus → crossfader → master gain → hard-clip → output bus`.
+> PRD-0002's hard-clip safety net (≥ 0 dBFS at the master output) and atomic
+> gain-read contract remain authoritative; they are now applied **after**
+> the master stage rather than after a direct per-deck sum.
 
 ## 1.1. Problem
 

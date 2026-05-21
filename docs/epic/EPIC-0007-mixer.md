@@ -1,6 +1,6 @@
 ---
 name: "EPIC-0007: Mixer"
-status: Open
+status: Implemented
 ---
 
 # 1. EPIC-0007: Mixer
@@ -223,13 +223,13 @@ The Epic is sequenced so each PRD compiles, runs, and is testable without
 the later ones. Numbers will be assigned by `generate_doc.sh` at drafting
 time; here we use `TBD` per the Epic Breakdown Workflow.
 
-- [ ] PRD-0052: Mixer State Schema & ValueTree Integration
-- [ ] PRD-0053: Mixer Signal-Flow & Routing Refactor (Audio Engine)
-- [ ] PRD-0054: Channel Gain Stage & Channel Fader (with PRD-0010 reconciliation)
-- [ ] PRD-0055: 3-Band EQ DSP & Per-Band Kill
-- [ ] PRD-0056: Per-Channel Filter Knob (HPF / LPF Sweep)
-- [ ] PRD-0057: Crossfader & A/B Channel Assignment
-- [ ] PRD-0058: Master Output Stage & Output Level Metering
-- [ ] PRD-0059: Mixer UI Atoms (`MixRotaryKnob`, `MixKillButton`, `MixAssignButton`, `MixLevelMeter`)
-- [ ] PRD-0060: Channel Strip Organism & Mixer Shell
-- [ ] PRD-0061: Mixer ↔ MIDI Wiring Validation & DDM4000 Profile Activation
+- [x] PRD-0052: Mixer State Schema & ValueTree Integration
+- [x] PRD-0053: Mixer Signal-Flow & Routing Refactor (Audio Engine)
+- [x] PRD-0054: Channel Gain Stage & Channel Fader (with PRD-0010 reconciliation)
+- [x] PRD-0055: 3-Band EQ DSP & Per-Band Kill
+- [x] PRD-0056: Per-Channel Filter Knob (HPF / LPF Sweep)
+- [x] PRD-0057: Crossfader & A/B Channel Assignment
+- [x] PRD-0058: Master Output Stage & Output Level Metering
+- [x] PRD-0059: Mixer UI Atoms (`MixRotaryKnob`, `MixKillButton`, `MixAssignButton`, `MixLevelMeter`)
+- [x] PRD-0060: Channel Strip Organism & Mixer Shell
+- [x] PRD-0061: Mixer ↔ MIDI Wiring Validation & DDM4000 Profile Activation

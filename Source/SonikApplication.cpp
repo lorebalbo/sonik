@@ -111,6 +111,13 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     while (deckStateManager->getDeckCount() < 2)
         deckStateManager->addDeck();
 
+    // PRD-0052: Mixer state schema — adds the "Mixer" sub-tree to the root
+    // state tree and populates it with documented defaults.
+    mixerStateSchema    = std::make_unique<MixerStateSchema> (deckStateManager->getStateTree());
+    mixerAtomicSnapshot = std::make_unique<MixerAtomicSnapshot>();
+    mixerMeterSnapshot  = std::make_unique<MixerMeterSnapshot>();
+    mixerStateBridge    = std::make_unique<MixerStateBridge> (*mixerStateSchema, *mixerAtomicSnapshot);
+
     // Create the master clock publisher and manager (PRD-0026).
     // Manager must be created after decks exist so its initial listener state is correct.
     masterClockPublisher = std::make_unique<MasterClockPublisher>();
@@ -143,7 +150,17 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     // MidiDeviceManager + MappingStore and forwards to the composite handler
     // on the Message thread (audio-thread paths go via the bridge FIFO).
     deckMidiHandler      = std::make_unique<DeckMidiHandler> (*deckStateManager, *softTakeoverManager);
-    mixerMidiHandler     = std::make_unique<MixerMidiHandler>();
+    mixerMidiHandler     = std::make_unique<MixerMidiHandler> (softTakeoverManager.get());
+    mixerMidiHandler->setStateTree (deckStateManager->getStateTree());
+    mixerMidiHandler->setMixerStateSchema (mixerStateSchema.get());
+
+    // PRD-0053: Wire the mixer atomic snapshot into the audio engine so the
+    // audio thread can read channel-strip and master parameters each block.
+    audioEngine->setMixerAtomicSnapshot (mixerAtomicSnapshot.get());
+
+    // PRD-0058: Wire the metering snapshot so the audio thread can publish
+    // per-channel + master peak/peakHold/RMS/clip every block.
+    audioEngine->setMixerMeterSnapshot (mixerMeterSnapshot.get());
     libraryMidiHandler   = std::make_unique<LibraryMidiHandler>();
     compositeMidiHandler = std::make_unique<CompositeMidiCommandHandler> (
         *deckMidiHandler, *mixerMidiHandler, *libraryMidiHandler);
@@ -233,7 +250,8 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     mainWindow = std::make_unique<MainWindow> (
         *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager,
         *beatGridManager, *stemSeparationManager, *masterClockManager,
-        *libraryAnalysisQueue, *trackDatabase);
+        *libraryAnalysisQueue, *trackDatabase,
+        *mixerStateSchema, *mixerMeterSnapshot);
 
     // Create the watch-folder scanner (PRD-0031) and kick off the startup scan.
     // Constructed after trackDatabase is ready; destroyed in shutdown() before

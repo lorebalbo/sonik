@@ -360,10 +360,12 @@ private:
         // Before loading: trackInfo + stemSeparateButton + stemVocToggle + stemInstToggle
         //                 + keyLockButton + keyStepperComponent + pitchFaderComponent
         //                 + masterButton + syncButton + quantizeButton + slipButton
-        //                 + controllerWidget = 12
+        //                 + controllerWidget + hotCuePadComponent = 13
+        // PRD-0060: deck shell no longer hosts a gain knob (channel-strip GAIN
+        // lives on the mixer organism instead).
         int initialChildren = shell.getNumChildComponents();
-        expectEquals (initialChildren, 12,
-                      "Before track load, DeckShellComponent should have trackInfo, stem buttons, key lock, key stepper, pitch fader, master, sync, quantize, slip, and controller widget");
+        expectEquals (initialChildren, 13,
+                      "Before track load, DeckShellComponent should have trackInfo, stem buttons, key lock, key stepper, pitch fader, master, sync, quantize, slip, controller widget, and hot-cue pad");
 
         // Load a track
         auto meta = makeSampleMetadata ("Lifecycle Track");

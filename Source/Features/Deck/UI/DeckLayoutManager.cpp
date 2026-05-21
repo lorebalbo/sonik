@@ -151,60 +151,127 @@ void DeckLayoutManager::applyLayout()
 {
     auto area = getLocalBounds();
     auto n = static_cast<int> (deckShells.size());
+    mixerColumnArea = {};
     if (n == 0 || area.isEmpty())
         return;
 
-    const int halfGap = deckGap / 2;
+    // Centre column reserved for the mixer organism. Width is clamped so it
+    // never starves the decks: at most a third of the area, capped at the
+    // declared maximum. The column always lives in row 1; rows 2+ span the
+    // full width because the single mixer in row 1 already governs all
+    // strips for the active deck set.
+    const int mixerColW = juce::jmin (mixerColumnMax,
+                                      juce::jmax (0, area.getWidth() / 4));
+    const int gap       = (mixerColW > 0) ? mixerGap : 0;
+
+    auto rowFor = [this, mixerColW, gap, n] (juce::Rectangle<int> row,
+                                             juce::Rectangle<int>& outLeft,
+                                             juce::Rectangle<int>& outRight,
+                                             juce::Rectangle<int>* outMixerCol)
+    {
+        // Carve a centred mixer column out of the row. With <= 1 deck the
+        // mixer simply takes the right side; with >= 2 decks we split the
+        // residual width evenly between the left and right deck slots.
+        if (mixerColW <= 0)
+        {
+            outLeft  = row;
+            outRight = {};
+            if (outMixerCol != nullptr) *outMixerCol = {};
+            return;
+        }
+
+        if (n <= 1)
+        {
+            const auto deckW = juce::jmax (0, row.getWidth() - mixerColW - gap);
+            outLeft  = row.withWidth (deckW);
+            outRight = {};
+            if (outMixerCol != nullptr)
+                *outMixerCol = juce::Rectangle<int> (row.getRight() - mixerColW,
+                                                     row.getY(),
+                                                     mixerColW,
+                                                     row.getHeight());
+            return;
+        }
+
+        const auto sideW = juce::jmax (0, (row.getWidth() - mixerColW - 2 * gap) / 2);
+        outLeft  = juce::Rectangle<int> (row.getX(), row.getY(),
+                                          sideW, row.getHeight());
+        const auto mxX = row.getX() + sideW + gap;
+        if (outMixerCol != nullptr)
+            *outMixerCol = juce::Rectangle<int> (mxX, row.getY(),
+                                                  mixerColW, row.getHeight());
+        const auto rightX = mxX + mixerColW + gap;
+        outRight = juce::Rectangle<int> (rightX, row.getY(),
+                                          juce::jmax (0, row.getRight() - rightX),
+                                          row.getHeight());
+    };
 
     switch (n)
     {
         case 1:
         {
-            // Deck height is fixed — min equals max so the deck is never compressed.
-            deckShells[0]->setBounds (area.withHeight (kPreferredDeckH));
+            auto row = area.withHeight (kPreferredDeckH);
+            juce::Rectangle<int> left, right, mix;
+            rowFor (row, left, right, &mix);
+            deckShells[0]->setBounds (left);
+            mixerColumnArea = mix;
             break;
         }
 
         case 2:
         {
-            int halfW = area.getWidth() / 2;
-            int deckH = kPreferredDeckH;
-            deckShells[0]->setBounds (area.getX(), area.getY(), halfW - halfGap, deckH);
-            deckShells[1]->setBounds (area.getX() + halfW + halfGap, area.getY(),
-                                      area.getWidth() - halfW - halfGap, deckH);
+            auto row = area.withHeight (kPreferredDeckH);
+            juce::Rectangle<int> left, right, mix;
+            rowFor (row, left, right, &mix);
+            deckShells[0]->setBounds (left);
+            deckShells[1]->setBounds (right);
+            mixerColumnArea = mix;
             break;
         }
 
         case 3:
         {
-            int halfW = area.getWidth() / 2;
-            int halfH = area.getHeight() / 2;
+            auto row1 = area.withHeight (kPreferredDeckH);
+            juce::Rectangle<int> left, right, mix;
+            rowFor (row1, left, right, &mix);
+            deckShells[0]->setBounds (left);
+            deckShells[1]->setBounds (right);
+            mixerColumnArea = mix;
 
-            deckShells[0]->setBounds (area.getX(), area.getY(),
-                                      halfW - halfGap, halfH - halfGap);
-            deckShells[1]->setBounds (area.getX() + halfW + halfGap, area.getY(),
-                                      area.getWidth() - halfW - halfGap, halfH - halfGap);
-            deckShells[2]->setBounds (area.getX(), area.getY() + halfH + halfGap,
-                                      area.getWidth(), area.getHeight() - halfH - halfGap);
+            const auto row2 = juce::Rectangle<int> (area.getX(),
+                                                     row1.getBottom() + deckGap,
+                                                     area.getWidth(),
+                                                     kPreferredDeckH);
+            deckShells[2]->setBounds (row2);
             break;
         }
 
         case 4:
         default:
         {
-            int halfW = area.getWidth() / 2;
-            int halfH = area.getHeight() / 2;
+            auto row1 = area.withHeight (kPreferredDeckH);
+            juce::Rectangle<int> left, right, mix;
+            rowFor (row1, left, right, &mix);
+            deckShells[0]->setBounds (left);
+            deckShells[1]->setBounds (right);
+            mixerColumnArea = mix;
 
-            deckShells[0]->setBounds (area.getX(), area.getY(),
-                                      halfW - halfGap, halfH - halfGap);
-            deckShells[1]->setBounds (area.getX() + halfW + halfGap, area.getY(),
-                                      area.getWidth() - halfW - halfGap, halfH - halfGap);
-            deckShells[2]->setBounds (area.getX(), area.getY() + halfH + halfGap,
-                                      halfW - halfGap, area.getHeight() - halfH - halfGap);
-            deckShells[3]->setBounds (area.getX() + halfW + halfGap,
-                                      area.getY() + halfH + halfGap,
-                                      area.getWidth() - halfW - halfGap,
-                                      area.getHeight() - halfH - halfGap);
+            // Row 2: deck C and deck D sit symmetrically with a centre gap
+            // matching the mixer column width above so the four decks line
+            // up vertically.
+            const int halfGap = deckGap / 2;
+            const int row2W   = area.getWidth();
+            const int gapW    = juce::jmax (0, mixerColW + 2 * gap);
+            const int sideW   = juce::jmax (0, (row2W - gapW) / 2);
+            const int row2Y   = row1.getBottom() + deckGap;
+
+            deckShells[2]->setBounds (area.getX(), row2Y,
+                                       sideW, kPreferredDeckH);
+            deckShells[3]->setBounds (area.getX() + sideW + gapW, row2Y,
+                                       juce::jmax (0, row2W - sideW - gapW),
+                                       kPreferredDeckH);
+
+            (void) halfGap;
             break;
         }
     }

@@ -2,6 +2,70 @@
 #include "../../KeyDetection/KeyUtils.h"
 #include <cmath>
 
+//==============================================================================
+// BpmEditPopup — small callout for editing the analysis BPM of a track.
+// Displayed via CallOutBox::launchAsynchronously (no modal loop required).
+//==============================================================================
+class BpmEditPopup final : public juce::Component
+{
+public:
+    std::function<void (double)> onConfirm;
+
+    explicit BpmEditPopup (double currentBpm)
+    {
+        setSize (160, 66);
+
+        label.setText ("BPM:", juce::dontSendNotification);
+        label.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+        label.setColour (juce::Label::textColourId, juce::Colour (0xFF2D2D2D));
+        addAndMakeVisible (label);
+
+        editor.setText (currentBpm > 0.0 ? juce::String (currentBpm, 2) : juce::String());
+        editor.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+        editor.setInputRestrictions (7, "0123456789.");
+        editor.setSelectAllWhenFocused (true);
+        editor.onReturnKey = [this] { confirm(); };
+        addAndMakeVisible (editor);
+
+        setBtn.setButtonText ("SET");
+        setBtn.onClick = [this] { confirm(); };
+        addAndMakeVisible (setBtn);
+    }
+
+    void resized() override
+    {
+        auto b = getLocalBounds().reduced (8);
+        auto topRow = b.removeFromTop (28);
+        label.setBounds (topRow.removeFromLeft (36));
+        editor.setBounds (topRow);
+        b.removeFromTop (4);
+        setBtn.setBounds (b);
+    }
+
+    void paint (juce::Graphics& g) override
+    {
+        g.fillAll (juce::Colour (0xFFFDFDFD));
+        g.setColour (juce::Colour (0xFF2D2D2D));
+        g.drawRect (getLocalBounds(), 2);
+    }
+
+private:
+    void confirm()
+    {
+        const double bpm = editor.getText().getDoubleValue();
+        if (bpm >= 20.0 && bpm <= 300.0 && onConfirm)
+            onConfirm (bpm);
+        if (auto* cb = findParentComponentOfClass<juce::CallOutBox>())
+            cb->dismiss();
+    }
+
+    juce::Label      label;
+    juce::TextEditor editor;
+    juce::TextButton setBtn;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BpmEditPopup)
+};
+
 TrackInfoComponent::TrackInfoComponent (juce::ValueTree tree,
                                         DeckStateManager& deckState,
                                         AudioFileLoader& loader,
@@ -161,6 +225,17 @@ void TrackInfoComponent::mouseMove (const juce::MouseEvent& e)
         badgeHovered = newBadgeHovered;
         repaint();
     }
+
+    // Extend the hit area slightly to the left to include the pencil zone.
+    const bool newBpmHovering = baseBpm > 0.0
+                                && computeOrigBpmArea().expanded (12, 2).contains (e.getPosition());
+    if (newBpmHovering != bpmHovering)
+    {
+        bpmHovering = newBpmHovering;
+        setMouseCursor (bpmHovering ? juce::MouseCursor::PointingHandCursor
+                                    : juce::MouseCursor::NormalCursor);
+        repaint();
+    }
 }
 
 void TrackInfoComponent::mouseExit (const juce::MouseEvent& e)
@@ -168,8 +243,10 @@ void TrackInfoComponent::mouseExit (const juce::MouseEvent& e)
     juce::ignoreUnused (e);
     isHovering   = false;
     badgeHovered = false;
+    bpmHovering  = false;
     titleScrollOffset  = 0.0f;
     artistScrollOffset = 0.0f;
+    setMouseCursor (juce::MouseCursor::NormalCursor);
     repaint();
 }
 
@@ -178,6 +255,13 @@ void TrackInfoComponent::mouseDown (const juce::MouseEvent& e)
     juce::ignoreUnused (e);
     // Activate the deck on any click (same behaviour as DeckShellComponent::mouseDown)
     deckStateManager.setActiveDeck (deckId);
+
+    // If clicking on the orig-BPM row (or pencil zone), open the BPM editor popup.
+    if (bpmHovering)
+    {
+        showBpmEditPopup();
+        return;
+    }
 
     // If hovering over the badge trash icon, request deck removal
     if (badgeHovered)
@@ -190,6 +274,38 @@ void TrackInfoComponent::mouseDown (const juce::MouseEvent& e)
 bool TrackInfoComponent::canRemoveDeck() const
 {
     return deckStateManager.canRemoveDeck (deckId);
+}
+
+// --- BPM area helpers ---
+
+juce::Rectangle<int> TrackInfoComponent::computeOrigBpmArea() const
+{
+    auto bounds = getLocalBounds();
+    bounds.removeFromLeft  (artWidth);
+    bounds.removeFromRight (badgeWidth);
+    bounds.removeFromRight (colGap);
+    auto bpmKeyArea = bounds.removeFromRight (bpmColWidth);
+
+    auto content = bpmKeyArea.withTrimmedTop (4).withTrimmedBottom (4);
+    const int rowH = content.getHeight() / 3;
+    content.removeFromTop (rowH);   // currentBpmArea
+    content.removeFromTop (rowH);   // keyArea
+    return content;                 // origBpmArea
+}
+
+void TrackInfoComponent::showBpmEditPopup()
+{
+    if (baseBpm <= 0.0) return;
+
+    auto popup = std::make_unique<BpmEditPopup> (baseBpm);
+    popup->onConfirm = [this] (double newBpm)
+    {
+        if (onBpmEditRequested)
+            onBpmEditRequested (newBpm);
+    };
+
+    auto targetInScreen = localAreaToGlobal (computeOrigBpmArea());
+    juce::CallOutBox::launchAsynchronously (std::move (popup), targetInScreen, nullptr);
 }
 
 // --- Camelot key ---
@@ -378,9 +494,47 @@ void TrackInfoComponent::paintBpmKeyInfo (juce::Graphics& g, juce::Rectangle<int
     g.setFont (smallFont);
     g.drawText (keyStr, keyArea, juce::Justification::centredRight, false);
 
-    // Original BPM — 13px
-    g.drawText (origBpmStr, origBpmArea, juce::Justification::centredRight, false);
+    // Original BPM — 13px; when hovering, show pencil icon on the left.
+    if (bpmHovering && baseBpm > 0.0)
+    {
+        // Pencil icon occupies the left 12px, BPM text fills the remaining width.
+        constexpr int kPencilW = 12;
+        auto pencilRect = origBpmArea.removeFromLeft (kPencilW);
+        paintPencilIcon (g, pencilRect, juce::Colour (0xFF2D2D2D));
+        g.setFont (smallFont);
+        g.setColour (juce::Colour (0xFF2D2D2D));
+        g.drawText (origBpmStr, origBpmArea, juce::Justification::centredRight, false);
+    }
+    else
+    {
+        g.drawText (origBpmStr, origBpmArea, juce::Justification::centredRight, false);
+    }
 }
+
+void TrackInfoComponent::paintPencilIcon (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour col)
+{
+    // Pixel-art pencil (8 wide x 14 tall, pointing upward).
+    constexpr int totalW = 8;
+    constexpr int totalH = 14;
+    const int ox = area.getX() + (area.getWidth()  - totalW) / 2;
+    const int oy = area.getY() + (area.getHeight() - totalH) / 2;
+
+    g.setColour (col);
+
+    // Tip (narrowing top)
+    g.fillRect (ox + 3, oy,     2, 2);
+    g.fillRect (ox + 2, oy + 2, 4, 2);
+
+    // Body
+    g.fillRect (ox + 1, oy + 4, 6, 6);
+
+    // Eraser band
+    g.fillRect (ox,     oy + 10, 8, 2);
+
+    // Eraser
+    g.fillRect (ox + 1, oy + 12, 6, 2);
+}
+
 
 void TrackInfoComponent::paintDeckBadge (juce::Graphics& g, juce::Rectangle<int> area)
 {

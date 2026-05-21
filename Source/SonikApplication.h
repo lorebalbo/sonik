@@ -27,6 +27,10 @@
 #include "MidiHandlers/MixerMidiHandler.h"
 #include "MidiHandlers/LibraryMidiHandler.h"
 #include "MidiHandlers/CompositeMidiCommandHandler.h"
+#include "Features/Mixer/State/MixerStateSchema.h"
+#include "Features/Mixer/State/MixerAtomicSnapshot.h"
+#include "Features/Mixer/State/MixerMeterSnapshot.h"
+#include "Features/Mixer/State/MixerStateBridge.h"
 #include "Features/Midi/UI/MidiSettingsWindow.h"
 #include <memory>
 
@@ -37,7 +41,9 @@ public:
                 AudioEngine& engine, WaveformManager& waveformMgr,
                 BeatGridManager& beatGridMgr, StemSeparationManager& stemMgr,
                 MasterClockManager& clockMgr, LibraryAnalysisQueue& analysisQueue,
-                TrackDatabase& trackDb)
+                TrackDatabase& trackDb,
+                MixerStateSchema& mixerSchema,
+                MixerMeterSnapshot& mixerMeters)
         : DocumentWindow ("Sonik",
                           juce::Colour (0xfff9f9f9),
                           DocumentWindow::allButtons)
@@ -45,7 +51,8 @@ public:
         setUsingNativeTitleBar (true);
         setContentOwned (new MainContentComponent (deckState, engine, loader, waveformMgr,
                                 beatGridMgr, stemMgr, clockMgr,
-                                analysisQueue, trackDb),
+                                analysisQueue, trackDb,
+                                mixerSchema, mixerMeters),
                           true);
         setResizable (true, true);
         setResizeLimits (1120, 600, 3840, 2160);
@@ -109,6 +116,10 @@ private:
     std::unique_ptr<MidiDiagnosticLogger> midiDiagnosticLogger;
 
     std::unique_ptr<DeckStateManager> deckStateManager;
+    std::unique_ptr<MixerStateSchema>    mixerStateSchema;    // PRD-0052
+    std::unique_ptr<MixerAtomicSnapshot> mixerAtomicSnapshot; // PRD-0052
+    std::unique_ptr<MixerMeterSnapshot>  mixerMeterSnapshot;  // PRD-0052
+    std::unique_ptr<MixerStateBridge>    mixerStateBridge;    // PRD-0052
     std::unique_ptr<MasterClockPublisher> masterClockPublisher;  // PRD-0026
     std::unique_ptr<MasterClockManager>   masterClockManager;    // PRD-0026
     std::unique_ptr<AudioEngine>      audioEngine;

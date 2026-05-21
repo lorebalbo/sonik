@@ -166,7 +166,11 @@ namespace sonik::midi
                     }
                 }
 
-                if (b.softTakeover != SoftTakeoverPolicy::Pickup)
+                // The default for a freshly-learned binding is Always (see
+                // MappingParser); only emit this field when the binding
+                // diverges from the default so round-trips of unspecified
+                // bindings stay byte-stable.
+                if (b.softTakeover != SoftTakeoverPolicy::Always)
                     obj->setProperty ("softTakeover", juce::String (softTakeoverToString (b.softTakeover)));
 
                 if (b.feedback.midiKey != 0u)
