@@ -9,6 +9,59 @@
 #include "../Cue/HotCueData.h"
 #include <array>
 
+/// Small monochrome glyph button used for the +/- zoom controls beside the
+/// detail waveform. Local to the waveform feature; renders per DESIGN.md
+/// (2px ink border, no radius, Space Mono glyph, full inversion on press).
+class WaveformZoomButton final : public juce::Component
+{
+public:
+    explicit WaveformZoomButton (juce::String glyphText)
+        : glyph (std::move (glyphText))
+    {
+        setOpaque (false);
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
+    }
+
+    std::function<void()> onClick;
+
+    void paint (juce::Graphics& g) override
+    {
+        const juce::Colour ink     { 0xFF2D2D2D };
+        const juce::Colour surface { 0xFFFDFDFD };
+
+        const auto bounds = getLocalBounds();
+        g.setColour (pressed ? ink : surface);
+        g.fillRect (bounds);
+        g.setColour (ink);
+        g.drawRect (bounds, 2);
+
+        g.setColour (pressed ? surface : ink);
+        const float fontHeight = juce::jlimit (8.0f, 14.0f,
+                                                static_cast<float> (bounds.getHeight()) * 0.6f);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                      fontHeight, juce::Font::plain));
+        g.drawText (glyph, bounds, juce::Justification::centred, false);
+    }
+
+    void mouseDown (const juce::MouseEvent&) override
+    {
+        pressed = true;
+        repaint();
+    }
+
+    void mouseUp (const juce::MouseEvent& e) override
+    {
+        pressed = false;
+        repaint();
+        if (getLocalBounds().contains (e.getPosition()) && onClick)
+            onClick();
+    }
+
+private:
+    juce::String glyph;
+    bool pressed { false };
+};
+
 class WaveformComponent final : public juce::Component,
                                  private juce::Timer
 {
@@ -17,6 +70,8 @@ public:
     {
         addAndMakeVisible (overview);
         addAndMakeVisible (detail);
+        addAndMakeVisible (zoomInButton);
+        addAndMakeVisible (zoomOutButton);
 
         // Forward seek from overview to parent
         overview.onSeek = [this] (int64_t pos)
@@ -31,6 +86,21 @@ public:
             if (onSeek)
                 onSeek (pos);
         };
+
+        // Forward scratch lifecycle to parent (PRD-0016 vinyl-style gesture)
+        detail.onScratchBegin = [this]
+        {
+            if (onScratchBegin)
+                onScratchBegin();
+        };
+        detail.onScratchEnd = [this]
+        {
+            if (onScratchEnd)
+                onScratchEnd();
+        };
+
+        zoomInButton.onClick  = [this] { detail.zoomIn(); };
+        zoomOutButton.onClick = [this] { detail.zoomOut(); };
 
         startTimerHz (30);
     }
@@ -71,13 +141,33 @@ public:
 
     std::function<void (int64_t samplePosition)> onSeek;
 
+    /// PRD-0016: Vinyl-style scratch gesture on the detail waveform.
+    /// Host wires these to capture/restore transport state across the hold:
+    /// touching while playing stops until release; touching while paused does
+    /// not start playback.
+    std::function<void()> onScratchBegin;
+    std::function<void()> onScratchEnd;
+
     void resized() override
     {
         auto bounds = getLocalBounds();
 
         overview.setBounds (bounds.removeFromTop (overviewHeight));
         bounds.removeFromTop (gap);
-        detail.setBounds (bounds);
+
+        auto detailArea = bounds;
+        detail.setBounds (detailArea);
+
+        // Overlay +/- controls directly on top of the detail waveform (no
+        // reserved side column). '+' stays near the top-right corner while
+        // '-' is anchored near the bottom-right corner.
+        auto overlayArea = detailArea.reduced (2);
+        const int x = overlayArea.getRight() - zoomButtonSize - zoomButtonInset;
+        zoomInButton.setBounds (x, overlayArea.getY() + zoomButtonInset,
+                                zoomButtonSize, zoomButtonSize);
+        zoomOutButton.setBounds (x,
+                                 overlayArea.getBottom() - zoomButtonSize - zoomButtonInset,
+                                 zoomButtonSize, zoomButtonSize);
     }
 
     void paintOverChildren (juce::Graphics& g) override
@@ -88,9 +178,6 @@ public:
 
         // Outer border — 2px, matching the empty-state border
         g.drawRect (b, 2);
-
-        // Separator between overview and detail waveform — 1px horizontal line
-        g.fillRect (0, overviewHeight, b.getWidth(), 1);
     }
 
 private:
@@ -104,9 +191,13 @@ private:
 
     OverviewWaveform overview;
     DetailWaveform   detail;
+    WaveformZoomButton zoomInButton  { "+" };
+    WaveformZoomButton zoomOutButton { "-" };
 
-    static constexpr int overviewHeight = 36;  // reduced by 40% (was 60)
-    static constexpr int gap            = 2;
+    static constexpr int overviewHeight  = 36;  // reduced by 40% (was 60)
+    static constexpr int gap             = 2;
+    static constexpr int zoomButtonSize  = 18;  // 20% smaller than 22px
+    static constexpr int zoomButtonInset = 6;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveformComponent)
 };

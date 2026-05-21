@@ -23,6 +23,18 @@ struct DeckAudioState
     std::atomic<float>    speedMultiplier { 1.0f };
     std::atomic<int>      playbackStatus  { static_cast<int> (PlaybackStatusCode::empty) };
     std::atomic<int64_t>  playheadPosition { 0 };
+
+    // Waveform scratch gesture state (PRD-0016 follow-up): message thread
+    // writes, audio thread reads. Used to render continuous scratch audio
+    // while preserving transport status semantics.
+    std::atomic<bool>     scratchActive        { false };
+    std::atomic<int64_t>  scratchTargetSample  { 0 };
+    // Velocity-based scratch (samples/sample, signed for reverse).
+    // The message thread computes this from consecutive drag-event positions
+    // and timestamps so the audio thread plays continuously at the published
+    // velocity rather than teleporting to an absolute target in one block.
+    std::atomic<float>    scratchVelocityPerSample { 0.0f };
+
     std::atomic<int64_t>  tempCuePosition { -1 };
     std::atomic<bool>     quantizeEnabled { false };
     std::atomic<bool>     slipEnabled     { false };

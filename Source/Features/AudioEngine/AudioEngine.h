@@ -85,6 +85,10 @@ public:
     /// Seek a deck to a specific sample position. Thread-safe, lock-free.
     void seekDeck (const juce::String& deckId, int64_t targetSample);
 
+    /// Scratch seek: emits a short audible burst even when paused/stopped,
+    /// without changing transport status. Used by waveform touch-drag.
+    void scratchSeekDeck (const juce::String& deckId, int64_t targetSample);
+
     /// Seek a deck and start playback atomically. Thread-safe, lock-free.
     void seekAndPlayDeck (const juce::String& deckId, int64_t targetSample);
 

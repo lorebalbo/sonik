@@ -29,7 +29,19 @@ public:
     /// accounting for the current zoom level and scroll offset.
     int64_t pixelXToSamplePosition (float pixelX) const;
 
+    /// PRD-0006: Discrete zoom step in (toward 4s) or out (toward 64s).
+    /// Called by external +/- zoom buttons. No-op at zoom-range limits.
+    void zoomIn();
+    void zoomOut();
+
     std::function<void (int64_t samplePosition)> onSeek;
+
+    /// PRD-0016: Unmodified press on the detail waveform engages the
+    /// vinyl-style touch/hold + drag gesture. The host wires these callbacks
+    /// to capture/restore transport state across the hold (playing decks stop
+    /// while held and resume on release; paused decks never auto-start).
+    std::function<void()> onScratchBegin;
+    std::function<void()> onScratchEnd;
 
     void paint (juce::Graphics& g) override;
     void mouseDown (const juce::MouseEvent& e) override;
@@ -78,7 +90,23 @@ private:
     int64_t tooltipSample   = 0;
 
     // Drag state (PRD-0016)
-    bool    isDragging      = false;
+    bool    isDragging        = false;
+    bool    isScratchDrag     = false; // unmodified press: vinyl-style scratch
+    bool    scratchActive     = false; // true between scratch begin/end
+    // Relative-drag anchor captured at mouseDown. The playhead during the
+    // drag is computed as anchorSample - (currentX - anchorX) * samplesPerPixel
+    // so total displacement equals total mouse motion regardless of drag
+    // speed. Pressing without moving never seeks.
+    int     dragAnchorX       = 0;
+    int64_t dragAnchorSample  = 0;
+    int64_t lastDispatchedSample = 0;
+
+    // Scroll-wheel sensitivity (PRD-0006 follow-up)
+    // Accumulate raw wheel deltas; only step zoom when |accum| >= threshold.
+    // Threshold tuned so a normal trackpad two-finger gesture still steps
+    // zoom while preventing one-tick-per-event hyper-sensitivity.
+    float   wheelAccum       = 0.0f;
+    static constexpr float wheelStepThreshold = 0.1f;
 
     // Zoom levels in seconds
     static constexpr float zoomLevels[] = { 4.0f, 8.0f, 16.0f, 32.0f, 48.0f, 64.0f };

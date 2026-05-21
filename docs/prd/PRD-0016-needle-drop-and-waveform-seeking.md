@@ -7,6 +7,7 @@ depends-on:
   - PRD-0006
   - PRD-0008
   - PRD-0013
+  - PRD-0018
 ---
 
 # 1. PRD-0016: Needle Drop and Waveform Seeking
@@ -27,6 +28,7 @@ The system provides interactive click-to-seek and drag-to-scrub behavior on both
 - Allows the DJ to click on the detail waveform while holding a modifier key (Shift) to seek to the clicked position, preventing accidental seeks during normal waveform interaction (zoom, future loop drag).
 - Allows the DJ to Shift+click-and-drag on the detail waveform to scrub through audio at fine resolution, with the scrub range determined by the current zoom level.
 - Exposes a `pixelXToSamplePosition` inverse coordinate mapping on both waveform components, converting a local pixel X coordinate to an absolute sample position within the loaded track.
+- Provides a *vinyl-style press-and-scratch* gesture on the detail waveform: an unmodified mouse-down acts as a “finger on the record” — the deck transport is paused on release at the cursor position, and any drag movement before release dispatches continuous seek commands that produce audible scratch artefacts through the existing transport crossfade ramps (PRD-0004). This unmodified gesture replaces the previous “unmodified click is reserved” placeholder.
 - When quantize mode is enabled (PRD-0013), optionally snaps the seek destination to the nearest beat on the beatgrid (PRD-0008), controlled by a secondary modifier key (Shift+Alt/Option for quantized seek vs. Shift alone for exact seek on the detail waveform).
 - Provides visual cursor feedback (crosshair cursor on seekable areas, time-position tooltip on hover) so the DJ always knows what position a click will target.
 - Deactivates an active loop when the DJ seeks to a position outside the loop region, matching Pioneer CDJ-3000 behavior where a needle-drop escape exits the loop.
@@ -51,9 +53,12 @@ The system provides interactive click-to-seek and drag-to-scrub behavior on both
 10. Seek commands during drag are throttled to one per `processBlock` cycle to prevent command queue overflow. Intermediate mouse positions between cycles are discarded; only the most recent position at each cycle is dispatched.
 11. The user releases the mouse button. If the deck was Playing before the drag began, playback continues from the release position. If the deck was Paused or Stopped, it remains Paused at the release position.
 
-### 1.3.3. Detail Waveform Shift+Click-to-Seek
+### 1.3.3. Detail Waveform Press-to-Pause and Drag-to-Scratch (Unmodified)
 
-12. The user moves the mouse over the detail waveform without holding any modifier key. The cursor remains the default arrow. No seek behavior is active — the detail waveform is reserved for zoom (scroll wheel) and future interactions (loop drag, beat grid adjust).
+12a. The user has Deck A playing. The user clicks (without holding any modifier) on the detail waveform and releases without moving. The deck transport is paused on release and the playhead is positioned at the clicked sample. This mirrors a DJ resting a finger on a spinning vinyl to halt playback. The temp cue point is not modified.
+12b. The user clicks (without holding any modifier) and drags horizontally across the detail waveform without releasing. During the drag, continuous seek commands are dispatched at the same one-per-`processBlock` cadence as Shift+drag. The transport remains in the Playing state for the duration of the drag so that each seek’s 64-sample crossfade ramp (PRD-0004) is audible — producing the characteristic stuttering scratch-sound feedback. On mouse release, the deck transport is paused at the release sample. The deck does not resume playback on its own — the DJ must press Play to continue, matching the “press-to-stop” semantic.
+12c. The press-and-drag gesture is mutually exclusive with the Shift+drag seek gesture. Holding Shift at press-time engages the seek behavior described below; no Shift at press-time engages the scratch/pause behavior described in 12a/12b. Releasing or pressing Shift mid-drag does not switch modes — the mode is decided at press-time and held for the lifetime of that drag.
+12d. The scratch gesture is a no-op when no track is loaded (Empty state) or when waveform data is not yet available.
 13. The user holds Shift. The cursor changes to a crosshair over the detail waveform. A time-position tooltip appears near the cursor, showing the sample position corresponding to the pixel under the mouse.
 14. The user clicks while holding Shift. The system converts the click's local X coordinate to a sample position using the detail waveform's `pixelXToSamplePosition` (which accounts for the current zoom level and scroll offset). The seek command is dispatched to the transport.
 15. The seek executes identically to the overview click-to-seek (step 4).
@@ -118,7 +123,11 @@ The system provides interactive click-to-seek and drag-to-scrub behavior on both
 
 ### 1.4.3. Detail Waveform Interaction
 
-- [ ] Clicking on the detail waveform without a modifier key does not seek. The detail waveform's unmodified click is reserved for future interactions.
+- [ ] Clicking on the detail waveform without a modifier key dispatches a single seek to the click position and pauses the deck transport on mouse release. If the user does not drag between press and release, this acts as a “press-to-stop” control — a Playing deck becomes Paused at the clicked sample.
+- [ ] Click-and-drag on the detail waveform without a modifier key dispatches continuous seek commands (one per `processBlock` cycle) for the duration of the drag, producing audible scratch artefacts via the transport’s standard crossfade ramps. The deck transport is forced to the Playing state at press-time (if it was Paused or Stopped) for the duration of the drag and is set back to Paused on mouse release.
+- [ ] The press-and-drag scratch gesture uses the same lock-free seek command path as Shift+drag — no new audio-thread state is required.
+- [ ] The press-and-drag scratch gesture is mutually exclusive with the Shift+drag seek gesture. Mode is latched at mouse-down based on modifier state and is not re-evaluated during the drag.
+- [ ] The press-and-drag scratch gesture is a no-op when no track is loaded or waveform data is unavailable. Releasing the mouse in that case does not pause an empty deck.
 - [ ] Holding Shift changes the cursor to crosshair over the detail waveform. Releasing Shift reverts the cursor.
 - [ ] Shift+click on the detail waveform dispatches a seek command at the position returned by `pixelXToSamplePosition`.
 - [ ] Shift+click-and-drag dispatches continuous seek commands (one per `processBlock` cycle), producing fine-resolution scrubbing that matches the current zoom level.
@@ -153,8 +162,9 @@ The system provides interactive click-to-seek and drag-to-scrub behavior on both
 
 - [ ] Seeking does not change the deck's transport state. A Playing deck remains Playing after the seek. A Paused deck remains Paused. A Stopped deck remains Stopped.
 - [ ] Exception: drag-to-scrub on a Paused or Stopped deck does not start playback. The playhead moves to each dragged position silently (no audio output during scrub while paused/stopped).
-- [ ] After a drag-to-scrub completes (mouse released), the deck returns to its pre-drag transport state at the release position.
-- [ ] The temp cue point (PRD-0004) is not modified by any needle-drop or scrub operation.
+- [ ] After a Shift+drag scrub completes (mouse released), the deck returns to its pre-drag transport state at the release position.
+- [ ] Exception: the unmodified press/drag scratch gesture on the detail waveform deliberately forces the deck into the Playing state at press-time and into the Paused state on release, overriding the preservation rule. This is the explicit semantic of the “press-to-stop” vinyl gesture.
+- [ ] The temp cue point (PRD-0004) is not modified by any needle-drop, scrub, or scratch operation.
 
 ### 1.4.8. Cursor and Visual Feedback
 
@@ -188,9 +198,11 @@ The system provides interactive click-to-seek and drag-to-scrub behavior on both
 
 ### 1.5.1. Scrub Audio Output During Playback
 
-When the DJ drags to scrub while the deck is Playing, the transport executes rapid successive seeks with crossfade ramps. At typical scrub speeds this produces a stuttering, choppy audio effect. This is acceptable and expected — it gives the DJ audible feedback of the scrubbed region, matching Traktor Pro's behavior. An alternative approach is to mute audio during scrub and only produce output on mouse release, but this removes the auditory feedback that makes scrubbing useful. A third option is to implement vinyl-style scrub audio (pitch and speed vary proportionally to scrub velocity, like a turntable), but this requires a dedicated DSP mode in the transport system and is deferred to a future PRD.
+When the DJ drags to scrub while the deck is Playing, the transport executes rapid successive seeks with crossfade ramps. At typical scrub speeds this produces a stuttering, choppy audio effect. This is acceptable and expected — it gives the DJ audible feedback of the scrubbed region, matching Traktor Pro's behavior. An alternative approach is to mute audio during scrub and only produce output on mouse release, but this removes the auditory feedback that makes scrubbing useful. A third option is to implement vinyl-style scrub audio (pitch and speed vary proportionally to scrub velocity, like a turntable), but this requires a dedicated DSP mode in the transport system and is deferred to PRD-0018 (Jog Wheel).
 
 The current design uses standard crossfade-based seeks during playback scrub and silence during paused/stopped scrub. This is the simplest approach that provides useful feedback without introducing new audio-thread complexity.
+
+The unmodified press/drag scratch gesture on the detail waveform deliberately keeps the transport in the Playing state during the drag specifically to surface the crossfade-based scratch audio described above. The full velocity-proportional scratch DSP path remains PRD-0018’s scope; this PRD only adds the waveform mouse surface that drives it.
 
 ### 1.5.2. Modifier Key Choice for Detail Waveform
 

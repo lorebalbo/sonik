@@ -141,6 +141,19 @@ private:
     // Waveform
     std::unique_ptr<WaveformComponent>    waveformComponent;
 
+    // PRD-0016: Scratch lifecycle state. Captured at onScratchBegin and
+    // restored on onScratchEnd so CDJ semantics apply (playing-before-press
+    // resumes on release, paused-before-press stays paused).
+    juce::String scratchPriorStatus;
+    bool         scratchGestureActive = false;
+
+    // Scratch velocity tracking (message thread only, PRD-0016).
+    // Used to compute the samples/sample velocity published to the audio
+    // thread on each drag event, so the audio plays continuously rather
+    // than teleporting to the target and going silent between events.
+    int64_t scratchPrevTargetSample = 0;
+    int64_t scratchPrevEventTimeMs  = 0;
+
     // Time & Pitch sidebar (right of waveform)
     std::unique_ptr<KeyLockButton>        keyLockButton;
     std::unique_ptr<KeyStepperComponent>  keyStepperComponent;

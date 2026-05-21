@@ -377,12 +377,31 @@ void DetailWaveform::mouseDown (const juce::MouseEvent& e)
     if (waveformData == nullptr || totalSamples <= 0)
         return;
 
-    // Detail waveform requires Shift to seek
-    if (! e.mods.isShiftDown())
+    if (e.mods.isShiftDown())
+    {
+        // Shift+click/drag: precise seek (existing behavior).
+        isDragging    = true;
+        isScratchDrag = false;
+        handleSeekAt (e);
         return;
+    }
 
-    isDragging = true;
-    handleSeekAt (e);
+    // Unmodified press: vinyl-style touch/hold + relative-drag scratch
+    // (PRD-0016). Press does NOT seek — it captures the current playhead as
+    // the drag anchor so the track stays where it is until the user actually
+    // drags. The host controls transport state on begin/end to emulate
+    // platter touch semantics.
+    isDragging        = true;
+    isScratchDrag     = true;
+    scratchActive     = true;
+    dragAnchorX       = e.x;
+    dragAnchorSample  = (audioState != nullptr)
+                            ? audioState->playheadPosition.load (std::memory_order_relaxed)
+                            : int64_t (0);
+    lastDispatchedSample = dragAnchorSample;
+
+    if (onScratchBegin)
+        onScratchBegin();
 }
 
 void DetailWaveform::mouseDrag (const juce::MouseEvent& e)
@@ -390,7 +409,37 @@ void DetailWaveform::mouseDrag (const juce::MouseEvent& e)
     if (! isDragging || waveformData == nullptr || totalSamples <= 0)
         return;
 
-    // Stop scrubbing if Shift is released during drag
+    if (isScratchDrag)
+    {
+        // Unmodified press/drag scratch: compute the target sample from the
+        // anchor captured at mouseDown so total displacement equals total
+        // mouse motion (1px ~ samplesPerPixel) independent of drag speed.
+        // Dragging right pulls earlier samples under the playhead (vinyl
+        // convention: grab the waveform and drag it the same way you would
+        // drag a record). Each unique target dispatches a seek; the existing
+        // 64-sample seek crossfade produces the audible scratch artefact.
+        if (getWidth() <= 0 || totalSamples <= 0 || sampleRate <= 0.0)
+            return;
+
+        const double samplesPerPixel =
+            (static_cast<double> (visibleSeconds) * sampleRate)
+            / static_cast<double> (getWidth());
+
+        const int dx = e.x - dragAnchorX;
+        int64_t target = dragAnchorSample
+                         - static_cast<int64_t> (static_cast<double> (dx) * samplesPerPixel);
+        target = juce::jlimit (int64_t (0), totalSamples - 1, target);
+
+        if (target != lastDispatchedSample)
+        {
+            lastDispatchedSample = target;
+            if (onSeek)
+                onSeek (target);
+        }
+        return;
+    }
+
+    // Shift+drag seek: stop scrubbing if Shift is released during drag.
     if (! e.mods.isShiftDown())
     {
         isDragging = false;
@@ -403,6 +452,14 @@ void DetailWaveform::mouseDrag (const juce::MouseEvent& e)
 void DetailWaveform::mouseUp (const juce::MouseEvent&)
 {
     isDragging = false;
+
+    if (scratchActive)
+    {
+        scratchActive = false;
+        isScratchDrag = false;
+        if (onScratchEnd)
+            onScratchEnd();
+    }
 }
 
 void DetailWaveform::mouseMove (const juce::MouseEvent& e)
@@ -439,7 +496,10 @@ void DetailWaveform::mouseEnter (const juce::MouseEvent& e)
 void DetailWaveform::mouseExit (const juce::MouseEvent&)
 {
     showTooltip = false;
-    isDragging  = false;
+    // Note: we deliberately do NOT cancel an in-flight scratch drag here.
+    // mouseExit fires when the cursor leaves the component bounds vertically
+    // during a horizontal drag; JUCE continues to deliver mouseDrag events to
+    // the captured component, and we want the scratch gesture to survive.
     setMouseCursor (juce::MouseCursor::NormalCursor);
 }
 
@@ -449,14 +509,51 @@ void DetailWaveform::mouseWheelMove (const juce::MouseEvent&,
     if (waveformData == nullptr)
         return;
 
-    if (wheel.deltaY > 0.0f)
+    // Scroll-wheel sensitivity (PRD-0006 follow-up): accumulate raw deltas so
+    // trackpad inertial scrolls don’t blow through all 6 zoom levels in one
+    // gesture. Step zoom only when the accumulator crosses the threshold.
+    wheelAccum += wheel.deltaY;
+
+    bool changed = false;
+    while (wheelAccum >= wheelStepThreshold)
+    {
         zoomLevelIndex = juce::jmax (0, zoomLevelIndex - 1);
-    else if (wheel.deltaY < 0.0f)
+        wheelAccum -= wheelStepThreshold;
+        changed = true;
+    }
+    while (wheelAccum <= -wheelStepThreshold)
+    {
         zoomLevelIndex = juce::jmin (numZoomLevels - 1, zoomLevelIndex + 1);
+        wheelAccum += wheelStepThreshold;
+        changed = true;
+    }
+
+    if (! changed)
+        return;
 
     visibleSeconds = zoomLevels[zoomLevelIndex];
+    cachedZoomIndex = -1;
+    repaint();
+}
 
-    // Force image rebuild
+void DetailWaveform::zoomIn()
+{
+    if (zoomLevelIndex <= 0)
+        return;
+    zoomLevelIndex = juce::jmax (0, zoomLevelIndex - 1);
+    visibleSeconds = zoomLevels[zoomLevelIndex];
+    wheelAccum = 0.0f;
+    cachedZoomIndex = -1;
+    repaint();
+}
+
+void DetailWaveform::zoomOut()
+{
+    if (zoomLevelIndex >= numZoomLevels - 1)
+        return;
+    zoomLevelIndex = juce::jmin (numZoomLevels - 1, zoomLevelIndex + 1);
+    visibleSeconds = zoomLevels[zoomLevelIndex];
+    wheelAccum = 0.0f;
     cachedZoomIndex = -1;
     repaint();
 }

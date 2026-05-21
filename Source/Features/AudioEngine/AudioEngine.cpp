@@ -222,6 +222,15 @@ void AudioEngine::registerDeck (const juce::String& deckId, DeckAudioState* audi
     src.slipDisplacedLocal        = false;
     src.wasLoopActiveLastBlock    = false;
 
+    if (src.audioState != nullptr)
+    {
+        src.audioState->scratchActive.store (false, std::memory_order_relaxed);
+        src.audioState->scratchTargetSample.store (0, std::memory_order_relaxed);
+        src.audioState->scratchVelocityPerSample.store (0.0f, std::memory_order_relaxed);
+    }
+    src.prevScratchVelocityRead = 0.0f;
+    src.scratchVelocityDecayed  = 0.0f;
+
     // Stem state (PRD-0021)
     for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
     {
@@ -327,10 +336,15 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
             src.audioState->playbackStatus.store (1, std::memory_order_relaxed); // stopped
             src.audioState->playheadPosition.store (0, std::memory_order_relaxed);
             src.audioState->tempCuePosition.store (0, std::memory_order_relaxed);
+            src.audioState->scratchActive.store (false, std::memory_order_relaxed);
+            src.audioState->scratchTargetSample.store (0, std::memory_order_relaxed);
+            src.audioState->scratchVelocityPerSample.store (0.0f, std::memory_order_relaxed);
             // PRD-0017: reset slip atomics
             src.audioState->slipShadowPosition.store (0.0, std::memory_order_relaxed);
             src.audioState->slipDisplaced.store (false, std::memory_order_relaxed);
         }
+        src.prevScratchVelocityRead = 0.0f;
+        src.scratchVelocityDecayed  = 0.0f;
 
         // Store the holder first (message thread ownership)
         src.bufferHolder = holder;
@@ -417,7 +431,12 @@ void AudioEngine::clearDeckBuffer (const juce::String& deckId)
         src.audioState->stemDrumsMuted.store (false, std::memory_order_relaxed);
         src.audioState->stemBassMuted.store (false, std::memory_order_relaxed);
         src.audioState->stemOtherMuted.store (false, std::memory_order_relaxed);
+        src.audioState->scratchActive.store (false, std::memory_order_relaxed);
+        src.audioState->scratchTargetSample.store (0, std::memory_order_relaxed);
+        src.audioState->scratchVelocityPerSample.store (0.0f, std::memory_order_relaxed);
     }
+    src.prevScratchVelocityRead = 0.0f;
+    src.scratchVelocityDecayed  = 0.0f;
 
     // Null the pointers first so the audio thread stops reading
     src.channelL.store (nullptr, std::memory_order_release);
@@ -788,6 +807,38 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 break;
             }
 
+            case TransportCommand::ScratchSeek:
+            {
+                auto target = source->seekTarget.load (std::memory_order_relaxed);
+                target = juce::jlimit<int64_t> (0, bufLen - 1, target);
+
+                if (status == PlaybackStatusCode::playing)
+                {
+                    // While actively playing, scratch-seek behaves like a
+                    // regular seek (fade-out, reposition, fade-in).
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction     = DeckAudioSource::DeferredAction::Seek;
+                    source->deferredSeekTarget = target;
+                    source->deferredIsSlipDisplacement = false;
+                }
+                else
+                {
+                    // Paused/stopped: reposition instantly, then emit a
+                    // short decaying burst without changing transport state.
+                    source->playheadAccumulator = static_cast<double> (target);
+                    source->shadowPlayheadAccumulator = static_cast<double> (target);
+                    source->slipDisplacedLocal = false;
+
+                    source->fadeRampSamplesRemaining = DeckAudioSource::FADE_RAMP_LENGTH;
+                    source->isFadingOut = true;
+                    source->isFadingIn  = false;
+                    source->deferredAction = DeckAudioSource::DeferredAction::None;
+                }
+                break;
+            }
+
             case TransportCommand::CueSet:
                 if (status == PlaybackStatusCode::paused)
                 {
@@ -985,6 +1036,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         // 3b. Slip mode state (PRD-0017)
         bool slipEnabled = audioState->slipEnabled.load (std::memory_order_relaxed);
 
+        // Waveform scratch state (PRD-0016 follow-up)
+        const bool scratchMode = audioState->scratchActive.load (std::memory_order_acquire);
+        int64_t scratchTarget = audioState->scratchTargetSample.load (std::memory_order_relaxed);
+        scratchTarget = juce::jlimit<int64_t> (0, bufLen - 1, scratchTarget);
+
         // When slip is disabled, clear displacement state
         if (! slipEnabled)
             source->slipDisplacedLocal = false;
@@ -1013,13 +1069,59 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         }
 
         // 4. Read speed (PRD-0028: correctionMultiplier applied multiplicatively)
-        float speed = juce::jmax (0.0f,
-            static_cast<float> (
-                static_cast<double> (audioState->speedMultiplier.load (std::memory_order_relaxed))
-                * source->correctionMultiplier));
+        // Scratch mode uses the velocity published by the message thread
+        // (samples/sample, signed for reverse playback).  Between message-thread
+        // updates the local copy is decayed per-block to simulate the natural
+        // deceleration of a vinyl platter – this ensures the audio plays
+        // CONTINUOUSLY rather than making one burst and then going silent until
+        // the next drag event arrives.
+        constexpr float kScratchMaxSpeed     = 24.0f;
+        constexpr float kScratchDeadband     = 0.0005f;
+        // Decay per block ≈ 200 ms half-life at 44100/128 ≈ 344 blocks/s.
+        // Chosen so the velocity drops to ~95% between typical 60 Hz mouse
+        // events (5 blocks) – nearly imperceptible during active dragging –
+        // while decaying cleanly to silence within ~200 ms if the user holds
+        // the waveform still after a scratch.
+        constexpr float kScratchVelocityDecay = 0.990f;
+
+        float speed = 0.0f;
+        if (scratchMode)
+        {
+            const float publishedVelocity =
+                audioState->scratchVelocityPerSample.load (std::memory_order_relaxed);
+
+            if (publishedVelocity != source->prevScratchVelocityRead)
+            {
+                // Message thread published a new velocity: adopt it immediately.
+                source->scratchVelocityDecayed  = publishedVelocity;
+                source->prevScratchVelocityRead = publishedVelocity;
+            }
+            else
+            {
+                // No new velocity this block: decay the local copy.
+                source->scratchVelocityDecayed *= kScratchVelocityDecay;
+            }
+
+            speed = juce::jlimit (-kScratchMaxSpeed, kScratchMaxSpeed,
+                                   source->scratchVelocityDecayed);
+
+            if (std::abs (speed) < kScratchDeadband)
+            {
+                speed = 0.0f;
+                source->scratchVelocityDecayed = 0.0f; // snap to zero to avoid sub-deadband drift
+            }
+        }
+        else
+        {
+            speed = juce::jmax (0.0f,
+                static_cast<float> (
+                    static_cast<double> (audioState->speedMultiplier.load (std::memory_order_relaxed))
+                    * source->correctionMultiplier));
+        }
 
         // Quick path: not playing and no active fade → silence
-        if (status != PlaybackStatusCode::playing
+        if (! scratchMode
+            && status != PlaybackStatusCode::playing
             && source->fadeRampSamplesRemaining <= 0)
         {
             audioState->playheadPosition.store (
@@ -1099,7 +1201,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         const bool stretcherEngaged = keyLockOn || (keyShiftSemis != 0);
 
         auto* stretcher = source->timeStretcher.load (std::memory_order_acquire);
-        bool useStretcher = stretcherEngaged && stretcher != nullptr && speed > 0.01f;
+        bool useStretcher = ! scratchMode && stretcherEngaged
+                    && stretcher != nullptr && speed > 0.01f;
 
         // Detect engagement transition — apply a short crossfade between
         // vinyl and stretched paths to avoid a click at the transition.
@@ -1130,7 +1233,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         // crossfade.  At ratio 1.0 the R3 engine is near-passthrough and
         // adds negligible CPU.
         int stretchedAvail = 0;
-        if (stretcher != nullptr && speed > 0.01f)
+        if (! scratchMode && stretcher != nullptr && speed > 0.01f)
         {
             // Smoothly ramp the time ratio toward the target so that
             // setTimeRatio() never sees an abrupt jump — this prevents the
@@ -1247,7 +1350,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         bool useStemStretchers = false;
         int stemStretchedAvail[DeckAudioSource::NUM_STEMS] = {};
 
-        if (stemActive && stretcherEngaged && speed > 0.01f
+        if (! scratchMode && stemActive && stretcherEngaged && speed > 0.01f
             && ! source->stemStretchDegraded.load (std::memory_order_relaxed))
         {
             auto* stemStr0 = source->stemTimeStretchers[0].load(std::memory_order_acquire);
@@ -1367,15 +1470,33 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         for (int i = 0; i < numSamples; ++i)
         {
             // If not playing and no active fade remaining, skip
-            if (status != PlaybackStatusCode::playing
+            if (! scratchMode
+                && status != PlaybackStatusCode::playing
                 && source->fadeRampSamplesRemaining <= 0)
                 continue;
 
             double pos  = source->playheadAccumulator;
             int64_t idx = static_cast<int64_t> (pos);
 
+            if (scratchMode)
+            {
+                const double maxPos = static_cast<double> (bufLen - 1);
+                if (pos < 0.0)
+                {
+                    pos = 0.0;
+                    source->playheadAccumulator = 0.0;
+                    idx = 0;
+                }
+                else if (pos > maxPos)
+                {
+                    pos = maxPos;
+                    source->playheadAccumulator = maxPos;
+                    idx = bufLen - 1;
+                }
+            }
+
             // End-of-track check
-            if (pos >= static_cast<double> (bufLen))
+            if (! scratchMode && pos >= static_cast<double> (bufLen))
             {
                 if (! source->isFadingOut && source->fadeRampSamplesRemaining <= 0)
                 {
@@ -1400,8 +1521,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             }
 
             // Capture advance decision before potential fade completion
-            bool shouldAdvance = (status == PlaybackStatusCode::playing)
-                                 || source->isFadingOut;
+            bool shouldAdvance = scratchMode
+                ? (std::abs (speed) > kScratchDeadband)
+                : ((status == PlaybackStatusCode::playing) || source->isFadingOut);
+
+            // Stationary scratch-hold should be silent, not a held DC sample.
+            // Keep fade handling active if a transport fade is currently in flight.
+            if (scratchMode && ! shouldAdvance
+                && source->fadeRampSamplesRemaining <= 0)
+            {
+                deckScratchL[slot][static_cast<size_t> (i)] = 0.0f;
+                deckScratchR[slot][static_cast<size_t> (i)] = 0.0f;
+                continue;
+            }
 
             // Read vinyl-mode sample (always needed for crossfade or non-stretched path)
             float vinylL, vinylR;
@@ -1761,7 +1893,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             // When the playhead crosses loopOut, wrap back to loopIn and
             // start a crossfade to eliminate the boundary click.
             // Skip during fade-out to avoid conflicting with transport seeks.
-            if (validLoop && shouldAdvance && ! source->isFadingOut
+            if (! scratchMode && validLoop && shouldAdvance && ! source->isFadingOut
                 && source->playheadAccumulator >= static_cast<double> (lpOut))
             {
                 source->loopFadeReadPos    = source->playheadAccumulator;
@@ -1783,7 +1915,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             }
 
             // PRD-0017: Shadow playhead management
-            if (slipEnabled)
+            if (! scratchMode && slipEnabled)
             {
                 if (source->slipDisplacedLocal)
                 {
@@ -1804,6 +1936,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                     // Not displaced: shadow tracks primary
                     source->shadowPlayheadAccumulator = source->playheadAccumulator;
                 }
+            }
+            else if (scratchMode)
+            {
+                source->shadowPlayheadAccumulator = source->playheadAccumulator;
+                source->slipDisplacedLocal = false;
             }
         }
 
@@ -2225,6 +2362,21 @@ void AudioEngine::seekDeck (const juce::String& deckId, int64_t targetSample)
         source->seekTarget.store (targetSample, std::memory_order_relaxed);
         source->pendingCommand.store (
             static_cast<int> (TransportCommand::Seek), std::memory_order_relaxed);
+    }
+}
+
+void AudioEngine::scratchSeekDeck (const juce::String& deckId, int64_t targetSample)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto* source = deckSlots[static_cast<size_t> (slot)].load (std::memory_order_acquire);
+    if (source != nullptr)
+    {
+        source->seekTarget.store (targetSample, std::memory_order_relaxed);
+        source->pendingCommand.store (
+            static_cast<int> (TransportCommand::ScratchSeek), std::memory_order_relaxed);
     }
 }
 

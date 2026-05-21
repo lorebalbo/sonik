@@ -16,6 +16,7 @@ enum class TransportCommand : int
     Pause,
     Stop,
     Seek,
+    ScratchSeek,      // Seek with short audible burst while staying paused/stopped
     CueSet,
     CueReturn,
     CuePreview,
@@ -192,4 +193,13 @@ struct DeckAudioSource
     // phaseOffset is published from the audio thread for the phase meter UI (PRD-0029).
     // Written each block by PhaseLockEngine, read asynchronously by the message thread.
     std::atomic<float> phaseOffset { 0.0f };
+
+    // --- Scratch velocity state (PRD-0016, audio thread only) ---
+    // prevScratchVelocityRead: the scratchVelocityPerSample value read last block.
+    // Used to detect when the message thread has published a new velocity so we
+    // can reset the decayed local copy rather than continuing to decay it.
+    // scratchVelocityDecayed: the audio-thread local copy, decayed per block when
+    // no new velocity has been published to simulate platter deceleration.
+    float prevScratchVelocityRead = 0.0f;
+    float scratchVelocityDecayed  = 0.0f;
 };

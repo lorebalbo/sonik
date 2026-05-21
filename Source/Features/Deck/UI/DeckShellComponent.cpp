@@ -869,7 +869,117 @@ void DeckShellComponent::valueTreePropertyChanged (juce::ValueTree& tree,
                                     }
                                 }
 
-                                safeThis->audioEngine.seekDeck (safeThis->deckId, pos);
+                                auto* audioState =
+                                    safeThis->deckStateManager.getAudioState (safeThis->deckId);
+
+                                if (safeThis->scratchGestureActive && audioState != nullptr)
+                                {
+                                    // Velocity-based scratch (PRD-0016 fix):
+                                    // Compute samples/sample velocity from the position
+                                    // delta and elapsed time since the last drag event.
+                                    // This lets the audio thread play CONTINUOUSLY at the
+                                    // published velocity rather than teleporting to an
+                                    // absolute target in one block and then going silent
+                                    // until the next drag event fires.
+                                    const int64_t nowMs = juce::Time::currentTimeMillis();
+                                    const int64_t dtMs  = nowMs - safeThis->scratchPrevEventTimeMs;
+
+                                    if (dtMs > 0)
+                                    {
+                                        const double sr = safeThis->audioEngine.getSampleRate();
+                                        const double dtSamples =
+                                            (static_cast<double> (dtMs) / 1000.0) * sr;
+                                        const double delta =
+                                            static_cast<double> (pos)
+                                            - static_cast<double> (safeThis->scratchPrevTargetSample);
+                                        const float velocity =
+                                            static_cast<float> (delta / dtSamples);
+                                        audioState->scratchVelocityPerSample.store (
+                                            velocity, std::memory_order_relaxed);
+                                        safeThis->scratchPrevEventTimeMs = nowMs;
+                                    }
+                                    // If dtMs == 0 (two events in the same millisecond),
+                                    // skip the velocity update so we keep the previous
+                                    // value; only advance the position anchor.
+
+                                    safeThis->scratchPrevTargetSample = pos;
+                                    audioState->scratchTargetSample.store (
+                                        pos, std::memory_order_relaxed);
+                                }
+                                else
+                                    safeThis->audioEngine.seekDeck (safeThis->deckId, pos);
+                            };
+
+                            // PRD-0016: Vinyl/CDJ-style scratch lifecycle on
+                            // the detail waveform. We capture the prior
+                            // playback state at press, then only apply
+                            // "touch-stops-platter" when the deck was already
+                            // playing. Releasing restores the prior state:
+                            //   playing -> hold/drag -> playing (resumes)
+                            //   paused  -> hold/drag -> paused  (never starts)
+                            //   stopped -> hold/drag -> stopped (never starts)
+                            safeThis->waveformComponent->onScratchBegin = [safeThis]
+                            {
+                                if (safeThis == nullptr)
+                                    return;
+
+                                auto* audioState =
+                                    safeThis->deckStateManager.getAudioState (safeThis->deckId);
+
+                                safeThis->scratchGestureActive = true;
+                                safeThis->scratchPriorStatus =
+                                    safeThis->deckTree
+                                        .getProperty (IDs::playbackStatus, "paused")
+                                        .toString();
+
+                                if (audioState != nullptr)
+                                {
+                                    const auto currentSample =
+                                        audioState->playheadPosition.load (
+                                            std::memory_order_relaxed);
+                                    audioState->scratchTargetSample.store (
+                                        currentSample, std::memory_order_relaxed);
+                                    // Initialise velocity to zero (stationary press = silence)
+                                    // and seed the timing anchor for the first drag event.
+                                    audioState->scratchVelocityPerSample.store (
+                                        0.0f, std::memory_order_relaxed);
+                                    safeThis->scratchPrevTargetSample = currentSample;
+                                    safeThis->scratchPrevEventTimeMs  =
+                                        juce::Time::currentTimeMillis();
+
+                                    audioState->scratchActive.store (
+                                        true, std::memory_order_release);
+                                }
+
+                                // Pointer-down is equivalent to touching a
+                                // spinning vinyl: only a currently playing
+                                // deck is stopped while held.
+                                if (safeThis->scratchPriorStatus == "playing")
+                                {
+                                    safeThis->deckStateManager.setPlaybackStatus (
+                                        safeThis->deckId, "paused");
+                                }
+                            };
+                            safeThis->waveformComponent->onScratchEnd = [safeThis]
+                            {
+                                if (safeThis == nullptr)
+                                    return;
+
+                                if (auto* audioState =
+                                        safeThis->deckStateManager.getAudioState (safeThis->deckId);
+                                    audioState != nullptr)
+                                {
+                                    audioState->scratchActive.store (
+                                        false, std::memory_order_release);
+                                }
+
+                                safeThis->scratchGestureActive = false;
+                                const juce::String restoreTo =
+                                    safeThis->scratchPriorStatus.isNotEmpty()
+                                        ? safeThis->scratchPriorStatus
+                                        : juce::String ("paused");
+                                safeThis->deckStateManager.setPlaybackStatus (
+                                    safeThis->deckId, restoreTo);
                             };
                         }
 
