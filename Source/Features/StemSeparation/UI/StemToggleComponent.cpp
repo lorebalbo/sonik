@@ -1,10 +1,8 @@
 #include "StemToggleComponent.h"
 
-// Design-system palette
-static const juce::Colour kLight { 0xFFF9F9F9 };
-static const juce::Colour kDark  { 0xFF2D2D2D };
-static const juce::Colour kGreen { 0xFF0AD691 };
-static const juce::Colour kRed   { 0xFFFF3C3B };
+// Design-system palette (DESIGN.md §1 — strictly monochrome)
+static const juce::Colour kLight { 0xFFFDFDFD };   // surface
+static const juce::Colour kDark  { 0xFF2D2D2D };   // ink
 
 // ---------------------------------------------------------------------------
 StemToggleComponent::StemToggleComponent (juce::ValueTree stems,
@@ -12,6 +10,7 @@ StemToggleComponent::StemToggleComponent (juce::ValueTree stems,
                                           std::vector<juce::Identifier> propertyIds,
                                           const juce::String& tooltip)
     : stemsNode (stems),
+      deckNode (stems.getParent()),
       labelText (label),
       propIds (std::move (propertyIds))
 {
@@ -20,20 +19,40 @@ StemToggleComponent::StemToggleComponent (juce::ValueTree stems,
     if (tooltip.isNotEmpty())
         setTooltip (tooltip);
 
-    stemsNode.addListener (this);
+    // Observe the deck node when present: it is the parent of the Stems node, so
+    // a single listener covers both the deck-level sourceMode property (PRD-0062)
+    // and the Stems-child mute properties (recursive change notifications).
+    // Stand-alone Stems nodes (e.g. in unit tests) have no parent, so fall back
+    // to listening on the Stems node directly.
+    if (deckNode.isValid())
+        deckNode.addListener (this);
+    else
+        stemsNode.addListener (this);
+
     refreshState();
 }
 
 StemToggleComponent::~StemToggleComponent()
 {
-    stemsNode.removeListener (this);
+    if (deckNode.isValid())
+        deckNode.removeListener (this);
+    else
+        stemsNode.removeListener (this);
 }
 
 // ---------------------------------------------------------------------------
 void StemToggleComponent::refreshState()
 {
-    // Check if stems are ready
-    isReady = stemsNode.getProperty (IDs::status, "none").toString() == "ready";
+    // Interactive only when the stems are ready AND the deck is actually playing
+    // the stem source. In "original" mode the controls are greyed out and inert
+    // (PRD-0062 §1.5.4); the underlying mute state is left untouched so it is
+    // preserved across original↔stems round-trips. When there is no parent deck
+    // (unit-test stand-alone node) sourceMode defaults to "stems", i.e. enabled.
+    const bool statusReady = stemsNode.getProperty (IDs::status, "none").toString() == "ready";
+    const bool sourceIsOriginal =
+        deckNode.getProperty (IDs::sourceMode, "stems").toString() == "original";
+
+    isReady = statusReady && ! sourceIsOriginal;
 
     // Always visible — readiness is shown via disabled/dimmed paint state
 
@@ -44,17 +63,20 @@ void StemToggleComponent::refreshState()
         return;
     }
 
-    // Muted if ANY of the controlled properties is true
-    bool anyMuted = false;
+    // Muted (active) display only when ALL controlled properties are muted
+    // (PRD-0023 §1.5.1). A mixed state — some but not all muted, reachable
+    // only via an external agent — displays as unmuted, and the next click
+    // mutes the whole group.
+    bool allMuted = ! propIds.empty();
     for (const auto& pid : propIds)
     {
-        if (static_cast<bool> (stemsNode.getProperty (pid, false)))
+        if (! static_cast<bool> (stemsNode.getProperty (pid, false)))
         {
-            anyMuted = true;
+            allMuted = false;
             break;
         }
     }
-    isMuted = anyMuted;
+    isMuted = allMuted;
 }
 
 // ---------------------------------------------------------------------------
@@ -76,21 +98,21 @@ void StemToggleComponent::paint (juce::Graphics& g)
 
     if (isMuted)
     {
-        // Muted: light bg, dark text
-        g.setColour (kLight);
+        // Active (muted): inverted — dark fill, light text (DESIGN.md §Tactile).
+        g.setColour (kDark);
         g.fillRect (bounds);
         g.setColour (kDark);
         g.drawRect (bounds, 2);
-        g.setColour (kDark);
+        g.setColour (kLight);
     }
     else
     {
-        // Active (unmuted): dark bg, light text
-        g.setColour (kDark);
+        // Inactive (unmuted): light fill, dark text.
+        g.setColour (kLight);
         g.fillRect (bounds);
         g.setColour (kDark);
         g.drawRect (bounds, 2);
-        g.setColour (kLight);
+        g.setColour (kDark);
     }
 
     g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
@@ -127,18 +149,20 @@ void StemToggleComponent::mouseDown (const juce::MouseEvent&)
     if (! isReady)
         return;
 
-    // If any are muted, unmute all. If all unmuted, mute all.
-    bool anyMuted = false;
+    // Set all controlled properties to one new value in a single gesture
+    // (PRD-0023 §1.5.1). Unmute only when every property is currently muted;
+    // otherwise (none or mixed) mute the whole group.
+    bool allMuted = ! propIds.empty();
     for (const auto& pid : propIds)
     {
-        if (static_cast<bool> (stemsNode.getProperty (pid, false)))
+        if (! static_cast<bool> (stemsNode.getProperty (pid, false)))
         {
-            anyMuted = true;
+            allMuted = false;
             break;
         }
     }
 
-    bool newValue = ! anyMuted; // mute all if none were muted
+    const bool newValue = ! allMuted;
     for (const auto& pid : propIds)
         stemsNode.setProperty (pid, newValue, nullptr);
 }
@@ -147,20 +171,31 @@ void StemToggleComponent::mouseDown (const juce::MouseEvent&)
 void StemToggleComponent::valueTreePropertyChanged (juce::ValueTree& changedTree,
                                                     const juce::Identifier& property)
 {
-    if (changedTree != stemsNode)
+    const bool stemsChange = (changedTree == stemsNode);
+    const bool deckChange  = (changedTree == deckNode);
+    if (! stemsChange && ! deckChange)
         return;
 
-    bool relevant = (property == IDs::status);
-    if (! relevant)
+    bool relevant = false;
+
+    if (stemsChange)
     {
-        for (const auto& pid : propIds)
+        relevant = (property == IDs::status);
+        if (! relevant)
         {
-            if (property == pid)
+            for (const auto& pid : propIds)
             {
-                relevant = true;
-                break;
+                if (property == pid)
+                {
+                    relevant = true;
+                    break;
+                }
             }
         }
+    }
+    else if (deckChange)
+    {
+        relevant = (property == IDs::sourceMode);
     }
 
     if (relevant)

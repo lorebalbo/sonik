@@ -515,11 +515,55 @@ void AudioEngine::setDeckStemBuffers (const juce::String& deckId,
     }
 
     // Set stemsActive AFTER all pointers stored (AC#5, AC#21)
-    src.stemsActive.store (true, std::memory_order_release);
+    // PRD-0062: buffer presence alone no longer activates stems. The deck stays
+    // on the original source until the DJ deliberately selects "stems" via
+    // setDeckSourceMode; stemsActive is derived from the sourceMode property.
+    // Both the original buffer and the four stem buffers are now retained so
+    // the source can be switched instantly and click-free.
+}
 
-    // PRD-0022: Create stem stretchers if key lock is already active
-    if (src.audioState != nullptr && src.audioState->keyLockEnabled.load(std::memory_order_relaxed))
-        createStemStretchers(deckId);
+void AudioEngine::setDeckSourceMode (const juce::String& deckId, bool useStems)
+{
+    int slot = deckIdToSlot (deckId);
+    if (slot < 0)
+        return;
+
+    auto& src = deckSources[static_cast<size_t> (slot)];
+
+    if (useStems)
+    {
+        // Locked to original unless stem buffers actually exist.
+        bool haveStemBuffers = false;
+        for (int i = 0; i < DeckAudioSource::NUM_STEMS; ++i)
+        {
+            if (src.stemBufferNumFrames[i].load (std::memory_order_relaxed) > 0)
+            {
+                haveStemBuffers = true;
+                break;
+            }
+        }
+        if (! haveStemBuffers)
+            return;
+
+        // PRD-0062 §1.5.6: if key-lock is engaged, build and publish the stem
+        // stretcher set BEFORE flipping stemsActive, so the audio thread (which
+        // reads the stretcher pointers and stemsActive with acquire semantics)
+        // never observes a half-built set.
+        if (src.audioState != nullptr
+            && src.audioState->keyLockEnabled.load (std::memory_order_relaxed))
+        {
+            createStemStretchers (deckId);
+        }
+
+        src.stemsActive.store (true, std::memory_order_release);
+    }
+    else
+    {
+        // The audio thread crossfades back to the original buffer. The stem
+        // stretcher set (if any) is retired by the PRD-0022 reconciliation in
+        // timerCallback, via the established deferred-deletion path.
+        src.stemsActive.store (false, std::memory_order_release);
+    }
 }
 
 void AudioEngine::clearDeckStemBuffers (const juce::String& deckId)
@@ -535,6 +579,16 @@ void AudioEngine::clearDeckStemBuffers (const juce::String& deckId)
 
     // Deactivate first (AC#6) — audio thread will stop reading stem data
     src.stemsActive.store (false, std::memory_order_release);
+
+    // PRD-0062 AC: clearing the stems forces the deck's source mode back to
+    // "original" (there is no longer a stem source to play). Message-thread only.
+    auto decksNode = rootState.getChildWithName (IDs::Decks);
+    if (decksNode.isValid())
+    {
+        auto deckTree = decksNode.getChildWithProperty (IDs::id, deckId);
+        if (deckTree.isValid())
+            deckTree.setProperty (IDs::sourceMode, "original", nullptr);
+    }
 
     // Null all stem channel pointers
     for (int i = 0; i < DeckAudioSource::NUM_STEMS; ++i)
@@ -563,8 +617,19 @@ void AudioEngine::createStemStretchers (const juce::String& deckId)
     if (slot < 0) return;
     auto& src = deckSources[static_cast<size_t> (slot)];
 
-    // Must have stems active and valid stem pointers
-    if (!src.stemsActive.load (std::memory_order_relaxed))
+    // Must have valid stem buffers. Gate on buffer presence (not stemsActive):
+    // PRD-0062 §1.5.6 builds the stretcher set BEFORE flipping stemsActive, so
+    // this can legitimately be called while stemsActive is still false.
+    bool haveStemBuffers = false;
+    for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
+    {
+        if (src.stemBufferNumFrames[s].load (std::memory_order_relaxed) > 0)
+        {
+            haveStemBuffers = true;
+            break;
+        }
+    }
+    if (! haveStemBuffers)
         return;
 
     double sr = currentSampleRate.load (std::memory_order_relaxed);

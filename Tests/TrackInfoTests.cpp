@@ -357,15 +357,17 @@ private:
         DeckShellComponent shell (*ctx.mgr, *ctx.engine, *ctx.loader, waveformMgr, beatGridMgr, *ctx.stemMgr, *ctx.clockManager, deckId);
         shell.setBounds (0, 0, 400, 300);
 
-        // Before loading: trackInfo + stemSeparateButton + stemVocToggle + stemInstToggle
+        // Before loading: trackInfo + stemSeparateButton + stemSourceModeToggle
+        //                 + stemVocToggle + stemInstToggle
         //                 + keyLockButton + keyStepperComponent + pitchFaderComponent
         //                 + masterButton + syncButton + quantizeButton + slipButton
-        //                 + controllerWidget + hotCuePadComponent = 13
+        //                 + controllerWidget + hotCuePadComponent = 14
         // PRD-0060: deck shell no longer hosts a gain knob (channel-strip GAIN
         // lives on the mixer organism instead).
+        // PRD-0062: added the ORIG/STEMS source-mode toggle.
         int initialChildren = shell.getNumChildComponents();
-        expectEquals (initialChildren, 13,
-                      "Before track load, DeckShellComponent should have trackInfo, stem buttons, key lock, key stepper, pitch fader, master, sync, quantize, slip, controller widget, and hot-cue pad");
+        expectEquals (initialChildren, 14,
+                      "Before track load, DeckShellComponent should have trackInfo, stem buttons, source-mode toggle, key lock, key stepper, pitch fader, master, sync, quantize, slip, controller widget, and hot-cue pad");
 
         // Load a track
         auto meta = makeSampleMetadata ("Lifecycle Track");

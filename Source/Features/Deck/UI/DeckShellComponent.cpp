@@ -42,6 +42,12 @@ DeckShellComponent::DeckShellComponent (DeckStateManager& deckState,
         deckTree, stemSeparationManager, audioEngine, deckId);
     addAndMakeVisible (*stemSeparateButton);
 
+    // PRD-0062: ORIG/STEMS source-mode selector. Visible alongside the VOC/INST
+    // toggles once a ready stem set exists; chooses which source the deck plays.
+    stemSourceModeToggle = std::make_unique<SourceModeToggleComponent> (
+        deckTree, audioEngine, deckId);
+    addAndMakeVisible (*stemSourceModeToggle);
+
     stemVocToggle = std::make_unique<StemToggleComponent> (
         deckTree.getChildWithName (IDs::Stems), "VOCALS",
         std::vector<juce::Identifier> { IDs::vocalsMuted });
@@ -457,6 +463,7 @@ void DeckShellComponent::updateStemsSidebarVisibility()
     if (stemSeparateButton != nullptr)
         stemSeparateButton->setVisible (! stemsReady);
 
+    if (stemSourceModeToggle != nullptr) stemSourceModeToggle->setVisible (stemsReady);
     if (stemVocToggle  != nullptr) stemVocToggle->setVisible  (stemsReady);
     if (stemInstToggle != nullptr) stemInstToggle->setVisible (stemsReady);
 }
@@ -600,22 +607,28 @@ void DeckShellComponent::resized()
         {
             // SeparateButton acts as a full-sidebar overlay; it lives in the
             // same bounds as the VOC/INST stack and self-renders based on
-            // stem status (showing progress/state).  VOC + INST occupy the
-            // top and bottom halves respectively when stems are ready,
-            // separated by an 8 px gap.
+            // stem status (showing progress/state).  When stems are ready the
+            // sidebar is split vertically into three equal cells: the
+            // ORIG/STEMS source-mode toggle on top (PRD-0062), then VOC, then
+            // INST, separated by 8 px gaps.
             static constexpr int kStemToggleGap = 8;
             const int totalH = stemsSidebar.getHeight();
-            const int vocH   = (totalH - kStemToggleGap) / 2;
-            const int instH  = totalH - vocH - kStemToggleGap;
+            const int cellH  = (totalH - 2 * kStemToggleGap) / 3;
+            const int instH  = totalH - 2 * (cellH + kStemToggleGap);
+
+            if (stemSourceModeToggle != nullptr)
+                stemSourceModeToggle->setBounds (stemsSidebar.getX(),
+                                                 stemsSidebar.getY(),
+                                                 kStemsSidebarW, cellH);
 
             if (stemVocToggle != nullptr)
                 stemVocToggle->setBounds (stemsSidebar.getX(),
-                                          stemsSidebar.getY(),
-                                          kStemsSidebarW, vocH);
+                                          stemsSidebar.getY() + cellH + kStemToggleGap,
+                                          kStemsSidebarW, cellH);
 
             if (stemInstToggle != nullptr)
                 stemInstToggle->setBounds (stemsSidebar.getX(),
-                                           stemsSidebar.getY() + vocH + kStemToggleGap,
+                                           stemsSidebar.getY() + 2 * (cellH + kStemToggleGap),
                                            kStemsSidebarW,
                                            instH);
 

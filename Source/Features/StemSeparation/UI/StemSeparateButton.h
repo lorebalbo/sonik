@@ -36,10 +36,15 @@ private:
     juce::String deckId;
 
     juce::String currentStatus = "none";
+    juce::String lastStatus    = "none";
     float currentProgress = 0.0f;
     bool isEmpty = true;
     bool isShortTrack = false;
     int consecutiveErrors = 0;
+
+    // Once consecutiveErrors reaches this, the button shifts to a
+    // persistent-failure presentation that de-emphasises the retry (§1.5.5).
+    static constexpr int kPersistentErrorThreshold = 3;
 
     // ── Animated progress state ──────────────────────────────────────────
     // animatedProgress is what we actually display.  It races ahead of the

@@ -1,6 +1,6 @@
 ---
 name: EPIC-0002: Stem Separation
-status: Open
+status: Implemented
 ---
 
 # EPIC-0002: High-Quality Offline Stem Separation for DJ Decks
@@ -108,7 +108,9 @@ All existing audio thread constraints apply without exception. Stem mixing in `p
 
 - A 5-minute stereo track at 44.1 kHz ≈ 52 MB per buffer
 - 4 stems per track ≈ 208 MB per deck (worst case)
-- Original buffer released after stem activation to reduce to ~208 MB
+- Per PRD-0062, the original buffer is **retained** alongside the stems so the deck can
+  switch sources click-free, so a separated deck holds ~260 MB worst case (original +
+  4 stems) and a two-deck session ~520 MB
 - Stem buffers for inactive/unloaded decks are released immediately
 - Temporary WAV files on disk serve as backing store; stems can be reloaded from cache on demand
 
@@ -159,5 +161,5 @@ Source/Features/
 - [x] PRD-0020: Stem Separation Engine
 - [x] PRD-0021: Stem-Aware Audio Playback
 - [x] PRD-0022: Stem-Aware Time Stretching
-- [ ] PRD-0023: Stem Separation UI
-- [ ] PRD-0062: Deck Stem-Source Selection (Original vs Separated Stems) — adds the source-mode toggle, retains the original buffer alongside stems, and publishes the active source mode consumed by the in-app DAW (EPIC-0008)
+- [x] PRD-0023: Stem Separation UI
+- [x] PRD-0062: Deck Stem-Source Selection (Original vs Separated Stems) — adds the source-mode toggle, retains the original buffer alongside stems, and publishes the active source mode consumed by the in-app DAW (EPIC-0008)

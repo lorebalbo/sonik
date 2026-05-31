@@ -57,13 +57,24 @@ public:
     void clearDeckBuffer (const juce::String& deckId);
 
     /// Set stem buffers for a deck. Called on the message thread only (PRD-0021).
-    /// Stores 4 buffer holders, publishes raw pointers with release stores,
-    /// and sets stemsActive = true. Original buffer holder is NOT released.
+    /// Stores 4 buffer holders and publishes raw pointers with release stores.
+    /// Does NOT activate stems: per PRD-0062 the deck stays on the original
+    /// source until the DJ deliberately switches to "stems" via setDeckSourceMode.
+    /// The original buffer holder is retained for instant, click-free switching.
     void setDeckStemBuffers (const juce::String& deckId,
                              AudioBufferHolder::Ptr vocals,
                              AudioBufferHolder::Ptr drums,
                              AudioBufferHolder::Ptr bass,
                              AudioBufferHolder::Ptr other);
+
+    /// Select the deck's playback source (PRD-0062). Called on the message
+    /// thread only. When useStems is true and stem buffers exist, builds the
+    /// stem stretcher set first (if key-lock is active) and then publishes
+    /// stemsActive = true so the audio thread never sees a half-built set.
+    /// When useStems is false, publishes stemsActive = false (the audio thread
+    /// crossfades back to the original buffer). If no stem buffers exist the
+    /// request to enable stems is a no-op (deck stays locked to original).
+    void setDeckSourceMode (const juce::String& deckId, bool useStems);
 
     /// Clear stem buffers for a deck. Called on the message thread only (PRD-0021).
     /// Sets stemsActive = false, nullifies stem channel pointers, releases holders.

@@ -27,6 +27,7 @@
 #include "../../SlipMode/SlipButtonComponent.h"
 #include "../../StemSeparation/UI/StemSeparateButton.h"
 #include "../../StemSeparation/UI/StemToggleComponent.h"
+#include "../../StemSeparation/UI/SourceModeToggleComponent.h"
 
 class StemSeparationManager;
 
@@ -135,6 +136,7 @@ private:
 
     // Stems row
     std::unique_ptr<StemSeparateButton>   stemSeparateButton;
+    std::unique_ptr<SourceModeToggleComponent> stemSourceModeToggle;
     std::unique_ptr<StemToggleComponent>  stemVocToggle;
     std::unique_ptr<StemToggleComponent>  stemInstToggle;
 

@@ -3,13 +3,48 @@
 #include "../../AudioEngine/AudioEngine.h"
 #include <cmath>
 
-// Design-system palette
-static const juce::Colour kLight  { 0xFFF9F9F9 };
-static const juce::Colour kDark   { 0xFF2D2D2D };
-static const juce::Colour kGreen  { 0xFF0AD691 };
-static const juce::Colour kRed    { 0xFFFF3C3B };
+// Design-system palette (DESIGN.md §1 — strictly monochrome)
+static const juce::Colour kLight  { 0xFFFDFDFD };   // surface
+static const juce::Colour kDark   { 0xFF2D2D2D };   // ink
 
 static constexpr double kMinDurationForStems = 5.0;
+
+namespace
+{
+    /// DESIGN.md §2 "Dithered Gradients": a checkerboard of #2d2d2d ink whose
+    /// coverage rises with `density` (0 = empty, 1 = solid). No gradients, no
+    /// colour. Used for the in-progress separation fill in place of a coloured
+    /// progress bar.
+    void fillDithered (juce::Graphics& g, juce::Rectangle<int> area, float density)
+    {
+        if (area.isEmpty())
+            return;
+
+        density = juce::jlimit (0.0f, 1.0f, density);
+
+        const int x0 = area.getX();
+        const int y0 = area.getY();
+        const int w  = area.getWidth();
+        const int h  = area.getHeight();
+
+        // 2x2 ordered (Bayer-ish) dither thresholds — same vocabulary as the
+        // mixer VU meters so the whole app shares one dithering language.
+        static const float kThresholds[4] = { 0.20f, 0.60f, 0.80f, 0.40f };
+
+        g.setColour (kDark);
+        for (int row = 0; row < h; ++row)
+        {
+            const int y = y0 + row;
+            for (int col = 0; col < w; ++col)
+            {
+                const int x = x0 + col;
+                const int cellIdx = ((x & 1) << 1) | (y & 1);
+                if (density >= kThresholds[cellIdx])
+                    g.fillRect (x, y, 1, 1);
+            }
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 const juce::StringArray& StemSeparateButton::phaseLabels() noexcept
@@ -93,11 +128,11 @@ void StemSeparateButton::timerCallback()
     if (currentProgress < 0.99f)
         animatedProgress = std::min (animatedProgress, 0.97f);
 
-    // Advance phase label every 8 seconds, clamp to the last one so
-    // labels never loop — they are shown once each and then stay put.
-    static constexpr double kLabelDurationSeconds = 8.0;
-    int rawIndex = static_cast<int> (elapsedSec / kLabelDurationSeconds);
-    currentLabelIndex = juce::jmin (rawIndex, phaseLabels().size() - 1);
+    // Cycle the phase label every 3 seconds (PRD §1.3) so the indicator never
+    // looks frozen even while the coarse percentage idles. Labels wrap around.
+    static constexpr double kLabelDurationSeconds = 3.0;
+    const int rawIndex = static_cast<int> (elapsedSec / kLabelDurationSeconds);
+    currentLabelIndex = rawIndex % phaseLabels().size();
 
     repaint();
 }
@@ -154,96 +189,93 @@ void StemSeparateButton::refreshState()
         setTooltip ("Stem separation");
     }
 
-    // Track consecutive errors
-    if (currentStatus == "error")
+    // Track consecutive errors by status transition (§1.5.5). Increment only
+    // when entering "error" from a non-error status, so a burst of unrelated
+    // property changes can never inflate the count. Reset on success/idle.
+    if (currentStatus == "error" && lastStatus != "error")
         ++consecutiveErrors;
-    else if (currentStatus != "error")
+    else if (currentStatus == "ready" || currentStatus == "none")
         consecutiveErrors = 0;
+
+    lastStatus = currentStatus;
 }
 
 // ---------------------------------------------------------------------------
-void StemSeparateButton::paint (juce::Graphics& g)
+namespace
 {
-    auto bounds = getLocalBounds();
-
-    const bool disabled = isEmpty || (isShortTrack && currentStatus == "none")
-                          || currentStatus == "model_unavailable";
-
-    // ── Determine background / foreground / label ─────────────────────────
-    juce::Colour bg   = kLight;
-    juce::Colour fg   = kDark;
-    juce::String text = "SEPARATE STEMS";
-
-    if (disabled)
+    // Draw a single centred label, rotated 90° CCW on a tall vertical sidebar
+    // so it reads bottom-to-top, or horizontally otherwise.
+    void drawRotatableLabel (juce::Graphics& g, juce::Rectangle<int> bounds,
+                             const juce::String& text, juce::Colour colour,
+                             float fontSize, bool vertical)
     {
-        // light bg, dimmed text
-        fg = kDark.withAlpha (0.3f);
-    }
-    else if (currentStatus == "separating")
-    {
-        bg   = kDark;
-        fg   = kLight;
-        text = "";  // drawn specially below
-    }
-    else if (currentStatus == "queued")
-    {
-        bg = kDark;
-        fg = kLight;
-    }
-    else if (currentStatus == "ready" || currentStatus == "loading_cached")
-    {
-        bg = kDark;
-        fg = kLight;
-    }
-    else if (currentStatus == "error")
-    {
-        bg = kRed;
-        fg = juce::Colours::white;
-    }
-
-    // ── Fill + border ─────────────────────────────────────────────────────
-    g.setColour (bg);
-    g.fillRect (bounds);
-
-    g.setColour (disabled ? kDark.withAlpha (0.3f) : kDark);
-    g.drawRect (bounds, 2);
-
-    // ── Animated progress bar (separating only) ──────────────────────────
-    if (currentStatus == "separating")
-    {
-        // Slightly lighter fill shows completed portion within dark background
-        g.setColour (juce::Colour (0xFF505050));
-        auto fillBounds = bounds.toFloat();
-        const bool vertical = bounds.getHeight() > bounds.getWidth();
-        if (vertical)
-        {
-            // Fill from the bottom up so progress reads naturally on a vertical bar
-            const float h = animatedProgress * fillBounds.getHeight();
-            fillBounds = fillBounds.withTop (fillBounds.getBottom() - h);
-        }
-        else
-        {
-            fillBounds = fillBounds.withWidth (animatedProgress * fillBounds.getWidth());
-        }
-        g.fillRect (fillBounds);
-
-        // Border
-        g.setColour (kDark);
-        g.drawRect (bounds, 2);
-
-        const auto& labels = phaseLabels();
-        juce::String label = labels[currentLabelIndex];
-        juce::String pct = juce::String (juce::roundToInt (animatedProgress * 100)) + " %";
+        g.setColour (colour);
+        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), fontSize, juce::Font::plain));
 
         if (vertical)
         {
-            // Draw both lines rotated 90° CCW, centred in the bounds.
             juce::Graphics::ScopedSaveState save (g);
             const float cx = static_cast<float> (bounds.getCentreX());
             const float cy = static_cast<float> (bounds.getCentreY());
             g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, cx, cy));
 
-            // Rotated rect: width ↔ height swapped around the centre.
+            juce::Rectangle<int> rotated (
+                static_cast<int> (cx) - bounds.getHeight() / 2,
+                static_cast<int> (cy) - bounds.getWidth()  / 2,
+                bounds.getHeight(),
+                bounds.getWidth());
+
+            g.drawText (text, rotated.reduced (4, 0), juce::Justification::centred, false);
+        }
+        else
+        {
+            g.drawText (text, bounds.reduced (4, 0), juce::Justification::centred, false);
+        }
+    }
+}
+
+void StemSeparateButton::paint (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds();
+    const bool vertical = bounds.getHeight() > bounds.getWidth();
+
+    const bool disabled = isEmpty || (isShortTrack && currentStatus == "none")
+                          || currentStatus == "model_unavailable";
+
+    // ── Separating: dithered progress fill + phase label + percentage ─────
+    if (currentStatus == "separating")
+    {
+        // Light surface base; #2d2d2d dithered fill grows over the completed
+        // portion (DESIGN.md §2 — density in place of a coloured gradient).
+        g.setColour (kLight);
+        g.fillRect (bounds);
+
+        const float density = 0.40f + 0.60f * animatedProgress;
+        auto fill = bounds;
+        if (vertical)
+        {
+            const int fh = juce::roundToInt (animatedProgress * static_cast<float> (bounds.getHeight()));
+            fill = bounds.withTop (bounds.getBottom() - fh);
+        }
+        else
+        {
+            fill = bounds.withWidth (juce::roundToInt (animatedProgress * static_cast<float> (bounds.getWidth())));
+        }
+        fillDithered (g, fill, density);
+
+        g.setColour (kDark);
+        g.drawRect (bounds, 2);
+
+        const juce::String label = phaseLabels()[currentLabelIndex];
+        const juce::String pct   = juce::String (juce::roundToInt (animatedProgress * 100)) + " %";
+
+        if (vertical)
+        {
+            juce::Graphics::ScopedSaveState save (g);
+            const float cx = static_cast<float> (bounds.getCentreX());
+            const float cy = static_cast<float> (bounds.getCentreY());
+            g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, cx, cy));
+
             juce::Rectangle<int> rotated (
                 static_cast<int> (cx) - bounds.getHeight() / 2,
                 static_cast<int> (cy) - bounds.getWidth()  / 2,
@@ -253,7 +285,7 @@ void StemSeparateButton::paint (juce::Graphics& g)
             auto leftHalf  = rotated.withWidth (rotated.getWidth() / 2);
             auto rightHalf = rotated.withTrimmedLeft (rotated.getWidth() / 2);
 
-            g.setColour (fg);
+            g.setColour (kDark);
             g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.5f, juce::Font::plain));
             g.drawText (label, leftHalf.reduced (3, 0), juce::Justification::centredRight, false);
 
@@ -262,45 +294,68 @@ void StemSeparateButton::paint (juce::Graphics& g)
         }
         else
         {
-            // Phase label (top line, smaller)
             auto topHalf    = bounds.withHeight (bounds.getHeight() / 2);
             auto bottomHalf = bounds.withTrimmedTop (bounds.getHeight() / 2);
 
-            g.setColour (fg);
+            g.setColour (kDark);
             g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.5f, juce::Font::plain));
             g.drawText (label, topHalf.reduced (3, 0), juce::Justification::centredLeft, false);
 
-            // Percentage (bottom line, larger)
             g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 11.5f, juce::Font::bold));
             g.drawText (pct, bottomHalf.reduced (3, 0), juce::Justification::centredLeft, false);
         }
         return;
     }
 
-    // ── Label ─────────────────────────────────────────────────────────────
-    g.setColour (fg);
-    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+    // ── All other states: monochrome tactile-button presentation ──────────
+    juce::Colour bg        = kLight;
+    juce::Colour fg        = kDark;
+    juce::String text      = "SEPARATE STEMS";
+    bool         hatchFill = false;   // persistent-failure dead-end hatch
 
-    if (bounds.getHeight() > bounds.getWidth())
+    if (disabled)
     {
-        // Vertical sidebar: draw the label rotated 90° CCW so it reads bottom-to-top.
-        juce::Graphics::ScopedSaveState save (g);
-        const float cx = static_cast<float> (bounds.getCentreX());
-        const float cy = static_cast<float> (bounds.getCentreY());
-        g.addTransform (juce::AffineTransform::rotation (-juce::MathConstants<float>::halfPi, cx, cy));
-
-        juce::Rectangle<int> rotated (
-            static_cast<int> (cx) - bounds.getHeight() / 2,
-            static_cast<int> (cy) - bounds.getWidth()  / 2,
-            bounds.getHeight(),
-            bounds.getWidth());
-
-        g.drawText (text, rotated.reduced (4, 0), juce::Justification::centred, false);
+        bg = kLight;
+        fg = kDark.withAlpha (0.30f);
+        if (currentStatus == "model_unavailable")
+            text = "MODEL N/A";
     }
-    else
+    else if (currentStatus == "queued")
     {
-        g.drawText (text, bounds.reduced (4, 0), juce::Justification::centred, false);
+        bg = kDark; fg = kLight; text = "QUEUED";
     }
+    else if (currentStatus == "loading_cached")
+    {
+        // Distinct from "separating": no percentage, no phase cycling (§1.5.7).
+        bg = kLight; fg = kDark; text = "LOADING";
+    }
+    else if (currentStatus == "ready")
+    {
+        bg = kDark; fg = kLight; text = "STEMS READY";
+    }
+    else if (currentStatus == "error")
+    {
+        if (consecutiveErrors >= kPersistentErrorThreshold)
+        {
+            // Persistent failure (§1.5.5): de-emphasised, hatched, retry quiet.
+            bg = kLight; fg = kDark; text = "SEP. FAILED"; hatchFill = true;
+        }
+        else
+        {
+            bg = kLight; fg = kDark; text = "ERROR — RETRY";
+        }
+    }
+
+    g.setColour (bg);
+    g.fillRect (bounds);
+
+    if (hatchFill)
+        fillDithered (g, bounds, 0.50f);   // 50% hatch reads as non-inviting
+
+    g.setColour (disabled ? kDark.withAlpha (0.30f) : kDark);
+    g.drawRect (bounds, 2);
+
+    drawRotatableLabel (g, bounds, text, fg, 13.0f, vertical);
 }
 // ---------------------------------------------------------------------------
 void StemSeparateButton::mouseDown (const juce::MouseEvent& /*e*/)

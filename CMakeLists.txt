@@ -187,6 +187,8 @@ target_sources(Sonik PRIVATE
     Source/Features/StemSeparation/UI/StemSeparateButton.cpp
     Source/Features/StemSeparation/UI/StemToggleComponent.h
     Source/Features/StemSeparation/UI/StemToggleComponent.cpp
+    Source/Features/StemSeparation/UI/SourceModeToggleComponent.h
+    Source/Features/StemSeparation/UI/SourceModeToggleComponent.cpp
     Source/Features/Sync/MasterClockSnapshot.h
     Source/Features/Sync/MasterClockPublisher.h
     Source/Features/Sync/MasterClockPublisher.cpp
@@ -409,7 +411,9 @@ add_executable(SonikTests
     Tests/SlipModeTests.cpp
     Tests/OnnxInferenceTests.cpp
     Tests/StemSeparationTests.cpp
+    Tests/StemSeparationUiTests.cpp
     Tests/StemPlaybackTests.cpp
+    Tests/DeckSourceModeTests.cpp
     Tests/StemStretchTests.cpp
     Tests/MasterClockTests.cpp
     Tests/SyncEngineTests.cpp
@@ -491,6 +495,7 @@ add_executable(SonikTests
     Source/Features/StemSeparation/StemSeparationManager.cpp
     Source/Features/StemSeparation/UI/StemSeparateButton.cpp
     Source/Features/StemSeparation/UI/StemToggleComponent.cpp
+    Source/Features/StemSeparation/UI/SourceModeToggleComponent.cpp
     Source/Features/Sync/MasterClockPublisher.cpp
     Source/Features/Sync/MasterClockManager.cpp
     Source/Features/Sync/SyncEngine.cpp

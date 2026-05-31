@@ -27,6 +27,7 @@ private:
     void refreshState();
 
     juce::ValueTree stemsNode;
+    juce::ValueTree deckNode;   // parent of stemsNode; carries sourceMode (PRD-0062)
     juce::String labelText;
     std::vector<juce::Identifier> propIds;
     bool isMuted = false;

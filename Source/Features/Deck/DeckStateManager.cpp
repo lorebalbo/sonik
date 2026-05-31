@@ -314,6 +314,11 @@ juce::ValueTree DeckStateManager::createDeckTree (const juce::String& deckId) co
     deck.setProperty (IDs::pitchRange,       8,        nullptr);
     deck.setProperty (IDs::beatJumpSize,     4.0,      nullptr);
 
+    // Stem source mode (PRD-0062) — "original" | "stems". The deliberate,
+    // persistent DJ choice of which source the deck plays. Defaults to the
+    // pristine original file; stems are opt-in once separated.
+    deck.setProperty (IDs::sourceMode,       "original", nullptr);
+
     // Loading state (PRD-0003)
     deck.setProperty (IDs::loadingStatus,    "idle",   nullptr);
     deck.setProperty (IDs::loadingProgress,  0.0f,     nullptr);
@@ -495,6 +500,9 @@ void DeckStateManager::resetTrackSpecificState (juce::ValueTree& deckTree)
     stems.setProperty (IDs::drumsSolo,    false, nullptr);
     stems.setProperty (IDs::bassSolo,     false, nullptr);
     stems.setProperty (IDs::otherSolo,    false, nullptr);
+
+    // PRD-0062: a new track has no stems, so force source mode back to original.
+    deckTree.setProperty (IDs::sourceMode, "original", nullptr);
 
     // Reset Waveform
     auto waveform = deckTree.getChildWithName (IDs::Waveform);
