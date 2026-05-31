@@ -36,6 +36,12 @@ User-facing features:
 - Cancellation support (user can abort a running separation)
 - "VOC" toggle button to mute/unmute the vocals stem
 - "INST" toggle button to mute/unmute the instrumental stem (drums + bass + other, summed)
+- **Stem-source selection toggle** (a button to the left of "Separate Stems"):
+  switches the deck between playing the **Original** source file and playing the
+  **separated stems**. Even when both stems would be audible, the DJ can choose
+  the artifact-free original file instead of summing the two stems. This makes
+  Original vs. stems an explicit, always-available choice — and is the signal
+  the in-app DAW's three-lane channel groups consume (EPIC-0008 §1.3.3).
 - Instant stem enable when cached stems exist for the loaded track (no re-processing)
 - Click-free mute/unmute transitions (64-sample crossfade)
 - Full compatibility with all existing deck features: transport, loops, cue points, hot cues, beat jump, seeking, slip mode, and time stretching
@@ -91,6 +97,12 @@ All existing audio thread constraints apply without exception. Stem mixing in `p
 - When stems are inactive, playback reads from the original single buffer (zero overhead)
 - When stems are active, `processBlock` reads from all N stem buffers, applies per-stem gain, and sums
 - The original buffer can be released once stems are verified (sum of stems = original)
+- **Reconciliation (stem-source selection):** when the stem-source toggle makes
+  Original playback a first-class, switchable mode, the original buffer is **not**
+  released after separation — both the original buffer and the N stem buffers are
+  retained so the audio thread can switch between them click-free via the existing
+  atomic source-mode flag. Memory budgeting in §3.5 is revised accordingly by the
+  implementing PRD.
 
 ### 3.5. Memory Management
 
@@ -148,3 +160,4 @@ Source/Features/
 - [x] PRD-0021: Stem-Aware Audio Playback
 - [x] PRD-0022: Stem-Aware Time Stretching
 - [ ] PRD-0023: Stem Separation UI
+- [ ] PRD-0062: Deck Stem-Source Selection (Original vs Separated Stems) — adds the source-mode toggle, retains the original buffer alongside stems, and publishes the active source mode consumed by the in-app DAW (EPIC-0008)
