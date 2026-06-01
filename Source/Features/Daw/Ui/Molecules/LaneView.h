@@ -25,6 +25,7 @@
 #include "../Atoms/ClipBlock.h"
 #include "../../Model/ChannelGroup.h"
 #include "../../Transform/TimelineTransform.h"
+#include "../../Editing/EditCommands.h"
 
 namespace Daw
 {
@@ -59,6 +60,11 @@ public:
     void resized() override;
     void paint (juce::Graphics& g) override;
 
+    // PRD-0083/0084/0085/0086: Wire the edit dispatcher after construction.
+    // All ClipBlocks created before this call will be re-wired in rebuildClips();
+    // blocks created after inherit the dispatcher automatically.
+    void setEditDispatcher (Daw::EditCommandDispatcher* dispatcher);
+
     // PRD-0070: re-place hosted ClipBlocks after a zoom/scroll transform change
     // (the lane bounds don't change on zoom, so resized() won't fire).
     void refreshClipLayout();
@@ -71,6 +77,7 @@ private:
     void valueTreeParentChanged (juce::ValueTree&) override {}
 
     void layoutClips();
+    void wireClipCallbacks (ClipBlock& block);
     static void paintInactiveDither (juce::Graphics& g, juce::Rectangle<int> area);
 
     static inline const juce::Colour kInk        { 0xFF2D2D2D };
@@ -91,6 +98,7 @@ private:
 
     juce::OwnedArray<ClipBlock> clipBlocks_;
     bool                        active_ { true };
+    Daw::EditCommandDispatcher* dispatcher_ { nullptr };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LaneView)
 };

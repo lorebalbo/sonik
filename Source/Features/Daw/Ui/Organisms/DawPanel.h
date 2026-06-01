@@ -30,6 +30,11 @@
 #include "../../Model/MasterGridService.h"
 #include "../../Transform/TimelineTransform.h"
 #include "../../State/DawState.h"
+#include "../../Editing/EditCommands.h"
+#include "../../Playback/DawTransport.h"
+#include "../../Playback/ArrangementPublisher.h"
+#include "../../Playback/ArrangementCompiler.h"
+#include "../../Playback/ArrangementRecompileTrigger.h"
 
 namespace Daw
 {
@@ -83,6 +88,33 @@ public:
     void setNowLineProvider (std::function<std::int64_t()> provider);
 
     //--------------------------------------------------------------------------
+    // PRD-0082: DAW transport control callbacks.
+    // Wire these to a DawTransport instance (owned by the SonikApplication or AudioEngine).
+    std::function<void()> onTransportPlay;
+    std::function<void()> onTransportPause;
+    std::function<void()> onTransportStop;
+    std::function<void()> onTransportLoopToggle;
+
+    /// Polled each timer tick to draw the correct active state for transport buttons.
+    std::function<bool()> isTransportPlaying;
+    std::function<bool()> isTransportPaused;
+    std::function<bool()> isTransportLoopEnabled;
+
+    /// Returns the owned DawTransport so AudioEngine can wire advancePlayhead.
+    Daw::DawTransport& getDawTransport() noexcept { return *transport_; }
+
+    /// Returns the shared ArrangementPublisher so AudioEngine can wire the
+    /// TimelineRenderer to the same published snapshot the panel compiles.
+    Daw::ArrangementPublisher& getArrangementPublisher() noexcept { return arrangementPublisher_; }
+
+    /// Returns the owned recompile trigger so the host can inject a playback-aware
+    /// compiler (EPIC-0010) and force recompiles. Null before construction completes.
+    Daw::ArrangementRecompileTrigger* getRecompileTrigger() noexcept { return recompileTrigger_.get(); }
+
+    /// Returns the owned EditCommandDispatcher so the host can set the DAW ValueTree
+    /// and UndoManager after construction.
+    Daw::EditCommandDispatcher* getEditDispatcher() noexcept { return dispatcher_.get(); }
+
     // PRD-0078: global record control + record playhead.
     //--------------------------------------------------------------------------
     // The three colour-free visual states of the Record button, matching the
@@ -155,6 +187,8 @@ private:
     };
 
     MasterGridService& gridService_;
+    juce::ValueTree    dawBranch_;               // retained copy for EditCommandDispatcher
+    juce::UndoManager  undoManager_;             // owned; EditCommandDispatcher delegates here
     TimelineTransform  transform_;
     TimeRuler          ruler_;
     juce::Viewport     bodyViewport_;
@@ -174,6 +208,21 @@ private:
     juce::Rectangle<int> toggleBounds_;        // collapse / expand
     juce::Rectangle<int> followToggleBounds_;  // follow-playhead
     juce::Rectangle<int> recordButtonBounds_;  // global record arm/stop
+    juce::Rectangle<int> playBounds_;          // PRD-0082: DAW play
+    juce::Rectangle<int> pauseBounds_;         // PRD-0082: DAW pause
+    juce::Rectangle<int> stopBounds_;          // PRD-0082: DAW stop
+    juce::Rectangle<int> loopBounds_;          // PRD-0082: loop-arm toggle
+
+    // PRD-0082: DawTransport owned here so the buttons work without external wiring.
+    std::unique_ptr<Daw::DawTransport>            transport_;
+
+    // PRD-0079/0083: Arrangement compiler/publisher/recompile-trigger owned here.
+    // SonikApplication reads the publisher reference to wire the AudioEngine.
+    Daw::ArrangementPublisher                     arrangementPublisher_;
+    std::unique_ptr<Daw::ArrangementRecompileTrigger> recompileTrigger_;
+
+    // PRD-0083/0084/0085/0086: EditCommandDispatcher owned here.
+    std::unique_ptr<Daw::EditCommandDispatcher>   dispatcher_;
 
     // Drag-to-pan state (content area horizontal pan).
     bool         dragging_       { false };

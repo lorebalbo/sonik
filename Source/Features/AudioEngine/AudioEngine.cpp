@@ -172,6 +172,60 @@ void AudioEngine::setMixerMeterSnapshot (MixerMeterSnapshot* snapshot) noexcept
     masterStage.setMeterSlot (snapshot != nullptr ? &snapshot->master : nullptr);
 }
 
+void AudioEngine::setDawPlayback (Daw::ArrangementPublisher* publisher,
+                                   Daw::ClipStreamerPool*     streamerPool,
+                                   Daw::DawTransport*         transport) noexcept
+{
+    // PRD-0082: wire the DAW arrangement pipeline.
+    // All pointers are published with release so the audio thread's acquire
+    // reads see the fully-constructed objects.
+    JUCE_ASSERT_MESSAGE_THREAD;
+    dawPublisher_.store   (publisher,    std::memory_order_release);
+    dawStreamerPool_.store (streamerPool, std::memory_order_release);
+    dawTransport_.store   (transport,    std::memory_order_release);
+
+    // If the device is already running, the renderer was not built during
+    // audioDeviceAboutToStart (pointers were still null then). Build it now so
+    // playback works without requiring a device restart.
+    rebuildDawRenderer();
+}
+
+void AudioEngine::rebuildDawRenderer()
+{
+    JUCE_ASSERT_MESSAGE_THREAD;
+
+    auto* publisher    = dawPublisher_.load    (std::memory_order_acquire);
+    auto* streamerPool = dawStreamerPool_.load (std::memory_order_acquire);
+    auto* transport    = dawTransport_.load    (std::memory_order_acquire);
+
+    if (publisher == nullptr || streamerPool == nullptr || transport == nullptr)
+        return;
+
+    const int    blockSize = currentBufferSize.load (std::memory_order_relaxed);
+    const double sr        = currentSampleRate.load (std::memory_order_relaxed);
+    if (blockSize <= 0 || sr <= 0.0)
+        return; // device not prepared yet — audioDeviceAboutToStart will build it
+
+    // Ensure the master-feed scratch is sized (also done in audioDeviceAboutToStart).
+    if (static_cast<int> (dawMasterFeedL_.size()) < blockSize)
+    {
+        dawMasterFeedL_.assign (static_cast<size_t> (blockSize), 0.0f);
+        dawMasterFeedR_.assign (static_cast<size_t> (blockSize), 0.0f);
+    }
+
+    // Build a fully-prepared renderer in a local before publishing its pointer,
+    // so the audio thread never observes a half-prepared renderer. When called
+    // from audioDeviceAboutToStart the audio callback is stopped (safe to swap);
+    // when called from setDawPlayback at runtime the audio thread still sees the
+    // old (typically null) pointer until the atomic store below.
+    auto fresh = std::make_unique<Daw::TimelineRenderer> (
+        *publisher, *streamerPool, transport->playheadAtomic());
+    fresh->prepare (sr, blockSize, Daw::kMaxLanes, Daw::kMaxClipsPerLane);
+
+    dawRendererPtr_.store (fresh.get(), std::memory_order_release);
+    dawRenderer_ = std::move (fresh);
+}
+
 void AudioEngine::applyAudioMidiEvent (const sonik::midi::MidiAudioEvent& event) noexcept
 {
     // The jog/scratch state-machine that consumes these events lives in
@@ -2145,7 +2199,35 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         outL, outR,
         numSamples, masterSnap);
 
-    // Hard clip output to [-1, 1].
+    // PRD-0081/0082: DAW timeline renderer — mix arrangement clips into the master output.
+    // advancePlayhead is called first (audio-thread safe atomic update); then
+    // renderBlock accumulates into a stereo feed buffer which is added to the output.
+    {
+        auto* dTransport = dawTransport_.load (std::memory_order_acquire);
+        if (dTransport != nullptr)
+            dTransport->advancePlayhead (numSamples);
+
+        auto* dRenderer = dawRendererPtr_.load (std::memory_order_acquire);
+        if (dRenderer != nullptr
+            && static_cast<int>(dawMasterFeedL_.size()) >= numSamples
+            && static_cast<int>(dawMasterFeedR_.size()) >= numSamples)
+        {
+            juce::FloatVectorOperations::clear (dawMasterFeedL_.data(), numSamples);
+            juce::FloatVectorOperations::clear (dawMasterFeedR_.data(), numSamples);
+
+            // Build a two-channel AudioBuffer pointing at our pre-allocated scratch.
+            float* chPtrs[2] = { dawMasterFeedL_.data(), dawMasterFeedR_.data() };
+            juce::AudioBuffer<float> dawFeed (chPtrs, 2, numSamples);
+            dRenderer->renderBlock (dawFeed, numSamples);
+
+            // Accumulate into the already-written output bus.
+            for (int i = 0; i < numSamples; ++i)
+            {
+                outL[i] = juce::jlimit (-1.0f, 1.0f, outL[i] + dawMasterFeedL_[i]);
+                outR[i] = juce::jlimit (-1.0f, 1.0f, outR[i] + dawMasterFeedR_[i]);
+            }
+        }
+    }
     for (int i = 0; i < numSamples; ++i)
     {
         outL[i] = juce::jlimit (-1.0f, 1.0f, outL[i]);
@@ -2217,8 +2299,12 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 
     crossfaderStage.prepareToPlay (sr, blockSize, numCh);
     masterStage.prepareToPlay     (sr, blockSize, numCh);
-}
 
+    // PRD-0081/0082: Prepare the DAW timeline renderer.
+    dawMasterFeedL_.assign (static_cast<size_t>(blockSize), 0.0f);
+    dawMasterFeedR_.assign (static_cast<size_t>(blockSize), 0.0f);
+    rebuildDawRenderer();
+}
 void AudioEngine::audioDeviceStopped()
 {
     if (shuttingDown)

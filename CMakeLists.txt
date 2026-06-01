@@ -612,6 +612,12 @@ add_executable(SonikTests
     Source/MidiHandlers/MixerMidiHandler.cpp
     Source/MidiHandlers/LibraryMidiHandler.cpp
     Source/MidiHandlers/CompositeMidiCommandHandler.cpp
+    # PRD-0079 – PRD-0086: Timeline Playback Engine & Non-Destructive Clip Editing
+    Tests/ArrangementSnapshotTests.cpp
+    Tests/ClipStreamerTests.cpp
+    Tests/TimelineRendererTests.cpp
+    Tests/DawTransportTests.cpp
+    Tests/EditCommandTests.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

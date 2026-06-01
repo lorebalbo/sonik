@@ -1,5 +1,5 @@
 ---
-status: Not Implemented
+status: Implemented
 epic: EPIC-0010
 depends-on:
   - PRD-0081
@@ -289,3 +289,38 @@ the empty timeline. No special-case "needs at least one clip" guard is added
 anywhere — the zero-clip path is exercised by an integration test that deletes
 every clip, presses Play, and asserts silent output with a normally advancing
 playhead and no error. Undo restores the clips in reverse deletion order.
+
+## 1.6. Manual Test Plan
+
+This is the consolidated human-in-the-loop checklist for the entire EPIC-0010
+playback engine. Everything that can be verified automatically already is:
+the full unit suite (`ClipStreamerTests`, `TimelineRendererTests`,
+`ArrangementSnapshotTests`, `DawTransportTests`, `EditCommandTests`) passes, the
+app builds and launches, the arrangement compiles and renders real clip
+waveforms, and the now-line advances continuously during playback (verified by
+screenshot). The items below require a human with working speakers/headphones
+because they assert on **audible** output, which the agent cannot perceive.
+
+Setup before each run:
+- Launch `./build/Sonik_artefacts/Debug/Sonik.app`.
+- Record (or load a previously recorded) arrangement so the ORIGINAL lane is
+  populated, plus at least one track with separated stems so the INSTRUMENTAL
+  and VOCAL lanes have clips.
+
+Checklist:
+- Press Play: the DAW reconstructs the performed mix from the source files and
+  it sounds correct, full-quality, and click-free at clip boundaries.
+- The audible playback stays in sync with the visual now-line (no drift between
+  what is heard and the playhead position over a multi-minute pass).
+- Mute/solo lanes (or arrangements containing only Instrumental or only Vocal
+  clips) play the correct stem audio; the Instrumental lane sums drums + bass +
+  other with no phasing or level imbalance.
+- Seek (click the ruler) while stopped and while playing: audio resumes from the
+  new position cleanly, with no glitch, stale buffer, or wrong-offset playback.
+- Set a loop region and review it: the loop wraps seamlessly with no audible
+  click or gap at the wrap point.
+- Sources at a non-44.1 kHz device rate (change the audio device sample rate)
+  still play at correct pitch and speed (sample-rate reconciliation by ear).
+- After each edit — move, trim, uncrop/extend, split, delete, per-clip gain —
+  press Play and confirm the resulting audio matches the edit (e.g. an uncropped
+  intro reveals more of the source song; a gain trim is audibly quieter/louder).

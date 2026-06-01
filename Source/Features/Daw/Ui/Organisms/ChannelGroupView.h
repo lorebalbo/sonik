@@ -66,6 +66,9 @@ public:
     // Exposed for tests: which lanes are currently active.
     bool isLaneActive (ChannelGroup::LaneKind kind) const;
 
+    // PRD-0083/0084/0085/0086: Wire edit dispatcher into all lanes.
+    void setEditDispatcher (Daw::EditCommandDispatcher* dispatcher);
+
     std::function<void()> onPreferredHeightChanged;
 
 private:

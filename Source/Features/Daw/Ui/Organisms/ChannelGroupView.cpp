@@ -81,6 +81,13 @@ void ChannelGroupView::refreshClipLayout()
             lane->refreshClipLayout();
 }
 
+void ChannelGroupView::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher)
+{
+    for (auto& lane : lanes_)
+        if (lane != nullptr)
+            lane->setEditDispatcher (dispatcher);
+}
+
 void ChannelGroupView::refreshLaneActiveness()
 {
     // Default (no deck tree): treat the deck as in original mode.

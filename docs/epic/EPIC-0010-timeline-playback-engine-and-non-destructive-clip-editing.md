@@ -1,6 +1,6 @@
 ---
 name: "EPIC-0010: Timeline Playback Engine & Non-Destructive Clip Editing"
-status: Open
+status: Implemented
 ---
 
 # 1. EPIC-0010: Timeline Playback Engine & Non-Destructive Clip Editing
@@ -175,11 +175,11 @@ Source/Features/Daw/
 
 ## 1.4. PRD Roadmap
 
-- [ ] PRD-0079: Arrangement Snapshot Compiler & SeqLock Publication (message-thread `ValueTree` → audio-thread schedule)
-- [ ] PRD-0080: Clip Streaming Source-Read Layer (background pre-roll, ring buffers, sample-rate reconciliation)
-- [ ] PRD-0081: Timeline Render Engine (audio-thread clip summing, click-free boundaries) into the master output
-- [ ] PRD-0082: DAW Transport (Play / Pause / Stop, playhead, region loop for review)
-- [ ] PRD-0083: Edit Command Layer & Undo/Redo over the `daw` model
-- [ ] PRD-0084: Clip Move & Trim Interactions (grid-snap drag handles)
-- [ ] PRD-0085: Clip Uncrop / Extend & Split (lossless crop-window editing)
-- [ ] PRD-0086: Clip Delete, Per-Clip Gain & Editing Validation
+- [x] PRD-0079: Arrangement Snapshot Compiler & SeqLock Publication (message-thread `ValueTree` → audio-thread schedule)
+- [x] PRD-0080: Clip Streaming Source-Read Layer (background pre-roll, ring buffers, sample-rate reconciliation)
+- [x] PRD-0081: Timeline Render Engine (audio-thread clip summing, click-free boundaries) into the master output
+- [x] PRD-0082: DAW Transport (Play / Pause / Stop, playhead, region loop for review)
+- [x] PRD-0083: Edit Command Layer & Undo/Redo over the `daw` model
+- [x] PRD-0084: Clip Move & Trim Interactions (grid-snap drag handles)
+- [x] PRD-0085: Clip Uncrop / Extend & Split (lossless crop-window editing)
+- [x] PRD-0086: Clip Delete, Per-Clip Gain & Editing Validation

@@ -102,6 +102,13 @@ void ChannelGroupStack::refreshClipLayout()
             g->refreshClipLayout();
 }
 
+void ChannelGroupStack::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher)
+{
+    for (const auto& g : groups_)
+        if (g != nullptr)
+            g->setEditDispatcher (dispatcher);
+}
+
 void ChannelGroupStack::resized()
 {
     auto bounds = getLocalBounds();

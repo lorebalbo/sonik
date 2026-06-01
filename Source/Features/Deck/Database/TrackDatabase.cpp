@@ -589,6 +589,36 @@ juce::String TrackDatabase::loadCuePointsJson (const juce::String& contentHash)
 }
 
 // ---------------------------------------------------------------------------
+// Reverse lookup: content_hash -> source file path (EPIC-0010 playback)
+// ---------------------------------------------------------------------------
+
+juce::String TrackDatabase::getFilePathForContentHash (const juce::String& contentHash) const
+{
+    if (dbHandle == nullptr)
+        return {};
+
+    const char* sql =
+        "SELECT file_path FROM library_tracks WHERE content_hash = ? LIMIT 1;";
+
+    sqlite3_stmt* stmt = nullptr;
+    juce::String result;
+
+    if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
+    {
+        sqlite3_bind_text (stmt, 1, contentHash.toRawUTF8(), -1, SQLITE_TRANSIENT);
+        if (sqlite3_step (stmt) == SQLITE_ROW)
+        {
+            auto col = sqlite3_column_text (stmt, 0);
+            if (col != nullptr)
+                result = juce::String::fromUTF8 (reinterpret_cast<const char*> (col));
+        }
+        sqlite3_finalize (stmt);
+    }
+
+    return result;
+}
+
+// ---------------------------------------------------------------------------
 // Loop persistence (PRD-0014)
 // ---------------------------------------------------------------------------
 

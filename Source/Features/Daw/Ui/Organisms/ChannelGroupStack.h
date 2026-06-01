@@ -57,6 +57,9 @@ public:
     // PRD-0070: re-place clips in every group after a transform change.
     void refreshClipLayout();
 
+    // PRD-0083/0084/0085/0086: Wire edit dispatcher into every group/lane.
+    void setEditDispatcher (Daw::EditCommandDispatcher* dispatcher);
+
     void resized() override;
     void paint (juce::Graphics& g) override;
 

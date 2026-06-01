@@ -15,6 +15,7 @@ DawPanel::DawPanel (MasterGridService& gridService,
                     ChannelGroupStack::DeckResolver deckResolver,
                     ClipBlock::WaveformSource waveformSource)
     : gridService_ (gridService),
+      dawBranch_   (dawBranch),  // retained copy (ValueTree ref-counts internally)
       transform_ (TimelineTransform::GridSnapshot{}, kDefaultPixelsPerBeat,
                   /*leftEdgeSample*/ 0, /*viewportWidthPx*/ 0.0),
       ruler_ (gridService, transform_),
@@ -46,6 +47,57 @@ DawPanel::DawPanel (MasterGridService& gridService,
     stack_.onContentHeightChanged = [this]() { layoutBody(); };
 
     rebuildTransform();
+
+    // PRD-0082: Create the owned DawTransport and wire transport button callbacks
+    // so buttons work immediately without external wiring.
+    transport_ = std::make_unique<Daw::DawTransport>();
+    transport_->onStateChanged = [this] (Daw::DawTransport::State) { repaint(); };
+
+    isTransportPlaying = [this]() -> bool {
+        return transport_->getState() == Daw::DawTransport::State::Playing;
+    };
+    isTransportPaused = [this]() -> bool {
+        return transport_->getState() == Daw::DawTransport::State::Paused;
+    };
+    isTransportLoopEnabled = [this]() -> bool {
+        return transport_->isLoopEnabled();
+    };
+
+    onTransportPlay  = [this]() { transport_->play();  repaint(); };
+    onTransportPause = [this]() { transport_->pause(); repaint(); };
+    onTransportStop  = [this]() { transport_->stop();  repaint(); };
+    onTransportLoopToggle = [this]() { transport_->toggleLoop(); repaint(); };
+
+    // PRD-0079/0083: Create the arrangement compiler / recompile trigger / dispatcher.
+    // The compiler uses a null handle resolver for now (clips reference files by
+    // sourceFileId; the resolver is wired in by SonikApplication when audio loads).
+    recompileTrigger_ = std::make_unique<Daw::ArrangementRecompileTrigger> (
+        dawBranch_,
+        Daw::ArrangementCompiler (nullptr /*handleResolver*/),
+        arrangementPublisher_);
+
+    // EPIC-0010: when playback starts or the user seeks, re-prime the clip
+    // streamers so they align to the (new) playhead. The playback resolver
+    // computes per-clip source offsets from the transport's current position,
+    // so a recompile is the single unified path that realigns priming.
+    transport_->onStateChanged = [this] (Daw::DawTransport::State s)
+    {
+        if (s == Daw::DawTransport::State::Playing && recompileTrigger_ != nullptr)
+            recompileTrigger_->requestRecompile();
+        repaint();
+    };
+    transport_->onSeeked = [this] (std::int64_t)
+    {
+        if (recompileTrigger_ != nullptr)
+            recompileTrigger_->requestRecompile();
+        repaint();
+    };
+
+    dispatcher_ = std::make_unique<Daw::EditCommandDispatcher> (
+        dawBranch_, undoManager_, *recompileTrigger_);
+
+    // Wire the dispatcher into all existing lane views.
+    stack_.setEditDispatcher (dispatcher_.get());
 
     // ~30 Hz: cheap enough for a smooth now-line, still change-gated for the
     // transform rebuild so an idle panel does no layout work.
@@ -260,6 +312,21 @@ void DawPanel::resized()
                                                 header.getY() + 4,
                                                 recordWidth, toggleSize);
 
+    // PRD-0082: Transport buttons to the left of the Record button.
+    // STOP | PAUSE | PLAY | LOOP (each 44px wide)
+    const int transportW = 44;
+    const int transportH = toggleSize;
+    const int transportGap = 4;
+
+    loopBounds_  = juce::Rectangle<int> (recordButtonBounds_.getX() - transportW - 6,
+                                          header.getY() + 4, transportW, transportH);
+    stopBounds_  = juce::Rectangle<int> (loopBounds_.getX()  - transportW - transportGap,
+                                          header.getY() + 4, transportW, transportH);
+    pauseBounds_ = juce::Rectangle<int> (stopBounds_.getX()  - transportW - transportGap,
+                                          header.getY() + 4, transportW, transportH);
+    playBounds_  = juce::Rectangle<int> (pauseBounds_.getX() - transportW - transportGap,
+                                          header.getY() + 4, transportW, transportH);
+
     const int gutter = contentLeftGutter();
 
     // Keep the transform viewport width (content area, after the gutter) in sync.
@@ -359,10 +426,7 @@ void DawPanel::paint (juce::Graphics& g)
     g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
     g.drawText ("FOLLOW", followToggleBounds_, juce::Justification::centred, false);
 
-    // Global Record button: two colour-free states. Idle = surface fill (inactive).
-    // Armed or actively recording = full inverted ink fill with surface text — the
-    // same active treatment every other button uses. No checkerboard: the user
-    // expects the standard active/inactive inversion from DESIGN.md.
+    // Global Record button
     {
         const RecordUiState rec = recordStateProvider_ ? recordStateProvider_()
                                                         : RecordUiState::Idle;
@@ -376,6 +440,30 @@ void DawPanel::paint (juce::Graphics& g)
         g.setColour (active ? kSurface : kInk);
         g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::bold));
         g.drawText ("REC", recordButtonBounds_, juce::Justification::centred, false);
+    }
+
+    // PRD-0082: Transport buttons — PLAY, PAUSE, STOP, LOOP.
+    {
+        const bool playing    = isTransportPlaying    ? isTransportPlaying()    : false;
+        const bool paused     = isTransportPaused     ? isTransportPaused()     : false;
+        const bool loopArmed  = isTransportLoopEnabled ? isTransportLoopEnabled() : false;
+
+        auto drawTransportBtn = [&] (const juce::Rectangle<int>& r,
+                                     const juce::String& label, bool active)
+        {
+            g.setColour (active ? kInk : kSurface);
+            g.fillRect (r);
+            g.setColour (kInk);
+            g.drawRect (r, 2);
+            g.setColour (active ? kSurface : kInk);
+            g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::bold));
+            g.drawText (label, r, juce::Justification::centred, false);
+        };
+
+        drawTransportBtn (playBounds_,  "PLAY",  playing && !paused);
+        drawTransportBtn (pauseBounds_, "PAUS",  paused);
+        drawTransportBtn (stopBounds_,  "STOP",  !playing && !paused);
+        drawTransportBtn (loopBounds_,  "LOOP",  loopArmed);
     }
 
     // Blank gutter corner above the lane headers, beside the ruler (when expanded).
@@ -415,6 +503,32 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
         if (onRecordToggle)
             onRecordToggle();
         repaint();
+    }
+
+    // PRD-0082: DAW transport controls.
+    if (playBounds_.contains (event.getPosition()))
+    {
+        if (onTransportPlay) onTransportPlay();
+        repaint();
+        return;
+    }
+    if (pauseBounds_.contains (event.getPosition()))
+    {
+        if (onTransportPause) onTransportPause();
+        repaint();
+        return;
+    }
+    if (stopBounds_.contains (event.getPosition()))
+    {
+        if (onTransportStop) onTransportStop();
+        repaint();
+        return;
+    }
+    if (loopBounds_.contains (event.getPosition()))
+    {
+        if (onTransportLoopToggle) onTransportLoopToggle();
+        repaint();
+        return;
     }
 }
 

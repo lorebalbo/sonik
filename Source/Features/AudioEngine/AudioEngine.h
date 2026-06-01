@@ -17,6 +17,10 @@
 #include "../Mixer/Routing/ABBus.h"                   // PRD-0053
 #include "../Mixer/Routing/CrossfaderStage.h"         // PRD-0053
 #include "../Mixer/Routing/MasterStage.h"             // PRD-0053
+#include "../Daw/Playback/ArrangementPublisher.h"     // PRD-0079
+#include "../Daw/Playback/ClipStreamer.h"              // PRD-0080
+#include "../Daw/Playback/TimelineRenderer.h"          // PRD-0081
+#include "../Daw/Playback/DawTransport.h"              // PRD-0082
 #include <array>
 #include <atomic>
 #include <vector>
@@ -139,6 +143,12 @@ public:
     /// message thread before starting the audio device.
     void setMixerMeterSnapshot (MixerMeterSnapshot* snapshot) noexcept;
 
+    /// PRD-0082: Wire the DAW arrangement publisher and transport for timeline playback.
+    /// Call from the message thread before starting the audio device.
+    void setDawPlayback (Daw::ArrangementPublisher* publisher,
+                         Daw::ClipStreamerPool*     streamerPool,
+                         Daw::DawTransport*         transport) noexcept;
+
     float getCpuLoad() const     { return cpuMonitor.loadPercent.load (std::memory_order_relaxed); }
     bool  getCpuOverload() const { return cpuMonitor.overloadWarning.load (std::memory_order_relaxed); }
 
@@ -160,6 +170,10 @@ private:
     void updateDeviceState();
     void attemptReconnection();
     static int deckIdToSlot (const juce::String& deckId);
+
+    /// PRD-0081/0082: (re)build + prepare the DAW timeline renderer if the
+    /// arrangement pointers are wired and the device is prepared. Message thread.
+    void rebuildDawRenderer();
 
     juce::AudioDeviceManager deviceManager;
     juce::ValueTree rootState;
@@ -208,6 +222,18 @@ private:
     std::vector<float> busAL, busAR;                   ///< A bus
     std::vector<float> busBL, busBR;                   ///< B bus
     std::vector<float> masterScratchL, masterScratchR; ///< master scratch
+
+    // PRD-0079-0082: DAW arrangement playback pipeline.
+    // All pointers are set once on the message thread; read on the audio thread with acquire.
+    std::atomic<Daw::ArrangementPublisher*> dawPublisher_   { nullptr };
+    std::atomic<Daw::ClipStreamerPool*>     dawStreamerPool_ { nullptr };
+    std::atomic<Daw::DawTransport*>         dawTransport_   { nullptr };
+    std::unique_ptr<Daw::TimelineRenderer>  dawRenderer_;
+    // Audio-thread-visible raw pointer to the prepared renderer (published with
+    // release once fully constructed; read with acquire in processBlock).
+    std::atomic<Daw::TimelineRenderer*>     dawRendererPtr_ { nullptr };
+    // Pre-allocated master feed buffer for the timeline renderer (sized in audioDeviceAboutToStart).
+    std::vector<float> dawMasterFeedL_, dawMasterFeedR_;
 
     // CPU load monitoring
     struct CpuLoadMonitor

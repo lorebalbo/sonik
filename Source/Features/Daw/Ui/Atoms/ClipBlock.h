@@ -82,7 +82,52 @@ public:
 
     const DawClip& getClip() const noexcept { return clip_; }
 
+    //--------------------------------------------------------------------------
+    // PRD-0084/0085/0086: Editing callbacks.
+    //
+    // Wire these from the owning LaneView/DawPanel to an EditCommandDispatcher.
+    // Each callback receives the clip's clipId and the relevant new value.
+    //--------------------------------------------------------------------------
+
+    /// Body drag: called each mouse-move during a body drag with the new
+    /// candidate timelineStartSample (already snapped if snap is enabled).
+    std::function<void (const juce::String& clipId, int64_t newTimelineStart)> onMoveDrag;
+    /// Body drag committed (mouse up).
+    std::function<void (const juce::String& clipId, int64_t finalTimelineStart)> onMoveEnd;
+
+    /// Left-edge drag: positive delta = trim inward; negative = uncrop outward.
+    /// Receives the new candidate sourceStartSample.
+    std::function<void (const juce::String& clipId, int64_t newSourceStart, bool uncrop)> onLeftEdgeDrag;
+    std::function<void (const juce::String& clipId, int64_t finalSourceStart, bool uncrop)> onLeftEdgeEnd;
+
+    /// Right-edge drag: positive delta = uncrop outward; negative = trim inward.
+    /// Receives the new candidate sourceEndSample.
+    std::function<void (const juce::String& clipId, int64_t newSourceEnd, bool uncrop)> onRightEdgeDrag;
+    std::function<void (const juce::String& clipId, int64_t finalSourceEnd, bool uncrop)> onRightEdgeEnd;
+
+    /// Split: called when the user double-clicks on the clip body (cuts at cursor).
+    std::function<void (const juce::String& clipId, int64_t cutTimelineSample)> onSplit;
+
+    /// Delete: called when the user presses Delete/Backspace while the clip has focus.
+    std::function<void (const juce::String& clipId)> onDelete;
+
+    /// Gain: called when the user right-click → gain changes (simplified: scroll wheel).
+    std::function<void (const juce::String& clipId, float gainDbDelta)> onGainScroll;
+
+    /// Whether grid-snap is enabled for drags.
+    bool snapEnabled { false };
+
     void paint (juce::Graphics& g) override;
+
+    void mouseEnter       (const juce::MouseEvent& e) override;
+    void mouseExit        (const juce::MouseEvent& e) override;
+    void mouseMove        (const juce::MouseEvent& e) override;
+    void mouseDown        (const juce::MouseEvent& e) override;
+    void mouseDrag        (const juce::MouseEvent& e) override;
+    void mouseUp          (const juce::MouseEvent& e) override;
+    void mouseDoubleClick (const juce::MouseEvent& e) override;
+    void mouseWheelMove   (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override;
+    bool keyPressed       (const juce::KeyPress& key) override;
 
 private:
     void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier& property) override;
@@ -92,8 +137,24 @@ private:
     void valueTreeParentChanged (juce::ValueTree&) override {}
 
     void reloadClip();
-    void paintWaveform (juce::Graphics& g, juce::Rectangle<int> inner);
+    void paintWaveform   (juce::Graphics& g, juce::Rectangle<int> inner);
     void paintPlaceholder (juce::Graphics& g, juce::Rectangle<int> inner);
+    void paintEdgeHandles (juce::Graphics& g);
+
+    // Hit-zone detection for edges.
+    static constexpr int kEdgeHitWidth = 8; // px each side
+    enum class DragZone { None, Body, LeftEdge, RightEdge };
+    DragZone hitZoneAt (int localX) const;
+    void updateCursorForZone (DragZone zone);
+
+    // ---- Drag state -------------------------------------------------------
+    DragZone dragZone_         { DragZone::None };
+    int      dragStartX_       { 0 };
+    int64_t  dragStartTimeline_ { 0 };
+    int64_t  dragStartSrcStart_ { 0 };
+    int64_t  dragStartSrcEnd_   { 0 };
+    bool     dragActive_       { false };
+    bool     hovered_          { false }; // true while mouse is over this clip
 
     juce::ValueTree          clipNode_;
     const TimelineTransform& transform_;

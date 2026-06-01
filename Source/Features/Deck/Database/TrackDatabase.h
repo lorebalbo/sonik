@@ -58,6 +58,10 @@ public:
     void storeWaveformData (const juce::String& contentHash, const juce::MemoryBlock& data);
     bool loadWaveformData (const juce::String& contentHash, juce::MemoryBlock& data);
 
+    // Reverse lookup: content_hash -> original source file path (EPIC-0010 playback).
+    // Returns empty string if no library track matches. Message-Thread only.
+    juce::String getFilePathForContentHash (const juce::String& contentHash) const;
+
     // Hot cue persistence (PRD-0012)
     void saveCuePointsJson (const juce::String& filePath, const juce::String& contentHash,
                             const juce::String& json);

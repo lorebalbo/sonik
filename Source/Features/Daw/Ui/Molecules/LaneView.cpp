@@ -18,11 +18,11 @@ LaneView::LaneView (ChannelGroup::LaneKind kind,
       laneTree_ (std::move (laneTree)),
       waveformSource_ (std::move (waveformSource))
 {
-    setInterceptsMouseClicks (false, false);
+    setInterceptsMouseClicks (false, true); // Children (ClipBlocks) receive mouse events.
 
     // Content layer hosts the clip blocks and clips them to the timeline area
     // (right of the header gutter), so clips never paint over the lane header.
-    clipLayer_.setInterceptsMouseClicks (false, false);
+    clipLayer_.setInterceptsMouseClicks (false, true); // Pass through to ClipBlock children.
     addAndMakeVisible (clipLayer_);
 
     if (laneTree_.isValid())
@@ -84,10 +84,68 @@ void LaneView::rebuildClips()
 
         auto* block = clipBlocks_.add (
             new ClipBlock (clipNode, transform_, waveformSource_));
+        // Wire editing callbacks if a dispatcher is available.
+        if (dispatcher_ != nullptr)
+            wireClipCallbacks (*block);
         clipLayer_.addAndMakeVisible (block);
     }
 
     layoutClips();
+}
+
+void LaneView::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher)
+{
+    dispatcher_ = dispatcher;
+    for (auto* block : clipBlocks_)
+        wireClipCallbacks (*block);
+}
+
+void LaneView::wireClipCallbacks (ClipBlock& block)
+{
+    if (dispatcher_ == nullptr)
+        return;
+
+    // Move (body drag)
+    block.onMoveDrag = [this] (const juce::String& id, int64_t newStart) {
+        dispatcher_->moveClip (id, newStart);
+    };
+    block.onMoveEnd = [this] (const juce::String& id, int64_t finalStart) {
+        dispatcher_->moveClip (id, finalStart);
+    };
+
+    // Trim (left/right edges inward)
+    block.onLeftEdgeDrag = [this] (const juce::String& id, int64_t newSrcStart, bool isUncrop) {
+        if (isUncrop) dispatcher_->uncropClipStart (id, newSrcStart);
+        else          { dispatcher_->beginTrimDrag (id); dispatcher_->trimClipStart (id, newSrcStart); }
+    };
+    block.onLeftEdgeEnd = [this] (const juce::String& id, int64_t finalSrcStart, bool isUncrop) {
+        if (isUncrop) dispatcher_->uncropClipStart (id, finalSrcStart);
+        else          dispatcher_->trimClipStart (id, finalSrcStart);
+    };
+
+    block.onRightEdgeDrag = [this] (const juce::String& id, int64_t newSrcEnd, bool isUncrop) {
+        if (isUncrop) dispatcher_->uncropClipEnd (id, newSrcEnd);
+        else          { dispatcher_->beginTrimDrag (id); dispatcher_->trimClipEnd (id, newSrcEnd); }
+    };
+    block.onRightEdgeEnd = [this] (const juce::String& id, int64_t finalSrcEnd, bool isUncrop) {
+        if (isUncrop) dispatcher_->uncropClipEnd (id, finalSrcEnd);
+        else          dispatcher_->trimClipEnd (id, finalSrcEnd);
+    };
+
+    // Split (double-click)
+    block.onSplit = [this] (const juce::String& id, int64_t cutTimeline) {
+        dispatcher_->splitClip (id, cutTimeline);
+    };
+
+    // Delete (Delete / Backspace key)
+    block.onDelete = [this] (const juce::String& id) {
+        dispatcher_->deleteClip (id);
+    };
+
+    // Gain (scroll wheel — Cmd+scroll reserved; plain scroll adjusts gain 1 dB)
+    block.onGainScroll = [this] (const juce::String& id, float delta) {
+        dispatcher_->setClipGain (id, delta);
+    };
 }
 
 void LaneView::refreshClipLayout()

@@ -17,6 +17,7 @@
 #include "Features/Daw/Projection/LiveProjectionTimer.h"
 #include "Features/Daw/Projection/DeckManagerProjectionSource.h"
 #include "Features/Daw/Recording/RecordingSessionController.h"
+#include "Features/Daw/Playback/DawPlaybackController.h"
 #include "Features/Deck/AudioThreadState.h"
 #include "Features/Library/UI/LibraryComponent.h"
 #include "Features/Library/WatchFolderScanner.h"
@@ -50,6 +51,7 @@ public:
         : deckStateManager (deckState),
           audioEngine (engine),
           audioFileLoader (loader),
+          trackDatabase (trackDb),
           rootState (deckState.getStateTree()),
           toolbar (deckState, mixerSchema, mixerMeters),
           layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr, clockMgr),
@@ -193,6 +195,33 @@ public:
                            : 0;
             });
 
+        // EPIC-0010: wire the arrangement playback engine. The DawPlaybackController
+        // owns the streamer pool + source resolution; it provides the compiler's
+        // per-clip resolver so every clip gets a primed streamer. The AudioEngine's
+        // TimelineRenderer reads the same publisher + pool the panel compiles into.
+        playbackController = std::make_unique<Daw::DawPlaybackController> (
+            trackDatabase, dawPanel.getDawTransport());
+        playbackController->setRuntimeSampleRate (audioEngine.getSampleRate());
+
+        if (auto* trigger = dawPanel.getRecompileTrigger())
+        {
+            trigger->setCompiler (playbackController->makeCompiler());
+            trigger->compileNow();
+        }
+
+        audioEngine.setDawPlayback (&dawPanel.getArrangementPublisher(),
+                                    &playbackController->getPool(),
+                                    &dawPanel.getDawTransport());
+
+        // EPIC-0010: the DAW now-line (playback cursor) tracks the transport
+        // playhead. Returns -1 when stopped, so the panel hides the now-line
+        // outside of arrangement playback (recording uses the record playhead).
+        dawPanel.setNowLineProvider (
+            [this]() -> std::int64_t
+            {
+                return dawPanel.getDawTransport().getPlayheadSample();
+            });
+
         // Drive the record playhead clock on the message thread at UI cadence and
         // promote Armed -> Recording the instant any deck begins producing audio.
         startTimerHz (30);
@@ -215,6 +244,25 @@ public:
     // as soon as a deck starts producing audio. Message thread only.
     void timerCallback() override
     {
+        // EPIC-0010: keep the playback rate scale in sync with the live device
+        // rate. The device may start (or change) after construction; when the
+        // rate differs from what the compiler assumed, update it and recompile
+        // so clip sample positions are reconciled to the runtime rate.
+        if (playbackController != nullptr)
+        {
+            const double liveRate = audioEngine.getSampleRate();
+            if (liveRate > 0.0 && std::abs (liveRate - lastRuntimeRate_) > 0.5)
+            {
+                lastRuntimeRate_ = liveRate;
+                playbackController->setRuntimeSampleRate (liveRate);
+                if (auto* trigger = dawPanel.getRecompileTrigger())
+                {
+                    trigger->setCompiler (playbackController->makeCompiler());
+                    trigger->requestRecompile();
+                }
+            }
+        }
+
         if (recordingController == nullptr)
             return;
 
@@ -422,6 +470,7 @@ private:
     DeckStateManager& deckStateManager;
     AudioEngine&      audioEngine;
     AudioFileLoader&  audioFileLoader;
+    TrackDatabase&    trackDatabase;
     juce::ValueTree   rootState;
 
     GlobalToolbar      toolbar;
@@ -441,6 +490,10 @@ private:
     // ---- EPIC-0009 record session (PRD-0071 / PRD-0078) -------------------
     std::unique_ptr<Daw::LiveRecordingClock>          recordingClock;
     std::unique_ptr<Daw::RecordingSessionController>  recordingController;
+
+    // ---- EPIC-0010 arrangement playback ----------------------------------
+    std::unique_ptr<Daw::DawPlaybackController>       playbackController;
+    double                                            lastRuntimeRate_ { 44100.0 };
 
     static constexpr int toolbarHeight = 40;
 
