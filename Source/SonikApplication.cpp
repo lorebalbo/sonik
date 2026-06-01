@@ -118,6 +118,11 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     mixerMeterSnapshot  = std::make_unique<MixerMeterSnapshot>();
     mixerStateBridge    = std::make_unique<MixerStateBridge> (*mixerStateSchema, *mixerAtomicSnapshot);
 
+    // PRD-0063: DAW state schema — attaches the empty `daw` branch (parallel to
+    // decks/mixer) to the root state tree. Message-thread only; tracks are
+    // created lazily later (PRD-0069). Idempotent get-or-create, like the mixer.
+    dawStateTree = DawState::getOrCreateDawBranch (deckStateManager->getStateTree());
+
     // Create the master clock publisher and manager (PRD-0026).
     // Manager must be created after decks exist so its initial listener state is correct.
     masterClockPublisher = std::make_unique<MasterClockPublisher>();
@@ -126,6 +131,12 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
 
     // Create and start the audio engine
     audioEngine = std::make_unique<AudioEngine> (deckStateManager->getStateTree());
+
+    // PRD-0064/0066: master grid service feeding the DAW panel. Reads the master
+    // clock SeqLock and the live audio device sample rate (message thread only).
+    masterGridService = std::make_unique<Daw::MasterGridService> (
+        *masterClockPublisher,
+        [this]() { return audioEngine != nullptr ? audioEngine->getSampleRate() : 0.0; });
 
     // PRD-0041: RT-safe MIDI message bridge. Constructed after the device
     // manager (producers exist) and before the audio engine begins
@@ -251,7 +262,7 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
         *audioFileLoader, *deckStateManager, *audioEngine, *waveformManager,
         *beatGridManager, *stemSeparationManager, *masterClockManager,
         *libraryAnalysisQueue, *trackDatabase,
-        *mixerStateSchema, *mixerMeterSnapshot);
+        *mixerStateSchema, *mixerMeterSnapshot, *masterGridService);
 
     // Create the watch-folder scanner (PRD-0031) and kick off the startup scan.
     // Constructed after trackDatabase is ready; destroyed in shutdown() before
@@ -314,6 +325,10 @@ void SonikApplication::shutdown()
 
     midiSettingsWindow.reset();  // PRD-0048
     mainWindow.reset();
+
+    // PRD-0064/0066: grid service references the clock publisher + audio engine;
+    // destroy it (after the UI that uses it) before those dependencies go away.
+    masterGridService.reset();
 
     // Stop the watch-folder scanner before the database is torn down.
     if (watchFolderScanner != nullptr)

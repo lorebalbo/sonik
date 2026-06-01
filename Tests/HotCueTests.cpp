@@ -154,16 +154,16 @@ public:
             expect (over100.getARGB() == expected.getARGB());
         }
 
-        beginTest ("Default pad color mapping has 8 entries");
+        beginTest ("Default pad color mapping has 9 entries");
         {
             constexpr size_t mapSize = sizeof (HotCueColors::defaultColorForPad) /
                                        sizeof (HotCueColors::defaultColorForPad[0]);
-            expectEquals (static_cast<int> (mapSize), 8);
+            expectEquals (static_cast<int> (mapSize), 9);
         }
 
         beginTest ("Default pad colors are within palette range");
         {
-            for (int i = 0; i < 8; ++i)
+            for (int i = 0; i < 9; ++i)
             {
                 expect (HotCueColors::defaultColorForPad[i] >= 0);
                 expect (HotCueColors::defaultColorForPad[i] < 16);

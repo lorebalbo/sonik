@@ -1,0 +1,173 @@
+#pragma once
+//==============================================================================
+// PRD-0066: DawPanel organism.
+//
+// The top-docked DAW panel shell. It owns the TimelineTransform (PRD-0065) for
+// its own viewport and hosts the TimeRuler molecule (PRD-0066). A single,
+// always-visible collapse/expand toggle in the header switches the panel
+// between two fixed heights; collapse/expand is instant (no animation) and asks
+// the parent to reflow via onPreferredHeightChanged.
+//
+// The grid is the single source of truth: the panel never stores tempo/phase,
+// it derives its transform from the injected MasterGridService each refresh.
+// A low-rate, change-gated timer rebuilds the transform only when the master
+// grid actually changes (tempo/phase/transport), so an idle panel does no work.
+//
+// Message/UI thread only. No audio-thread code.
+//==============================================================================
+
+#include <functional>
+#include <limits>
+
+#include <juce_gui_basics/juce_gui_basics.h>
+
+#include "../Molecules/TimeRuler.h"
+#include "../Atoms/Playhead.h"
+#include "../FollowController.h"
+#include "../DawLayoutMetrics.h"
+#include "ChannelGroupStack.h"
+#include "../../Model/MasterGridService.h"
+#include "../../Transform/TimelineTransform.h"
+#include "../../State/DawState.h"
+
+namespace Daw
+{
+
+class DawPanel final : public juce::Component,
+                       private juce::Timer
+{
+public:
+    //--------------------------------------------------------------------------
+    // Layout metrics. The expanded panel is header + ruler + a scrollable
+    // channel-group body sized to show one full channel group plus a peek of
+    // the next (the body scrolls vertically when groups overflow, PRD-0067).
+    //--------------------------------------------------------------------------
+    static constexpr int kHeaderHeight = 28;
+    static constexpr int kBodyHeight   = DawLayout::kExpandedGroupHeight + 20;
+
+    static constexpr int kCollapsedHeight = kHeaderHeight;
+    static constexpr int kExpandedHeight  = kHeaderHeight
+                                          + TimeRuler::kRulerHeight
+                                          + kBodyHeight;
+
+    // Default zoom: a bar is ~50 px wide to match the Figma DAW ruler.
+    static constexpr double kDefaultPixelsPerBeat = 50.0 / DawState::kBeatsPerBar;
+
+    // dawBranch    — the "Daw" ValueTree branch (holds the tracks container).
+    // deckResolver — maps a track's deckIndex to its deck ValueTree.
+    // waveformSource — read-only waveform cache accessor for clip rendering.
+    DawPanel (MasterGridService& gridService,
+              juce::ValueTree dawBranch,
+              ChannelGroupStack::DeckResolver deckResolver,
+              ClipBlock::WaveformSource waveformSource = {});
+    ~DawPanel() override;
+
+    //--------------------------------------------------------------------------
+    // Collapse / expand state.
+    //--------------------------------------------------------------------------
+    bool isExpanded() const noexcept { return expanded_; }
+    void setExpanded (bool shouldBeExpanded);
+
+    // The height the parent should give this panel in the current state.
+    int  getPreferredHeight() const noexcept
+    {
+        return expanded_ ? kExpandedHeight : kCollapsedHeight;
+    }
+
+    // Invoked when the preferred height changes so the parent can reflow.
+    std::function<void()> onPreferredHeightChanged;
+
+    // PRD-0070: source of the live now-line sample (the bridge's now-line).
+    // When unset the now-line is hidden.
+    void setNowLineProvider (std::function<std::int64_t()> provider);
+
+    // Access to the owned transform (PRD-0067+ interaction lives on the panel).
+    TimelineTransform&       getTransform()       noexcept { return transform_; }
+    const TimelineTransform& getTransform() const noexcept { return transform_; }
+
+    // PRD-0070: follow-playhead auto-scroll state (testable).
+    FollowController&       getFollowController()       noexcept { return followController_; }
+    const FollowController& getFollowController() const noexcept { return followController_; }
+
+    void resized() override;
+    void paint (juce::Graphics& g) override;
+    void mouseUp (const juce::MouseEvent& event) override;
+    void mouseDown (const juce::MouseEvent& event) override;
+    void mouseDrag (const juce::MouseEvent& event) override;
+    void mouseWheelMove (const juce::MouseEvent& event,
+                         const juce::MouseWheelDetails& wheel) override;
+    void mouseMagnify (const juce::MouseEvent& event, float scaleFactor) override;
+
+private:
+    void timerCallback() override;
+    void rebuildTransform();
+    bool gridChanged (const MasterGridService::GridContext& ctx) const;
+
+    void layoutBody();
+
+    // PRD-0070 helpers.
+    int  contentLeftGutter() const noexcept;       // px before the content axis
+    void afterTransformChanged();                  // re-layout + repaint
+    void updateNowLine();                          // reposition the now-line
+    void applyFollowIfNeeded();                     // auto-scroll when following
+    void layoutPlayhead();
+
+    // Transparent input surface over the content area (ruler + body): it forwards
+    // pan/zoom/pinch gestures to the panel so they work even above the body
+    // viewport, while leaving the now-line (drawn above it) non-interactive.
+    class InteractionLayer final : public juce::Component
+    {
+    public:
+        InteractionLayer() { setInterceptsMouseClicks (true, true); }
+
+        std::function<void (const juce::MouseEvent&)> onDown, onDrag, onUp;
+        std::function<void (const juce::MouseEvent&, const juce::MouseWheelDetails&)> onWheel;
+        std::function<void (const juce::MouseEvent&, float)> onMagnify;
+
+        void mouseDown (const juce::MouseEvent& e) override { if (onDown) onDown (e); }
+        void mouseDrag (const juce::MouseEvent& e) override { if (onDrag) onDrag (e); }
+        void mouseUp   (const juce::MouseEvent& e) override { if (onUp)   onUp (e); }
+        void mouseWheelMove (const juce::MouseEvent& e, const juce::MouseWheelDetails& w) override
+            { if (onWheel) onWheel (e, w); }
+        void mouseMagnify (const juce::MouseEvent& e, float s) override { if (onMagnify) onMagnify (e, s); }
+    };
+
+    MasterGridService& gridService_;
+    TimelineTransform  transform_;
+    TimeRuler          ruler_;
+    juce::Viewport     bodyViewport_;
+    ChannelGroupStack  stack_;
+    InteractionLayer   interaction_;
+    Playhead           playhead_;
+    FollowController   followController_;
+
+    std::function<std::int64_t()> nowLineProvider_;
+
+    bool expanded_ { true };
+
+    juce::Rectangle<int> toggleBounds_;        // collapse / expand
+    juce::Rectangle<int> followToggleBounds_;  // follow-playhead
+
+    // Drag-to-pan state (content area horizontal pan).
+    bool         dragging_       { false };
+    int          dragLastX_      { 0 };
+
+    // Last-seen grid signature for change-gating the timer.
+    double       lastBpm_         { -1.0 };
+    double       lastSamplesPerBeat_ { -1.0 };
+    std::int64_t lastPhaseOrigin_ { -1 };
+    bool         lastIsPlaying_   { false };
+
+    // Last now-line sample, so the timer only re-lays-out growing clips while
+    // playback is actually advancing the now-line (no idle layout work).
+    std::int64_t lastNowLineSample_ { std::numeric_limits<std::int64_t>::min() };
+
+    static inline const juce::Colour kInk           { 0xFF2D2D2D }; // primary
+    static inline const juce::Colour kSurface       { 0xFFFDFDFD }; // surface
+    static inline const juce::Colour kHeaderBg      { 0xFFE2E2E2 }; // container-highest
+    static inline const juce::Colour kCanvasBg      { 0xFFF3F3F4 }; // container-low
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DawPanel)
+};
+
+} // namespace Daw

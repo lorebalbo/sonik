@@ -1,6 +1,6 @@
 ---
 name: "EPIC-0008: DAW Timeline Foundation & Live Deck Projection"
-status: Open
+status: Implemented
 ---
 
 # 1. EPIC-0008: DAW Timeline Foundation & Live Deck Projection
@@ -251,11 +251,11 @@ clock SeqLock snapshot — no new audio-thread code paths.
 Sequenced so each PRD compiles, runs, and is testable without the later ones.
 Numbers are assigned by `generate_doc.sh` at drafting time; `TBD` until then.
 
-- [ ] PRD-0063: DAW State Schema & Non-Destructive Clip Model (`daw` ValueTree branch, `DawClip`, channel-group/lane structure)
-- [ ] PRD-0064: Master Grid Service & Master-Clock Reconciliation (read-only bars/beats grid from `MasterClockSnapshot`)
-- [ ] PRD-0065: Timeline Coordinate Transform (samples ↔ beats ↔ pixels) with zoom & scroll math
-- [ ] PRD-0066: DAW Panel Shell & Time Ruler (docked top-of-app organism, DESIGN.md-compliant, collapse/expand)
-- [ ] PRD-0067: Channel-Group & Three-Lane Layout (Original / Instrumental / Vocal lane headers and views)
-- [ ] PRD-0068: Clip Block Atom & Timeline Waveform Rendering (reuse PRD-0006 analysis cache)
-- [ ] PRD-0069: Live Deck Projection Bridge (LiveProjectionTimer growing live clips from deck source position + source mode)
-- [ ] PRD-0070: Live Playhead / Now-Line & Zoom/Scroll Interaction Polish
+- [x] PRD-0063: DAW State Schema & Non-Destructive Clip Model (`daw` ValueTree branch, `DawClip`, channel-group/lane structure)
+- [x] PRD-0064: Master Grid Service & Master-Clock Reconciliation (read-only bars/beats grid from `MasterClockSnapshot`)
+- [x] PRD-0065: Timeline Coordinate Transform (samples ↔ beats ↔ pixels) with zoom & scroll math
+- [x] PRD-0066: DAW Panel Shell & Time Ruler (docked top-of-app organism, DESIGN.md-compliant, collapse/expand)
+- [x] PRD-0067: Channel-Group & Three-Lane Layout (Original / Instrumental / Vocal lane headers and views)
+- [x] PRD-0068: Clip Block Atom & Timeline Waveform Rendering (reuse PRD-0006 analysis cache)
+- [x] PRD-0069: Live Deck Projection Bridge (LiveProjectionTimer growing live clips from deck source position + source mode)
+- [x] PRD-0070: Live Playhead / Now-Line & Zoom/Scroll Interaction Polish

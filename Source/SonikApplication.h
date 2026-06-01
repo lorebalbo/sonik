@@ -31,6 +31,8 @@
 #include "Features/Mixer/State/MixerAtomicSnapshot.h"
 #include "Features/Mixer/State/MixerMeterSnapshot.h"
 #include "Features/Mixer/State/MixerStateBridge.h"
+#include "Features/Daw/State/DawState.h"
+#include "Features/Daw/Model/MasterGridService.h"
 #include "Features/Midi/UI/MidiSettingsWindow.h"
 #include <memory>
 
@@ -43,7 +45,8 @@ public:
                 MasterClockManager& clockMgr, LibraryAnalysisQueue& analysisQueue,
                 TrackDatabase& trackDb,
                 MixerStateSchema& mixerSchema,
-                MixerMeterSnapshot& mixerMeters)
+                MixerMeterSnapshot& mixerMeters,
+                Daw::MasterGridService& gridService)
         : DocumentWindow ("Sonik",
                           juce::Colour (0xfff9f9f9),
                           DocumentWindow::allButtons)
@@ -52,7 +55,7 @@ public:
         setContentOwned (new MainContentComponent (deckState, engine, loader, waveformMgr,
                                 beatGridMgr, stemMgr, clockMgr,
                                 analysisQueue, trackDb,
-                                mixerSchema, mixerMeters),
+                                mixerSchema, mixerMeters, gridService),
                           true);
         setResizable (true, true);
         setResizeLimits (1120, 600, 3840, 2160);
@@ -120,10 +123,12 @@ private:
     std::unique_ptr<MixerAtomicSnapshot> mixerAtomicSnapshot; // PRD-0052
     std::unique_ptr<MixerMeterSnapshot>  mixerMeterSnapshot;  // PRD-0052
     std::unique_ptr<MixerStateBridge>    mixerStateBridge;    // PRD-0052
+    juce::ValueTree                      dawStateTree;        // PRD-0063
     std::unique_ptr<MasterClockPublisher> masterClockPublisher;  // PRD-0026
     std::unique_ptr<MasterClockManager>   masterClockManager;    // PRD-0026
     std::unique_ptr<AudioEngine>      audioEngine;
     std::unique_ptr<AudioFileLoader>  audioFileLoader;
+    std::unique_ptr<Daw::MasterGridService> masterGridService;  // PRD-0064/0066
     std::unique_ptr<WaveformManager>  waveformManager;
     std::unique_ptr<BeatGridManager>  beatGridManager;
     std::unique_ptr<KeyDetectionManager> keyDetectionManager;

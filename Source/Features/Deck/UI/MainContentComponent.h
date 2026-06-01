@@ -5,10 +5,17 @@
 #include "../../AudioEngine/AudioEngine.h"
 #include "../../AudioEngine/AudioFileLoader.h"
 #include "../../Waveform/WaveformManager.h"
+#include "../../Waveform/WaveformData.h"
+#include "../Database/TrackDatabase.h"
 #include "../../BeatGrid/BeatGridManager.h"
 #include "../../Sync/MasterClockManager.h"
 #include "GlobalToolbar.h"
 #include "DeckLayoutManager.h"
+#include "Features/Daw/Model/MasterGridService.h"
+#include "Features/Daw/Ui/Organisms/DawPanel.h"
+#include "Features/Daw/State/DawState.h"
+#include "Features/Daw/Projection/LiveProjectionTimer.h"
+#include "Features/Daw/Projection/DeckManagerProjectionSource.h"
 #include "Features/Library/UI/LibraryComponent.h"
 #include "Features/Library/WatchFolderScanner.h"
 #include "Features/Mixer/State/MixerStateSchema.h"
@@ -35,7 +42,8 @@ public:
                           LibraryAnalysisQueue& analysisQueue,
                           TrackDatabase& trackDb,
                           MixerStateSchema& mixerSchema,
-                          MixerMeterSnapshot& mixerMeters)
+                          MixerMeterSnapshot& mixerMeters,
+                          Daw::MasterGridService& gridService)
         : deckStateManager (deckState),
           audioEngine (engine),
           audioFileLoader (loader),
@@ -44,6 +52,38 @@ public:
           layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr, clockMgr),
           mixerComponent (mixerSchema, mixerMeters,
                           rootState.getChildWithName (IDs::Decks)),
+          dawPanel (gridService,
+                    DawState::getOrCreateDawBranch (rootState),
+                    [rootTree = rootState](int deckIndex) -> juce::ValueTree
+                    {
+                        auto decks = rootTree.getChildWithName (IDs::Decks);
+                        int count = 0;
+                        for (int i = 0; i < decks.getNumChildren(); ++i)
+                        {
+                            auto deck = decks.getChild (i);
+                            if (deck.hasType (IDs::Deck))
+                            {
+                                if (count == deckIndex)
+                                    return deck;
+                                ++count;
+                            }
+                        }
+                        return {};
+                    },
+                    // PRD-0068: resolve a clip's sourceFileId to cached WaveformData
+                    // via the PRD-0006 SQLite cache (content-hash keyed). A miss
+                    // returns nullptr so the clip draws a placeholder; never analyses.
+                    [&trackDb](const juce::String& sourceFileId) -> WaveformData::Ptr
+                    {
+                        if (sourceFileId.isEmpty())
+                            return nullptr;
+
+                        juce::MemoryBlock block;
+                        if (! trackDb.loadWaveformData (sourceFileId, block))
+                            return nullptr;
+
+                        return WaveformData::deserialize (block, sourceFileId);
+                    }),
           libraryComponent (std::make_unique<LibraryComponent> (rootState, trackDb, analysisQueue))
     {
         setOpaque (true);
@@ -54,16 +94,34 @@ public:
             handleAddDeck();
         };
 
+        dawPanel.onPreferredHeightChanged = [this]() { resized(); };
+
         addAndMakeVisible (toolbar);
+        addAndMakeVisible (dawPanel);
         addAndMakeVisible (layoutManager);
         addAndMakeVisible (mixerComponent);
         addAndMakeVisible (*libraryComponent);
 
         rootState.addListener (this);
+
+        // PRD-0069: start the live-deck projection bridge. It reads each deck's
+        // published atomics on the message thread and grows live clips on the
+        // matching DAW lane(s). The DawPanel's now-line (PRD-0070) follows the
+        // bridge's monotonic now-line sample.
+        projectionSource = std::make_unique<Daw::DeckManagerProjectionSource> (deckStateManager);
+        liveProjection   = std::make_unique<Daw::LiveProjectionTimer> (
+                               *projectionSource,
+                               DawState::getOrCreateDawBranch (rootState),
+                               gridService);
+        dawPanel.setNowLineProvider ([this]() -> juce::int64
+                                     { return liveProjection->getNowLineSample(); });
+        liveProjection->start();
     }
 
     ~MainContentComponent() override
     {
+        if (liveProjection != nullptr)
+            liveProjection->stop();
         rootState.removeListener (this);
     }
 
@@ -76,6 +134,10 @@ public:
     {
         auto b = getLocalBounds();
         toolbar.setBounds (b.removeFromTop (toolbarHeight));
+
+        // PRD-0066: the DAW arrangement panel docks directly beneath the global
+        // toolbar, above the deck rack. It owns its height (collapsed/expanded).
+        dawPanel.setBounds (b.removeFromTop (dawPanel.getPreferredHeight()));
 
         // Deck area: fixed height derived from the number of decks — never
         // compressed, never stretched.  Horizontal margins only (no top/bottom).
@@ -252,11 +314,16 @@ private:
     GlobalToolbar      toolbar;
     DeckLayoutManager  layoutManager;
     MixerComponent     mixerComponent;
+    Daw::DawPanel      dawPanel;            // PRD-0066
     juce::TooltipWindow tooltipWindow { this };
 
     // ---- Library panel ----------------------------------------------------
 
     std::unique_ptr<LibraryComponent> libraryComponent;
+
+    // ---- PRD-0069 live-deck projection bridge ----------------------------
+    std::unique_ptr<Daw::DeckManagerProjectionSource> projectionSource;
+    std::unique_ptr<Daw::LiveProjectionTimer>         liveProjection;
 
     static constexpr int toolbarHeight = 40;
 

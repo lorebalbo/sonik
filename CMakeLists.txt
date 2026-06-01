@@ -110,6 +110,36 @@ target_sources(Sonik PRIVATE
     Source/Features/Deck/DeckStateManager.h
     Source/Features/Deck/DeckStateManager.cpp
     Source/Features/Deck/AudioThreadState.h
+    Source/Features/Daw/State/DawState.h
+    Source/Features/Daw/State/DawState.cpp
+    Source/Features/Daw/State/DawClipModel.h
+    Source/Features/Daw/Model/DawClip.h
+    Source/Features/Daw/Model/ChannelGroup.h
+    Source/Features/Daw/Model/MasterGridService.h
+    Source/Features/Daw/Model/MasterGridService.cpp
+    Source/Features/Daw/Transform/TimelineTransform.h
+    Source/Features/Daw/Transform/TimelineTransform.cpp
+    Source/Features/Daw/Ui/Atoms/RulerTick.h
+    Source/Features/Daw/Ui/Molecules/TimeRuler.h
+    Source/Features/Daw/Ui/Molecules/TimeRuler.cpp
+    Source/Features/Daw/Ui/DawLayoutMetrics.h
+    Source/Features/Daw/Ui/Atoms/ClipBlock.h
+    Source/Features/Daw/Ui/Atoms/ClipBlock.cpp
+    Source/Features/Daw/Ui/Molecules/LaneView.h
+    Source/Features/Daw/Ui/Molecules/LaneView.cpp
+    Source/Features/Daw/Ui/Molecules/ChannelGroupHeader.h
+    Source/Features/Daw/Ui/Organisms/ChannelGroupView.h
+    Source/Features/Daw/Ui/Organisms/ChannelGroupView.cpp
+    Source/Features/Daw/Ui/Organisms/ChannelGroupStack.h
+    Source/Features/Daw/Ui/Organisms/ChannelGroupStack.cpp
+    Source/Features/Daw/Ui/Organisms/DawPanel.h
+    Source/Features/Daw/Ui/Organisms/DawPanel.cpp
+    Source/Features/Daw/Ui/Atoms/Playhead.h
+    Source/Features/Daw/Ui/FollowController.h
+    Source/Features/Daw/Projection/SourceModeReader.h
+    Source/Features/Daw/Projection/LiveProjectionTimer.h
+    Source/Features/Daw/Projection/LiveProjectionTimer.cpp
+    Source/Features/Daw/Projection/DeckManagerProjectionSource.h
     Source/Features/Deck/Database/TrackDatabase.h
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.h
@@ -441,6 +471,15 @@ add_executable(SonikTests
     Tests/MidiSettingsPanelTests.cpp
     Tests/UsbPortDisambiguationTests.cpp
     Tests/MixerStateSchemaTests.cpp
+    Tests/DawStateSchemaTests.cpp
+    Tests/DawClipModelTests.cpp
+    Tests/MasterGridServiceTests.cpp
+    Tests/TimelineTransformTests.cpp
+    Tests/DawPanelShellTests.cpp
+    Tests/ChannelGroupLayoutTests.cpp
+    Tests/ClipBlockTests.cpp
+    Tests/LiveProjectionBridgeTests.cpp
+    Tests/DawTimelineInteractionTests.cpp
     Tests/SignalFlowTests.cpp
     Tests/CrossfaderTests.cpp
     Tests/ChannelStripTests.cpp
@@ -527,6 +566,16 @@ add_executable(SonikTests
     Source/Features/Mixer/State/MixerStateSchema.cpp
     Source/Features/Mixer/State/MixerStateBridge.cpp
     Source/Features/Mixer/State/MixerIdentifiers.cpp
+    Source/Features/Daw/State/DawState.cpp
+    Source/Features/Daw/Model/MasterGridService.cpp
+    Source/Features/Daw/Transform/TimelineTransform.cpp
+    Source/Features/Daw/Ui/Molecules/TimeRuler.cpp
+    Source/Features/Daw/Ui/Atoms/ClipBlock.cpp
+    Source/Features/Daw/Ui/Molecules/LaneView.cpp
+    Source/Features/Daw/Ui/Organisms/ChannelGroupView.cpp
+    Source/Features/Daw/Ui/Organisms/ChannelGroupStack.cpp
+    Source/Features/Daw/Ui/Organisms/DawPanel.cpp
+    Source/Features/Daw/Projection/LiveProjectionTimer.cpp
     Source/Features/Mixer/Ui/Atoms/MixRotaryKnob.cpp
     Source/Features/Mixer/Ui/Atoms/MixKillButton.cpp
     Source/Features/Mixer/Ui/Atoms/MixAssignButton.cpp
