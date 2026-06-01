@@ -142,6 +142,9 @@ target_sources(Sonik PRIVATE
     Source/Features/Daw/Projection/DeckManagerProjectionSource.h
     Source/Features/Daw/Recording/RecordingSessionController.h
     Source/Features/Daw/Recording/RecordingSessionController.cpp
+    Source/Features/Daw/Automation/AutomationCaptureTaps.h
+    Source/Features/Daw/Automation/AutomationCaptureTaps.cpp
+    Source/Features/Daw/Automation/MasterTempoAutomationCapture.h
     Source/Features/Daw/Recording/PerformanceEventFifo.h
     Source/Features/Daw/Recording/PerformanceEventFifo.cpp
     Source/Features/Daw/Recording/ClipPlacementEngine.h
@@ -594,6 +597,7 @@ add_executable(SonikTests
     Source/Features/Daw/Ui/Organisms/DawPanel.cpp
     Source/Features/Daw/Projection/LiveProjectionTimer.cpp
     Source/Features/Daw/Recording/RecordingSessionController.cpp
+    Source/Features/Daw/Automation/AutomationCaptureTaps.cpp
     Source/Features/Daw/Recording/PerformanceEventFifo.cpp
     Source/Features/Daw/Recording/ClipPlacementEngine.cpp
     Source/Features/Daw/Recording/AlignmentResolver.cpp
@@ -618,6 +622,10 @@ add_executable(SonikTests
     Tests/TimelineRendererTests.cpp
     Tests/DawTransportTests.cpp
     Tests/EditCommandTests.cpp
+    # EPIC-0011: DAW Automation System
+    Tests/AutomationModelTests.cpp
+    Tests/AutomationCaptureTapsTests.cpp
+    Tests/MasterTempoAutomationCaptureTests.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})

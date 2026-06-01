@@ -152,9 +152,9 @@ No allocation, locks, or I/O on the audio thread.
 
 ## 1.4. PRD Roadmap
 
-- [ ] PRD-0087: Automation Data Model (continuous + boolean lanes in the `daw` ValueTree, breakpoint/step structures)
-- [ ] PRD-0088: Automation Capture Taps (observe mixer/tempo/deck params, append via EPIC-0009 event bridge while recording)
-- [ ] PRD-0089: Master-Tempo Automation Lane & Capture (records master-clock BPM changes)
+- [x] PRD-0087: Automation Data Model (continuous + boolean lanes in the `daw` ValueTree, breakpoint/step structures)
+- [x] PRD-0088: Automation Capture Taps (observe mixer/tempo/deck params, append via EPIC-0009 event bridge while recording)
+- [x] PRD-0089: Master-Tempo Automation Lane & Capture (records master-clock BPM changes)
 - [ ] PRD-0090: Per-Channel Continuous Lanes — Filter / High / Mid / Low / Gain (capture)
 - [ ] PRD-0091: Per-Channel Boolean Lanes — Key-Lock / Pitch-Stretch / Key-Stepper (capture)
 - [ ] PRD-0092: Automation Playback Applier (single-source-of-truth write-back; tempo → MasterClockManager; click-free snapshot delivery)
