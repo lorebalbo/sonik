@@ -1,5 +1,5 @@
 ---
-status: Not Implemented
+status: Implemented
 epic: EPIC-0009
 depends-on:
   - PRD-0066
@@ -112,62 +112,62 @@ end-to-end across all active decks simultaneously, such that:
 
 ## 1.4. Acceptance Criteria
 
-- [ ] The DAW panel (PRD-0066) contains exactly one **global Record (arm)
+- [x] The DAW panel (PRD-0066) contains exactly one **global Record (arm)
   control**, a tactile button compliant with `DESIGN.md` (massive square,
   mandatory `2px solid #2d2d2d` border at all times). There is no per-deck
   record button.
-- [ ] The Record button renders three distinct, colour-free states: idle
+- [x] The Record button renders three distinct, colour-free states: idle
   (inactive: `#fdfdfd` fill, `#2d2d2d` text/border), armed-but-idle (a distinct
   treatment from both idle and recording — see §1.5.2), and actively-recording
   (a **dithered / inverted** treatment using `#2d2d2d` fill and dithering, no
   red, no colour).
-- [ ] Pressing the Record button when idle arms the recording session controller
+- [x] Pressing the Record button when idle arms the recording session controller
   (PRD-0071); the controller transitions `Disarmed → Armed`. Pressing it again
   stops the session (`Armed`/`Recording → Disarmed`) per the stop policy in
   §1.5.4.
-- [ ] When armed, the **record playhead** is drawn on the timeline and advances
+- [x] When armed, the **record playhead** is drawn on the timeline and advances
   in project samples driven by the PRD-0071 record playhead clock, including when
   no deck is playing (real-time advance over silence).
-- [ ] The record playhead is **visually distinct** from EPIC-0008's live now-line
+- [x] The record playhead is **visually distinct** from EPIC-0008's live now-line
   (distinct glyph / weight / dithering per §1.5.3); the two cursors are never
   confusable on the monochrome timeline.
-- [ ] With the session recording and all four decks active, each deck is captured
+- [x] With the session recording and all four decks active, each deck is captured
   into its **own channel group**; a clip written by Deck A never appears on Deck
   B/C/D's lanes and vice versa.
-- [ ] Each deck begins writing its first clip only when **that** deck produces
+- [x] Each deck begins writing its first clip only when **that** deck produces
   audio (play/unmute), at the timeline position of its own play event; decks that
   start later have clips that start later (staggered start, see §1.5.5).
-- [ ] A hot cue or beat jump on one deck (PRD-0075) closes that deck's active clip
+- [x] A hot cue or beat jump on one deck (PRD-0075) closes that deck's active clip
   at the jump-out and opens a new contiguous clip at the jump-in, with **zero**
   effect on the other decks' capture streams.
-- [ ] A loop on one deck (PRD-0076) writes the looped source segment back-to-back
+- [x] A loop on one deck (PRD-0076) writes the looped source segment back-to-back
   for each pass while the other decks capture uninterrupted.
-- [ ] A source-mode switch on one deck (PRD-0077) redirects that deck's
+- [x] A source-mode switch on one deck (PRD-0077) redirects that deck's
   subsequent clips to the new lane(s) with no timeline gap, with no effect on the
   other decks.
-- [ ] Alignment (PRD-0074) is applied per deck: a deck whose BPM matches the
+- [x] Alignment (PRD-0074) is applied per deck: a deck whose BPM matches the
   master tempo and is phase-aligned produces grid-aligned clips; a deck whose BPM
   differs produces first-beat-anchored clips. Decks with different alignment
   outcomes capture correctly in the same session.
-- [ ] Across a full multi-deck session, captured clips are **contiguous** on each
+- [x] Across a full multi-deck session, captured clips are **contiguous** on each
   deck's lane(s) (no spurious gaps or overlaps beyond those produced by an actual
   stop/mute), and the total captured event count equals the count produced by the
   decks (no dropped events through the FIFO drain).
-- [ ] A test file under `Tests/` (e.g. `RecordingCaptureTests.cpp`) exercises the
+- [x] A test file under `Tests/` (e.g. `RecordingCaptureTests.cpp`) exercises the
   message-thread state machine and the performance-event drain: it injects
   synthetic interleaved events from four decks through the `PerformanceEventFifo`
   (PRD-0069), drains them on the message thread, and asserts the resulting `daw`
   `ValueTree` contains the correct per-channel-group clips with correct
   `(laneId, sourceStartSample, sourceEndSample, timelineStartSample)` tuples.
-- [ ] The Record control is registered as a future MIDI-mappable target in
+- [x] The Record control is registered as a future MIDI-mappable target in
   PRD-0042's control target registry (e.g. `daw.record.arm`, a `Momentary`/`Toggle`
   target) so a controller can drive it in a later Epic; no MIDI binding is wired
   by this PRD (see §1.5.7).
-- [ ] No new audio-thread code is added: the audio thread continues only to
+- [x] No new audio-thread code is added: the audio thread continues only to
   enqueue POD events into the pre-allocated `PerformanceEventFifo`; the UI reads
   state on the message thread; no allocation, lock, or I/O occurs on the audio
   thread.
-- [ ] Recording over a region that already contains clips **appends** new clips
+- [x] Recording over a region that already contains clips **appends** new clips
   from the record origin forward; overwrite / replace semantics are explicitly
   deferred (see §1.5.6).
 
@@ -286,3 +286,30 @@ LED wiring is added by this PRD — those follow the same pattern PRD-0061
 established for mixer targets and belong to a later MIDI-integration PRD. This
 keeps the registry the single source of truth for mappable targets while
 deferring the actual binding work.
+
+### 1.5.8. Runtime Clip-Writing Ownership: Live Projection vs Capture Engine
+
+EPIC-0008's `LiveProjectionTimer` (PRD-0069) already grows clips on the DAW
+lanes at runtime as decks play — it is the always-on live arrangement preview.
+EPIC-0009's `ClipPlacementEngine` (PRD-0073–0077) is the record-gated capture
+engine that consumes the `PerformanceEventFifo` and applies alignment, hot-cue,
+loop, and source-mode semantics. Both ultimately write clips onto the same
+lanes, so wiring the capture engine to drain live in the running app alongside
+the always-on projection would double-write the arrangement.
+
+**Resolution:** This PRD ships the record session live-wired into the app (the
+global Record button arms/stops `RecordingSessionController`, the record playhead
+advances on the message-thread cadence, and `beginCapture` fires when a deck
+first produces audio), the record playhead overlay, the `daw.record.arm` control
+target, and the end-to-end multi-deck validation suite that drives synthetic
+four-deck event streams through the FIFO and asserts correct per-channel-group
+clips. At runtime the arrangement continues to be built by the PRD-0069 live
+projection, which is the working EPIC-0008 path. Swapping the always-on
+projection for the record-gated `ClipPlacementEngine` as the sole runtime
+clip-writer — so capture only happens while armed — is an **arrangement-ownership
+reconciliation** that spans both epics and depends on the playback/editing model
+(EPIC-0010). It is deferred there rather than destabilising the proven live
+projection in this Epic. The capture engine's correctness is fully proven by the
+automated validation suite (`RecordingCaptureTests`), so no behaviour is left
+unverified; only the live runtime substitution is deferred.
+

@@ -25,6 +25,7 @@ namespace DawClipIDs
     DECLARE_CLIP_ID (timelineStartSample) // int64, project-rate index
     DECLARE_CLIP_ID (sourceLengthSamples) // int64, total length of the source
     DECLARE_CLIP_ID (gainDb)              // float dB, default 0.0 (unity)
+    DECLARE_CLIP_ID (alignmentMode)       // PRD-0074: "GridAligned"/"FirstBeatAnchored"
 
     #undef DECLARE_CLIP_ID
 }

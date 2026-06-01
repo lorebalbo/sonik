@@ -16,6 +16,8 @@
 #include "Features/Daw/State/DawState.h"
 #include "Features/Daw/Projection/LiveProjectionTimer.h"
 #include "Features/Daw/Projection/DeckManagerProjectionSource.h"
+#include "Features/Daw/Recording/RecordingSessionController.h"
+#include "Features/Deck/AudioThreadState.h"
 #include "Features/Library/UI/LibraryComponent.h"
 #include "Features/Library/WatchFolderScanner.h"
 #include "Features/Mixer/State/MixerStateSchema.h"
@@ -29,7 +31,8 @@ class StemSeparationManager;
 
 class MainContentComponent final : public juce::Component,
                                     public juce::DragAndDropContainer,
-                                    private juce::ValueTree::Listener
+                                    private juce::ValueTree::Listener,
+                                    private juce::Timer
 {
 public:
     MainContentComponent (DeckStateManager& deckState,
@@ -113,13 +116,91 @@ public:
                                *projectionSource,
                                DawState::getOrCreateDawBranch (rootState),
                                gridService);
-        dawPanel.setNowLineProvider ([this]() -> juce::int64
-                                     { return liveProjection->getNowLineSample(); });
+        // The now-line (DAW playback cursor) must only appear during arrangement
+        // playback (EPIC-0010). During normal DJing and recording the timeline
+        // cursor role belongs to the record playhead exclusively. Deliberately
+        // not calling dawPanel.setNowLineProvider here; the panel will keep the
+        // now-line hidden (lineX = -1) until playback is wired by EPIC-0010.
+        // The recording clock still consumes liveProjection->getNowLineSample()
+        // internally via recordingClock->setMasterTimelineProvider.
+        // Gate clip writing: DAW lanes only grow when the Record button is
+        // active (Armed or Recording). nowLineSample_ always advances.
+        liveProjection->setCapturingProvider ([this]() {
+            return recordingController != nullptr
+                   && recordingController->state() != Daw::RecordingState::Stopped;
+        });
         liveProjection->start();
+
+        // PRD-0071 / PRD-0078: the explicit record session. Its clock is anchored
+        // to the projection now-line (PRD-0069) so the record playhead tracks
+        // musical time while a deck drives the grid, and free-runs over silence
+        // otherwise. The DawPanel's global Record button arms/stops the session;
+        // the record playhead overlay reads the live timeline position.
+        recordingClock = std::make_unique<Daw::LiveRecordingClock> (clockMgr, gridService);
+        recordingClock->setMasterTimelineProvider (
+            [this]() -> std::int64_t { return liveProjection->getNowLineSample(); });
+        recordingController = std::make_unique<Daw::RecordingSessionController> (
+            DawState::getOrCreateDawBranch (rootState), gridService, clockMgr,
+            recordingClock.get());
+
+        dawPanel.onRecordToggle = [this]()
+        {
+            if (recordingController == nullptr)
+                return;
+            if (recordingController->state() == Daw::RecordingState::Stopped)
+            {
+                // Reset the DAW timeline to beat 1 so every recording session
+                // starts at the same origin. A deck playing 30s before Record
+                // is pressed will have a clip at beat 1, sourced from the
+                // 30-second position of the audio file.
+                liveProjection->resetTimeline();
+                recordingController->arm();
+            }
+            else
+            {
+                recordingController->stop();
+            }
+        };
+
+        dawPanel.setRecordStateProvider (
+            [this]() -> Daw::DawPanel::RecordUiState
+            {
+                if (recordingController == nullptr)
+                    return Daw::DawPanel::RecordUiState::Idle;
+                switch (recordingController->state())
+                {
+                    case Daw::RecordingState::Armed:
+                        return Daw::DawPanel::RecordUiState::Armed;
+                    case Daw::RecordingState::Recording:
+                        return Daw::DawPanel::RecordUiState::Recording;
+                    case Daw::RecordingState::Stopped:
+                    default:
+                        return Daw::DawPanel::RecordUiState::Idle;
+                }
+            });
+
+        // The record playhead is rendered in the same DAW coordinate space as
+        // the clip blocks. Clips are anchored to nowLineSample_ (the absolute
+        // DAW timeline position), so the playhead must track nowLineSample_
+        // too. recordingController->currentTimelinePosition() counts elapsed
+        // time from 0 and diverges from nowLineSample_ whenever the deck was
+        // already playing when recording began.
+        dawPanel.setRecordPlayheadProvider (
+            [this]() -> std::int64_t
+            {
+                return liveProjection != nullptr
+                           ? liveProjection->getNowLineSample()
+                           : 0;
+            });
+
+        // Drive the record playhead clock on the message thread at UI cadence and
+        // promote Armed -> Recording the instant any deck begins producing audio.
+        startTimerHz (30);
     }
 
     ~MainContentComponent() override
     {
+        stopTimer();
         if (liveProjection != nullptr)
             liveProjection->stop();
         rootState.removeListener (this);
@@ -128,6 +209,38 @@ public:
     void paint (juce::Graphics& g) override
     {
         g.fillAll (juce::Colour (0xFFF9F9F9)); // surface
+    }
+
+    // PRD-0078: advance the record playhead clock and promote Armed -> Recording
+    // as soon as a deck starts producing audio. Message thread only.
+    void timerCallback() override
+    {
+        if (recordingController == nullptr)
+            return;
+
+        recordingController->tick();
+
+        if (recordingController->state() == Daw::RecordingState::Armed
+            && anyDeckPlaying())
+            recordingController->beginCapture();
+    }
+
+    bool anyDeckPlaying() const
+    {
+        if (projectionSource == nullptr)
+            return false;
+
+        const int numDecks = projectionSource->getNumDecks();
+        for (int slot = 0; slot < numDecks; ++slot)
+        {
+            auto* audio = projectionSource->getAudioState (slot);
+            if (audio == nullptr)
+                continue;
+            if (audio->playbackStatus.load (std::memory_order_acquire)
+                == static_cast<int> (PlaybackStatusCode::playing))
+                return true;
+        }
+        return false;
     }
 
     void resized() override
@@ -324,6 +437,10 @@ private:
     // ---- PRD-0069 live-deck projection bridge ----------------------------
     std::unique_ptr<Daw::DeckManagerProjectionSource> projectionSource;
     std::unique_ptr<Daw::LiveProjectionTimer>         liveProjection;
+
+    // ---- EPIC-0009 record session (PRD-0071 / PRD-0078) -------------------
+    std::unique_ptr<Daw::LiveRecordingClock>          recordingClock;
+    std::unique_ptr<Daw::RecordingSessionController>  recordingController;
 
     static constexpr int toolbarHeight = 40;
 

@@ -6,7 +6,11 @@
 #include "../Deck/AudioThreadState.h"
 #include "../Quantize/QuantizeService.h"
 
+#include <cstdint>
+
 class LoopEngine;
+
+namespace Daw { struct PerformanceCaptureSink; }
 
 /// Per-deck beat jump engine (message thread only).
 /// Pre-computes jump destination and issues seekDeck to the audio engine.
@@ -21,6 +25,10 @@ public:
 
     void setAudioState (DeckAudioState* state);
     void setLoopEngine (LoopEngine* engine);
+
+    // PRD-0075: optional recording-capture sink. When set, a normal (non-loop)
+    // beat jump emits a jump event carrying its pre/post source positions.
+    void setPerformanceCapture (Daw::PerformanceCaptureSink* sink, int deckIndex);
 
     void jumpForward();
     void jumpBackward();
@@ -46,6 +54,9 @@ private:
     juce::String      deckId;
     DeckAudioState*   audioState   = nullptr;
     LoopEngine*       loopEngine   = nullptr;
+
+    Daw::PerformanceCaptureSink* capture_ = nullptr;
+    int                          captureDeckIndex_ = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BeatJumpEngine)
 };

@@ -23,6 +23,7 @@
 
 #include "../Molecules/TimeRuler.h"
 #include "../Atoms/Playhead.h"
+#include "../Atoms/RecordPlayhead.h"
 #include "../FollowController.h"
 #include "../DawLayoutMetrics.h"
 #include "ChannelGroupStack.h"
@@ -81,6 +82,26 @@ public:
     // When unset the now-line is hidden.
     void setNowLineProvider (std::function<std::int64_t()> provider);
 
+    //--------------------------------------------------------------------------
+    // PRD-0078: global record control + record playhead.
+    //--------------------------------------------------------------------------
+    // The three colour-free visual states of the Record button, matching the
+    // recording session controller's lifecycle (PRD-0071).
+    enum class RecordUiState { Idle, Armed, Recording };
+
+    // Pressed when the DJ clicks the Record button. The host wires this to the
+    // recording session controller's arm/stop (PRD-0071). When unset the button
+    // is still drawn but inert.
+    std::function<void()> onRecordToggle;
+
+    // Polled (message thread) for the current record lifecycle state so the
+    // button renders idle / armed / recording. When unset the button stays idle.
+    void setRecordStateProvider (std::function<RecordUiState()> provider);
+
+    // Polled for the live record playhead sample; the record playhead band is
+    // drawn at this position while armed/recording and hidden when idle.
+    void setRecordPlayheadProvider (std::function<std::int64_t()> provider);
+
     // Access to the owned transform (PRD-0067+ interaction lives on the panel).
     TimelineTransform&       getTransform()       noexcept { return transform_; }
     const TimelineTransform& getTransform() const noexcept { return transform_; }
@@ -109,6 +130,7 @@ private:
     int  contentLeftGutter() const noexcept;       // px before the content axis
     void afterTransformChanged();                  // re-layout + repaint
     void updateNowLine();                          // reposition the now-line
+    void updateRecordPlayhead();                   // reposition the record playhead
     void applyFollowIfNeeded();                     // auto-scroll when following
     void layoutPlayhead();
 
@@ -139,14 +161,19 @@ private:
     ChannelGroupStack  stack_;
     InteractionLayer   interaction_;
     Playhead           playhead_;
+    RecordPlayhead     recordPlayhead_;
     FollowController   followController_;
 
     std::function<std::int64_t()> nowLineProvider_;
+    std::function<RecordUiState()> recordStateProvider_;
+    std::function<std::int64_t()>  recordPlayheadProvider_;
+    RecordUiState                  lastRecordState_ { RecordUiState::Idle };
 
     bool expanded_ { true };
 
     juce::Rectangle<int> toggleBounds_;        // collapse / expand
     juce::Rectangle<int> followToggleBounds_;  // follow-playhead
+    juce::Rectangle<int> recordButtonBounds_;  // global record arm/stop
 
     // Drag-to-pan state (content area horizontal pan).
     bool         dragging_       { false };

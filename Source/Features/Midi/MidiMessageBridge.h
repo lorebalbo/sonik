@@ -122,6 +122,7 @@ namespace sonik::midi
         /* ChannelAssignA      */ RoutingClass::MessageThread,
         /* ChannelAssignB      */ RoutingClass::MessageThread,
         /* ChannelCue          */ RoutingClass::MessageThread,
+        /* DawRecordArm        */ RoutingClass::MessageThread,
         /* ModifierSet         */ RoutingClass::MessageThread,
         /* ModifierClear       */ RoutingClass::MessageThread,
         /* ModifierToggle      */ RoutingClass::MessageThread,

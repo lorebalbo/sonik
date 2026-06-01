@@ -140,6 +140,15 @@ target_sources(Sonik PRIVATE
     Source/Features/Daw/Projection/LiveProjectionTimer.h
     Source/Features/Daw/Projection/LiveProjectionTimer.cpp
     Source/Features/Daw/Projection/DeckManagerProjectionSource.h
+    Source/Features/Daw/Recording/RecordingSessionController.h
+    Source/Features/Daw/Recording/RecordingSessionController.cpp
+    Source/Features/Daw/Recording/PerformanceEventFifo.h
+    Source/Features/Daw/Recording/PerformanceEventFifo.cpp
+    Source/Features/Daw/Recording/ClipPlacementEngine.h
+    Source/Features/Daw/Recording/ClipPlacementEngine.cpp
+    Source/Features/Daw/Recording/AlignmentResolver.h
+    Source/Features/Daw/Recording/AlignmentResolver.cpp
+    Source/Features/Daw/Recording/PerformanceCaptureSink.h
     Source/Features/Deck/Database/TrackDatabase.h
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.h
@@ -480,6 +489,14 @@ add_executable(SonikTests
     Tests/ClipBlockTests.cpp
     Tests/LiveProjectionBridgeTests.cpp
     Tests/DawTimelineInteractionTests.cpp
+    Tests/RecordingSessionControllerTests.cpp
+    Tests/PerformanceEventFifoTests.cpp
+    Tests/ClipPlacementEngineTests.cpp
+    Tests/AlignmentResolverTests.cpp
+    Tests/HotCueBeatJumpCaptureTests.cpp
+    Tests/LoopCaptureTests.cpp
+    Tests/SourceModeCaptureTests.cpp
+    Tests/RecordingCaptureTests.cpp
     Tests/SignalFlowTests.cpp
     Tests/CrossfaderTests.cpp
     Tests/ChannelStripTests.cpp
@@ -576,6 +593,10 @@ add_executable(SonikTests
     Source/Features/Daw/Ui/Organisms/ChannelGroupStack.cpp
     Source/Features/Daw/Ui/Organisms/DawPanel.cpp
     Source/Features/Daw/Projection/LiveProjectionTimer.cpp
+    Source/Features/Daw/Recording/RecordingSessionController.cpp
+    Source/Features/Daw/Recording/PerformanceEventFifo.cpp
+    Source/Features/Daw/Recording/ClipPlacementEngine.cpp
+    Source/Features/Daw/Recording/AlignmentResolver.cpp
     Source/Features/Mixer/Ui/Atoms/MixRotaryKnob.cpp
     Source/Features/Mixer/Ui/Atoms/MixKillButton.cpp
     Source/Features/Mixer/Ui/Atoms/MixAssignButton.cpp

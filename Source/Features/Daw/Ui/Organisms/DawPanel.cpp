@@ -40,6 +40,9 @@ DawPanel::DawPanel (MasterGridService& gridService,
     // The now-line overlay sits above the ruler + body and never eats input.
     addAndMakeVisible (playhead_);
 
+    // The record playhead band sits above the now-line; also input-transparent.
+    addAndMakeVisible (recordPlayhead_);
+
     stack_.onContentHeightChanged = [this]() { layoutBody(); };
 
     rebuildTransform();
@@ -71,6 +74,18 @@ void DawPanel::setNowLineProvider (std::function<std::int64_t()> provider)
 {
     nowLineProvider_ = std::move (provider);
     updateNowLine();
+}
+
+void DawPanel::setRecordStateProvider (std::function<RecordUiState()> provider)
+{
+    recordStateProvider_ = std::move (provider);
+    repaint();
+}
+
+void DawPanel::setRecordPlayheadProvider (std::function<std::int64_t()> provider)
+{
+    recordPlayheadProvider_ = std::move (provider);
+    updateRecordPlayhead();
 }
 
 int DawPanel::contentLeftGutter() const noexcept
@@ -138,6 +153,21 @@ void DawPanel::updateNowLine()
     playhead_.setLineX ((int) std::llround (TimelineTransform::alignToPixelGrid (x)));
 }
 
+void DawPanel::updateRecordPlayhead()
+{
+    // Hidden unless a session is armed/recording and a position is available.
+    const bool armed = recordStateProvider_ && recordStateProvider_() != RecordUiState::Idle;
+    if (! armed || ! recordPlayheadProvider_)
+    {
+        recordPlayhead_.setLineX (-1);
+        return;
+    }
+
+    const std::int64_t sample = recordPlayheadProvider_();
+    const double x = transform_.sampleToX (sample);
+    recordPlayhead_.setLineX ((int) std::llround (TimelineTransform::alignToPixelGrid (x)));
+}
+
 void DawPanel::applyFollowIfNeeded()
 {
     if (! nowLineProvider_ || ! followController_.isEnabled())
@@ -190,6 +220,19 @@ void DawPanel::timerCallback()
         updateNowLine();
     }
 
+    // Keep the record playhead in step and repaint the header when its state
+    // changes so the Record button reflects idle / armed / recording.
+    updateRecordPlayhead();
+    if (recordStateProvider_)
+    {
+        const auto recState = recordStateProvider_();
+        if (recState != lastRecordState_)
+        {
+            lastRecordState_ = recState;
+            repaint();
+        }
+    }
+
     applyFollowIfNeeded();
 }
 
@@ -210,6 +253,12 @@ void DawPanel::resized()
     followToggleBounds_ = juce::Rectangle<int> (toggleBounds_.getX() - followWidth - 6,
                                                 header.getY() + 4,
                                                 followWidth, toggleSize);
+
+    // Global Record button: a labelled square to the left of the follow toggle.
+    const int recordWidth = 64;
+    recordButtonBounds_ = juce::Rectangle<int> (followToggleBounds_.getX() - recordWidth - 6,
+                                                header.getY() + 4,
+                                                recordWidth, toggleSize);
 
     const int gutter = contentLeftGutter();
 
@@ -238,6 +287,7 @@ void DawPanel::resized()
                                 juce::jmax (0, getHeight() - contentTop));
 
         playhead_.setVisible (true);
+        recordPlayhead_.setVisible (true);
         layoutPlayhead();
     }
     else
@@ -246,6 +296,7 @@ void DawPanel::resized()
         bodyViewport_.setVisible (false);
         interaction_.setVisible (false);
         playhead_.setVisible (false);
+        recordPlayhead_.setVisible (false);
     }
 }
 
@@ -258,7 +309,14 @@ void DawPanel::layoutPlayhead()
                          juce::jmax (0, getWidth() - gutter),
                          juce::jmax (0, bottom - top));
     playhead_.toFront (false);
+
+    recordPlayhead_.setBounds (gutter, top,
+                               juce::jmax (0, getWidth() - gutter),
+                               juce::jmax (0, bottom - top));
+    recordPlayhead_.toFront (false);
+
     updateNowLine();
+    updateRecordPlayhead();
 }
 
 void DawPanel::layoutBody()
@@ -301,6 +359,25 @@ void DawPanel::paint (juce::Graphics& g)
     g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
     g.drawText ("FOLLOW", followToggleBounds_, juce::Justification::centred, false);
 
+    // Global Record button: two colour-free states. Idle = surface fill (inactive).
+    // Armed or actively recording = full inverted ink fill with surface text — the
+    // same active treatment every other button uses. No checkerboard: the user
+    // expects the standard active/inactive inversion from DESIGN.md.
+    {
+        const RecordUiState rec = recordStateProvider_ ? recordStateProvider_()
+                                                        : RecordUiState::Idle;
+        const bool active = (rec != RecordUiState::Idle);
+
+        g.setColour (active ? kInk : kSurface);
+        g.fillRect (recordButtonBounds_);
+
+        g.setColour (kInk);
+        g.drawRect (recordButtonBounds_, 2);
+        g.setColour (active ? kSurface : kInk);
+        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::bold));
+        g.drawText ("REC", recordButtonBounds_, juce::Justification::centred, false);
+    }
+
     // Blank gutter corner above the lane headers, beside the ruler (when expanded).
     if (expanded_)
     {
@@ -329,6 +406,14 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
         // Re-engaging follow snaps the now-line back into view immediately.
         if (followController_.isEnabled())
             applyFollowIfNeeded();
+        repaint();
+        return;
+    }
+
+    if (recordButtonBounds_.contains (event.getPosition()))
+    {
+        if (onRecordToggle)
+            onRecordToggle();
         repaint();
     }
 }

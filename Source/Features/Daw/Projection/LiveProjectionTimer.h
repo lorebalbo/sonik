@@ -86,6 +86,25 @@ public:
     // The DAW's live timeline position (PRD-0070 now-line). Message thread only.
     std::int64_t getNowLineSample() const noexcept { return nowLineSample_; }
 
+    // Reset the DAW timeline to the master-grid phase origin (beat 1 of bar 1).
+    // Call before each new recording session so the first captured clip always
+    // lands at beat 1 of the DAW timeline, regardless of how long decks played
+    // before Record was pressed.
+    void resetTimeline()
+    {
+        nowLineSample_ = grid_.snapshotGrid().phaseOriginSample;
+        lastTickMs_    = 0.0; // force re-baseline on first tick after arm()
+    }
+
+    // Gate clip writing behind an external predicate. When the provider returns
+    // false (recording not active) no clips are started or grown; any open lanes
+    // are finalised. nowLineSample_ always advances regardless.
+    // Call from the message thread before start().
+    void setCapturingProvider (std::function<bool()> provider)
+    {
+        capturingProvider_ = std::move (provider);
+    }
+
 private:
     enum Lane { kOriginal = 0, kInstrumental = 1, kVocal = 2, kLaneCount = 3 };
 
@@ -119,6 +138,8 @@ private:
 
     std::map<int, DeckProjection> projection_;   // keyed by deck index
     std::int64_t                  nowLineSample_ = 0;
+    std::function<bool()>         capturingProvider_;
+    double                        lastTickMs_    = 0.0; // for wall-clock advance
 };
 
 } // namespace Daw

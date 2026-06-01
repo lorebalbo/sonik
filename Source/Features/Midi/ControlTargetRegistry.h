@@ -170,6 +170,12 @@ namespace sonik::midi
             SONIK_MIXER_CHANNEL("C", 2),
             SONIK_MIXER_CHANNEL("D", 3),
 
+            // ---- DAW recording (PRD-0078) -------------------------------
+            // Global record arm/stop. Registered as a mappable target so a
+            // future MIDI Epic can bind a controller's Record button; no
+            // binding or feedback wiring is added here (PRD-0078 §1.5.7).
+            SONIK_TARGET("daw.record.arm", DawRecordArm, Toggle, Global, GlobalDeckIndex),
+
             // ---- Library navigation --------------------------------------
             SONIK_TARGET("library.scroll.up",     LibraryScrollUp,    Momentary,   Global, GlobalDeckIndex),
             SONIK_TARGET("library.scroll.down",   LibraryScrollDown,  Momentary,   Global, GlobalDeckIndex),

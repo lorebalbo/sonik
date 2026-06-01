@@ -12,6 +12,8 @@
 
 struct DeckAudioState;
 
+namespace Daw { struct PerformanceCaptureSink; }
+
 class HotCueManager final : private juce::ValueTree::Listener,
                              private juce::Timer
 {
@@ -38,6 +40,10 @@ public:
     // --- Audio state (live playhead from audio thread) ---
 
     void setAudioState (DeckAudioState* state);
+
+    // PRD-0075: optional recording-capture sink. When set, a cue trigger that
+    // seeks emits a jump event carrying its pre/post source positions.
+    void setPerformanceCapture (Daw::PerformanceCaptureSink* sink, int deckIndex);
 
     // --- BeatGrid data (updated when analysis completes) ---
 
@@ -81,6 +87,9 @@ private:
     TrackDatabase&  database;
     BeatGridData::Ptr beatGridData;
     DeckAudioState* audioState = nullptr;
+
+    Daw::PerformanceCaptureSink* capture_ = nullptr;
+    int                          captureDeckIndex_ = -1;
 
     juce::String currentContentHash;
 

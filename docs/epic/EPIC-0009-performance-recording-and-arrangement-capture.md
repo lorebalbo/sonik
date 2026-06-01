@@ -1,6 +1,6 @@
 ---
 name: "EPIC-0009: Performance Recording & Arrangement Capture"
-status: Open
+status: Implemented
 ---
 
 # 1. EPIC-0009: Performance Recording & Arrangement Capture
@@ -187,11 +187,11 @@ not introduce a competing sync notion.
 
 ## 1.4. PRD Roadmap
 
-- [ ] PRD-0071: Recording Session Controller & Record Playhead Clock (arm/record/stop state machine, master-clock-anchored timeline position)
-- [ ] PRD-0072: Performance-Event Bridge (lock-free FIFO + message-thread drain for deck/mixer structural events)
-- [ ] PRD-0073: Clip Placement Engine & Clip Lifecycle (open/grow/close into the `daw` model)
-- [ ] PRD-0074: Grid Alignment Resolver (BPM-match snap vs first-beat anchoring)
-- [ ] PRD-0075: Hot-Cue & Beat-Jump Capture (clip split at jump boundaries, contiguous timeline)
-- [ ] PRD-0076: Loop Capture (repeated source-segment rendering)
-- [ ] PRD-0077: Source-Mode Capture (Original ↔ stems lane switching mid-record)
-- [ ] PRD-0078: Record Control UI, Record Playhead & Multi-Deck Capture Validation
+- [x] PRD-0071: Recording Session Controller & Record Playhead Clock (arm/record/stop state machine, master-clock-anchored timeline position)
+- [x] PRD-0072: Performance-Event Bridge (lock-free FIFO + message-thread drain for deck/mixer structural events)
+- [x] PRD-0073: Clip Placement Engine & Clip Lifecycle (open/grow/close into the `daw` model)
+- [x] PRD-0074: Grid Alignment Resolver (BPM-match snap vs first-beat anchoring)
+- [x] PRD-0075: Hot-Cue & Beat-Jump Capture (clip split at jump boundaries, contiguous timeline)
+- [x] PRD-0076: Loop Capture (repeated source-segment rendering)
+- [x] PRD-0077: Source-Mode Capture (Original ↔ stems lane switching mid-record)
+- [x] PRD-0078: Record Control UI, Record Playhead & Multi-Deck Capture Validation

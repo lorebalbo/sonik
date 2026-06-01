@@ -76,6 +76,9 @@ namespace sonik::midi
         ChannelAssignB,    // crossfader assign to side B (toggle)
         ChannelCue,        // per-channel cue/PFL (toggle)
 
+        // ---- DAW recording (PRD-0078) ----------------------------------------
+        DawRecordArm,      // global record arm/stop (toggle)
+
         // ---- Resolver-internal (consumed by PRD-0044's mask manager) -------
         ModifierSet,
         ModifierClear,

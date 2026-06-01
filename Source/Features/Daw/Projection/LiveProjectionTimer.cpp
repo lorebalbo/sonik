@@ -150,8 +150,13 @@ void LiveProjectionTimer::processTick()
         }
 
         // Which lanes should carry a live clip this tick.
+        // Clip writing is gated behind the capturing provider: clips must
+        // only grow when the user has armed or started recording. When the
+        // provider is absent (e.g. in unit tests that don't wire a controller)
+        // the legacy always-capturing behaviour is preserved.
+        const bool capturing = capturingProvider_ ? capturingProvider_() : true;
         std::array<bool, kLaneCount> want { false, false, false };
-        if (playing)
+        if (playing && capturing)
         {
             if (audibility.original)     want[kOriginal]     = true;
             if (audibility.instrumental) want[kInstrumental] = true;
@@ -191,6 +196,22 @@ void LiveProjectionTimer::processTick()
         dp.wasPlaying    = playing;
         dp.lastSourcePos = srcPos;
     }
+
+    // When recording is active but no deck advanced this tick, keep the
+    // timeline moving in real time so the record cursor advances over silence.
+    const double nowMs = juce::Time::getMillisecondCounterHiRes();
+    if (maxAdvance == 0 && capturingProvider_ && capturingProvider_())
+    {
+        if (lastTickMs_ > 0.0)
+        {
+            const double dt   = (nowMs - lastTickMs_) * 0.001;
+            const double sr   = grid_.snapshotGrid().sampleRate;
+            const double rate = sr > 0.0 ? sr : DawState::kProjectSampleRate;
+            if (dt > 0.0)
+                maxAdvance = static_cast<std::int64_t> (std::llround (dt * rate));
+        }
+    }
+    lastTickMs_ = nowMs;
 
     nowLineSample_ += maxAdvance;
 }

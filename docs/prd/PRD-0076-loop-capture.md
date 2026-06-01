@@ -1,5 +1,5 @@
 ---
-status: Not Implemented
+status: Implemented
 epic: EPIC-0009
 depends-on:
   - PRD-0014
@@ -145,11 +145,10 @@ DJ's loop controls are unchanged from PRD-0014.
   is governed by PRD-0077 and is out of scope here, but loop capture must not
   prevent PRD-0077 from closing the loop segment and switching lanes.
 - [ ] Loop passes shorter than a configured minimum length (very short
-  beat-roll loops, e.g. 1/8 or 1/16 beat) are handled per the coalescing policy
-  of §1.5.5: either each pass is emitted as a clip, or consecutive identical
-  passes are coalesced into one clip annotated with a repeat indicator — the
-  resolution in §1.5.5 selects the policy and this criterion asserts the chosen
-  behaviour is applied deterministically.
+  beat-roll loops, e.g. 1/8 or 1/16 beat) are handled per §1.5.5: each genuine
+  pass is emitted as its own clip (the 1:1 clip model cannot represent a
+  coalesced multi-repeat clip), and only zero/negative-length degenerate passes
+  are dropped — applied deterministically.
 - [ ] Re-loop (re-engaging the most recently defined loop after an exit, per
   PRD-0014 §1.3.4) is treated as a fresh loop-enter event: it closes the current
   growing clip and begins a new loop-capture sequence; the new pass clips are
@@ -255,20 +254,22 @@ dozens or hundreds of identical micro-passes, each one a separate `DawClip`
 record under §1.5.1. This risks a clip explosion that bloats the `daw` model and
 degrades EPIC-0010 editing usability.
 
-**Resolution:** A minimum-pass-length coalescing policy. Passes whose source
-length is at or above a threshold (default: one beat at the deck's tempo, with a
-hard floor of PRD-0014's 128-sample minimum loop length) are emitted one clip
-per pass per §1.5.1. Passes below the threshold are coalesced: consecutive
-identical sub-threshold passes accumulate into a single growing clip whose
-timeline length spans all the coalesced repetitions, finalized when the loop
-length crosses back above the threshold, the bounds change, or the loop exits.
-This preserves the one-clip-per-pass model for musically meaningful loops while
-preventing pathological record counts for beat-rolls, where the DJ's intent is a
-single sustained "roll" gesture rather than a series of distinct sections. The
-threshold is a recorder-side constant, not a PRD-0014 concern, and does not
-alter audible playback. (If a future Epic adds per-clip repeat metadata, the
-coalesced beat-roll clip is the natural place to attach it; this PRD does not
-require that metadata.)
+**Resolution:** One clip per pass, deterministically, for every pass length.
+The clip model (EPIC-0008) is strictly 1:1 — a clip's timeline length is derived
+from its source crop (`sourceEndSample - sourceStartSample`) and there is no
+`timelineEndSample` or `repeatCount` field. A coalesced multi-repeat clip would
+need a timeline length that is an integer multiple of its source length, which
+the 1:1 model cannot express without a new field; introducing one would force
+every downstream consumer (playback, editing, export, project save) to
+special-case it, contradicting §1.5.1's uniform clip model. Therefore each
+completed pass is emitted as its own `DawClip`, and the only coalescing applied
+is the universal degenerate-clip guard: a pass whose source length is zero or
+negative (a boundary-coincident exit, §1.5.4) is dropped, never written. The
+beat-roll clip-count cost is accepted as the price of a uniform, editable clip
+model; if a future Epic adds per-clip repeat metadata, sub-threshold passes are
+the natural place to attach it, but this PRD requires no such metadata and the
+per-pass policy is applied unconditionally so the captured arrangement is fully
+deterministic.
 
 ### 1.5.6. Reloop and Loop-Move
 

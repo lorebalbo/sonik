@@ -1,5 +1,6 @@
 #include "HotCueManager.h"
 #include "../Deck/AudioThreadState.h"
+#include "../Daw/Recording/PerformanceCaptureSink.h"
 
 HotCueManager::HotCueManager (juce::ValueTree deckTree,
                                AudioEngine& engine,
@@ -99,6 +100,12 @@ void HotCueManager::triggerCue (int padIndex)
         currentPos = static_cast<int64_t> (tree.getChildWithName (IDs::Playhead).getProperty (IDs::position, 0));
     if (std::abs (currentPos - position) < 64)
         return;
+
+    // PRD-0075: surface the source discontinuity for recording capture before
+    // the seek. currentPos is the jump-out, the stored cue is the jump-in.
+    if (capture_ != nullptr)
+        capture_->captureJump (captureDeckIndex_, Daw::PerformanceEventType::HotCueJump,
+                               currentPos, position);
 
     // PRD-0017: Use slip-aware seek when slip is enabled
     bool slipOn = static_cast<bool> (tree.getProperty (IDs::slipEnabled, false));
@@ -242,6 +249,12 @@ void HotCueManager::setBeatGridData (BeatGridData::Ptr data)
 void HotCueManager::setAudioState (DeckAudioState* state)
 {
     audioState = state;
+}
+
+void HotCueManager::setPerformanceCapture (Daw::PerformanceCaptureSink* sink, int deckIndex)
+{
+    capture_          = sink;
+    captureDeckIndex_ = deckIndex;
 }
 
 // ---------------------------------------------------------------------------

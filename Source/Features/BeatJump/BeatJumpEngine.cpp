@@ -1,5 +1,6 @@
 #include "BeatJumpEngine.h"
 #include "../Loop/LoopEngine.h"
+#include "../Daw/Recording/PerformanceCaptureSink.h"
 
 BeatJumpEngine::BeatJumpEngine (juce::ValueTree deckTree,
                                  AudioEngine& engine,
@@ -21,6 +22,12 @@ void BeatJumpEngine::setAudioState (DeckAudioState* state)
 void BeatJumpEngine::setLoopEngine (LoopEngine* engine)
 {
     loopEngine = engine;
+}
+
+void BeatJumpEngine::setPerformanceCapture (Daw::PerformanceCaptureSink* sink, int deckIndex)
+{
+    capture_          = sink;
+    captureDeckIndex_ = deckIndex;
 }
 
 void BeatJumpEngine::jumpForward()
@@ -135,6 +142,12 @@ void BeatJumpEngine::executeJump (bool forward)
     // Skip if already at boundary and trying to go further
     if (dest == playhead)
         return;
+
+    // PRD-0075: surface the source discontinuity for recording capture. The
+    // loop-active branch above returns early and is owned by PRD-0076.
+    if (capture_ != nullptr)
+        capture_->captureJump (captureDeckIndex_, Daw::PerformanceEventType::BeatJump,
+                               playhead, dest);
 
     // PRD-0017: Use slip-aware seek when slip is enabled
     if (slipOn)
