@@ -10,7 +10,7 @@
 // parameter smoothing via juce::SmoothedValue to eliminate zipper noise.
 // The DSP chain order is: input → gain → (EQ/kills/filter pass-through) → fader → output.
 //
-// Audio-thread contract (enforced by AGENTS.md):
+// Audio-thread contract (enforced by CLAUDE.md):
 //   - process() allocates NO memory.
 //   - process() takes NO locks.
 //   - process() performs NO I/O.

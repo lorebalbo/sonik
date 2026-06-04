@@ -75,9 +75,67 @@ void AutomationCaptureTaps::registerBooleanTap (juce::ValueTree         sourceTr
 }
 
 //==============================================================================
+void AutomationCaptureTaps::captureInitialValues (std::int64_t timelineSample)
+{
+    for (auto& tap : taps_)
+    {
+        const juce::var current = tap.sourceTree.getProperty (tap.property);
+
+        if (tap.kind == LaneKind::Continuous)
+        {
+            tap.lastBreakpoint = sink_.appendBreakpoint (tap.owner, tap.parameterId,
+                                                         timelineSample, (double) current,
+                                                         tap.interpolation);
+            tap.hasLast    = true;
+            tap.lastSample = timelineSample;
+            tap.lastValue  = (double) current;
+        }
+        else
+        {
+            sink_.appendStep (tap.owner, tap.parameterId, timelineSample, (bool) current);
+            tap.hasLast    = true;
+            tap.lastSample = timelineSample;
+            tap.lastValue  = (bool) current ? 1.0 : 0.0;
+        }
+    }
+}
+
+void AutomationCaptureTaps::flush (std::int64_t timelineSample)
+{
+    for (auto& tap : taps_)
+    {
+        if (tap.kind != LaneKind::Continuous || ! tap.hasLast)
+            continue;
+
+        const double value = (double) tap.sourceTree.getProperty (tap.property);
+        if (value == tap.lastValue)
+            continue; // already terminates on the resting value
+
+        if (timelineSample == tap.lastSample)
+        {
+            if (tap.lastBreakpoint.isValid())
+                sink_.updateBreakpoint (tap.lastBreakpoint, timelineSample, value);
+            tap.lastValue = value;
+            continue;
+        }
+
+        tap.lastBreakpoint = sink_.appendBreakpoint (tap.owner, tap.parameterId,
+                                                     timelineSample, value, tap.interpolation);
+        tap.lastSample = timelineSample;
+        tap.lastValue  = value;
+    }
+}
+
+//==============================================================================
 void AutomationCaptureTaps::valueTreePropertyChanged (juce::ValueTree& tree,
                                                       const juce::Identifier& property)
 {
+    // PRD-0092 re-entrancy guard: if the playback applier is currently writing
+    // the authoritative tree, this change is automation-originated — ignore it so
+    // it is not re-recorded into the lane (no feedback loop).
+    if (applyingAutomationGuard_ && applyingAutomationGuard_())
+        return;
+
     // Only-while-recording gate (§1.5.5): a single boolean check while disarmed,
     // before any timestamp read or append.
     if (isRecordingArmed_ && ! isRecordingArmed_())
@@ -186,6 +244,19 @@ juce::ValueTree ModelAutomationAppendSink::appendStep (const juce::String& owner
     if (! lane.isValid())
         return {};
     return lane.addStep (timelineSample, value, undo_);
+}
+
+void ModelAutomationAppendSink::removeStep (juce::ValueTree step)
+{
+    if (! step.isValid())
+        return;
+
+    // Detach the step from whatever lane node currently owns it. We address the
+    // parent directly (rather than re-resolving by owner/parameterId) so the
+    // caller need only hand back the node it appended.
+    auto parent = step.getParent();
+    if (parent.isValid())
+        parent.removeChild (step, undo_);
 }
 
 } // namespace Daw

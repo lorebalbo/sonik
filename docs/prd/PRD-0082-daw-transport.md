@@ -126,7 +126,7 @@ and drives the PRD-0081 renderer, such that:
 
 - [ ] A `DawTransport` exists at
       `Source/Features/Daw/Playback/DawTransport.h/.cpp`, constructed with its
-      dependencies injected (no singletons, per `AGENTS.md`).
+      dependencies injected (no singletons, per `CLAUDE.md`).
 - [ ] The transport owns the authoritative arrangement playhead as a project
       sample position and a transport state enum (`Stopped`, `Playing`,
       `Paused`).
@@ -219,7 +219,7 @@ the audio thread via the same atomic. Because the position is a single aligned
 (Play/Pause/Stop/scrub-target) flows message → audio thread via a small lock-free
 command FIFO or atomic flags, never via a lock. This mirrors the master-clock
 publication pattern already proven in EPIC-0003 and keeps the audio-thread path
-allocation-free and lock-free per `AGENTS.md`.
+allocation-free and lock-free per `CLAUDE.md`.
 
 ### 1.5.3. Region-Loop Seamlessness (Re-Priming Streamers at the Loop Point)
 

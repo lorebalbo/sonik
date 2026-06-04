@@ -87,7 +87,31 @@ sudo python3 waf install
 ```
 
 ## Self-Maintenance (Living Document)
-This `AGENTS.md` is your living memory. You are responsible for updating it.
+This `CLAUDE.md` is your living memory. You are responsible for updating it.
 - **Commands:** Update the "Dev Environment" section whenever build/test scripts change.
 - **Architecture:** Document any newly agreed-upon core architectural patterns here.
 - Do not leave empty placeholders.
+
+## Markdown Formatting Rules
+When generating, modifying, or formatting any Markdown (`.md`) file, you MUST strictly adhere to the following rules. Treat these as absolute constraints unless the user explicitly requests otherwise.
+
+**1. General Constraints**
+- **Language:** ALWAYS write all content in English.
+- **No Emojis:** NEVER use emojis anywhere in the document, EXCEPT for `✅` and `❌` exclusively when indicating whether an example is correct or incorrect.
+- **No Horizontal Rules:** NEVER use horizontal rules or dividers (e.g., `---`, `***`, or `___`).
+
+**2. Headings**
+- **Maximum Depth:** DO NOT go deeper than 3 levels of headings (`###`). The maximum heading depth allowed is `### x.x.x`.
+- **Numbered Headings:** ALWAYS format headings with explicit numbering immediately after the hash symbol(s).
+  - ✅ CORRECT: `# 1. Main Title` or `## 1.1. Subtitle`
+  - ❌ INCORRECT: `# Main Title` or `## Subtitle`
+- **Blank Line After Headings:** ALWAYS insert exactly one blank line immediately following any heading, before the next paragraph or heading.
+
+**3. Lists & Spacing**
+- **Unordered Lists:** ALWAYS use dashes (`-`) for bullet points. Do not use asterisks (`*`) or plus signs (`+`).
+- **Ordered Lists:** Use numbers (`1.`, `2.`, etc.) when an order must be specified.
+- **No Empty Lines Before Lists:** DO NOT insert an empty line between a list and its introductory sentence (which typically ends with a colon `:`).
+
+**4. Directory Structures**
+- **Tree Visualization:** When illustrating a directory or file structure, construct the tree using only the symbols `├`, `│`, `-`, and `└`.
+- **Code Block Wrapper:** Enclose the directory structure diagram inside a fenced code block using the `text` language identifier.

@@ -26,7 +26,7 @@ The system provides functional channel gain and channel fader DSP stages inside 
 - The DSP per-deck gain multiplier that PRD-0002 previously applied inside the engine's summing loop is removed from the engine sum and reapplied inside the channel strip's gain stage, completing the migration started by PRD-0053. PRD-0002's hard-clip safety net at the master output remains authoritative and is untouched.
 - The deck-shell gain knob defined in PRD-0010 and the mixer's channel gain knob become the same control: one atomic float, one ValueTree key (`mixer.channel.{A,B,C,D}.gain`), one DSP stage. Removal of the deck-shell gain knob UI itself is explicitly out of scope and is handed off to PRD-0060.
 - Neither stage introduces more than one sample of latency.
-- All audio-thread paths involved comply with the immutable rules in `AGENTS.md`.
+- All audio-thread paths involved comply with the immutable rules in `CLAUDE.md`.
 
 ## 1.3. Developer / Integration Flow
 

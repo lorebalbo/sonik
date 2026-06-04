@@ -365,7 +365,7 @@ void DeckShellComponent::handleBpmSave (double newBpm)
             deckStateManager.getDatabase().updateLibraryTrackBpm (filePath, contentHash, newBpm);
     }
 
-    // Update ValueTree (message thread — mandatory per AGENTS.md)
+    // Update ValueTree (message thread — mandatory per CLAUDE.md)
     beatTree.setProperty (IDs::bpm,                 newBpm,      nullptr);
     beatTree.setProperty (IDs::beatIntervalSamples, newInterval, nullptr);
     beatTree.setProperty (IDs::manuallyAdjusted,    true,        nullptr);

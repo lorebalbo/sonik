@@ -188,7 +188,7 @@ via `std::atomic` (used by waveforms and sync). The DAW adds a message-thread
 - Detects play→stop transitions (deck stopped) to finalise the live clip's
   `sourceEndSample`.
 
-No audio-thread allocation, locks, or I/O are introduced. Per `AGENTS.md`, all
+No audio-thread allocation, locks, or I/O are introduced. Per `CLAUDE.md`, all
 model mutation and rendering happen on the message/UI thread.
 
 ### 1.3.5. State Architecture

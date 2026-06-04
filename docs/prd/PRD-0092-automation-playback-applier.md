@@ -1,5 +1,5 @@
 ---
-status: Not Implemented
+status: Implemented
 epic: EPIC-0011
 depends-on:
   - PRD-0026
@@ -26,7 +26,7 @@ sounds the way it was performed.
 The naive implementation would be to read the lane value and poke the DSP or the
 clock directly — a parallel "automation back door" that bypasses the same state
 paths the live UI and MIDI controls already write through. That would be a
-disaster for this codebase. Sonik's entire architecture (AGENTS.md, EPIC-0007)
+disaster for this codebase. Sonik's entire architecture (CLAUDE.md, EPIC-0007)
 rests on a single source of truth: continuous mixer parameters flow through the
 mixer `ValueTree` (smoothed, click-free), the master tempo is owned by exactly
 one authority (`MasterClockManager`, PRD-0026), and deck booleans flow through
@@ -86,7 +86,7 @@ editing (PRD-0094).
 
 1. A new `AutomationApplier` class is created under
    `Source/Features/Daw/Automation/`. It is constructed with explicit
-   dependencies (no singletons, per AGENTS.md): a reference to the automation
+   dependencies (no singletons, per CLAUDE.md): a reference to the automation
    model (PRD-0087), the mixer `ValueTree` state, the per-deck `ValueTree`
    state, the `MasterClockManager` (PRD-0026), the DAW transport (PRD-0082), and
    the arrangement-snapshot publisher (PRD-0079).

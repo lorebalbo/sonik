@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_data_structures/juce_data_structures.h>
+#include <optional>
 #include "MasterClockPublisher.h"
 #include "../Deck/DeckIdentifiers.h"
 
@@ -35,6 +36,31 @@ public:
 
     /// Returns the index of the current master deck, or -1 if dormant.
     int getMasterDeckIndex() const;
+
+    //--------------------------------------------------------------------------
+    // PRD-0092: Automation tempo override (additive, opt-in).
+    //
+    // During DAW timeline playback the AutomationApplier may drive the master
+    // tempo from the recorded "master/tempo" lane. To keep MasterClockManager the
+    // SINGLE tempo authority (no forked tempo path), the applier writes the
+    // automated BPM here rather than poking the publisher directly. When the
+    // override is active, the published MasterClockSnapshot's masterBPM uses the
+    // override so the grid, synced decks, and grid-aligned clips all follow the
+    // automated tempo from this one authority.
+    //
+    // Inactive by default ⇒ existing behaviour (derived deck BPM) is unchanged,
+    // so existing MasterClockTests are unaffected. Message-thread only.
+    //--------------------------------------------------------------------------
+
+    /// Engage / update the automation tempo override and re-publish immediately.
+    void setAutomationTempoOverride (double bpm);
+
+    /// Disengage the automation tempo override; revert to derived BPM and
+    /// re-publish immediately.
+    void clearAutomationTempoOverride();
+
+    /// True while the automation tempo override is engaged.
+    bool hasAutomationTempoOverride() const noexcept { return automationTempoOverride_.has_value(); }
 
 private:
     // --- juce::ValueTree::Listener ---
@@ -87,4 +113,12 @@ private:
     /// Most-recently-published BPM; retained when entering dormant state.
     double lastMasterBPM_ = 0.0;
     double lastMasterNativeBPM_ = 0.0;
+
+    /// PRD-0092: when engaged, the published masterBPM uses this value instead of
+    /// the derived deck BPM. std::nullopt ⇒ inactive (default).
+    std::optional<double> automationTempoOverride_;
+
+    /// Re-publish the current master state (or dormant) — used after the override
+    /// is set/cleared so the new BPM reaches the audio thread immediately.
+    void republishCurrent();
 };

@@ -8,7 +8,7 @@
 // clip boundaries and schedule changes, and sums all lanes into a stereo
 // masterFeed buffer that feeds MasterStage (PRD-0058).
 //
-// AUDIO THREAD CONTRACT (AGENTS.md §"The Audio Thread"):
+// AUDIO THREAD CONTRACT (CLAUDE.md §"The Audio Thread"):
 //   renderBlock() → no allocation, no lock, no I/O, no ValueTree access.
 //   All buffers and tables are pre-allocated in prepare().
 //==============================================================================

@@ -14,7 +14,7 @@
 //     and resets its internal sample counter so the latch does not re-fire
 //     from stale state.
 //
-// Audio-thread contract (AGENTS.md):
+// Audio-thread contract (CLAUDE.md):
 //   - prepare() runs on the message thread before the audio callback starts.
 //     It is the only path that allocates the RMS ring buffers.
 //   - processBlock() and reset() never allocate, never lock, never do I/O.

@@ -57,6 +57,16 @@ public:
     void setCollinearDeadbandBpm (double d)    { collinearDeadbandBpm_ = d; }
 
     //--------------------------------------------------------------------------
+    // PRD-0092 re-entrancy guard. When set and returning true, captureTick()
+    // observes nothing — the tempo currently published reflects an
+    // automation-driven override (the applier is the source), so re-recording it
+    // would corrupt the lane (§1.5.2). Default (null) ⇒ unchanged behaviour.
+    void setApplyingAutomationGuard (std::function<bool()> guard)
+    {
+        applyingAutomationGuard_ = std::move (guard);
+    }
+
+    //--------------------------------------------------------------------------
     // Seed the lane with the initial breakpoint at the record-start sample whose
     // value is the BPM in force at that instant (§1.5.5). Call once at the
     // arm/record-start edge. The authoritative snapshot retains the last-known
@@ -79,6 +89,11 @@ public:
     // disarmed. Idempotent against an unchanged BPM (§1.5.7).
     void captureTick()
     {
+        // PRD-0092 re-entrancy guard: skip while the playback applier drives the
+        // tempo (the published BPM is automation-originated, not a live change).
+        if (applyingAutomationGuard_ && applyingAutomationGuard_())
+            return;
+
         if (isRecordingArmed_ && ! isRecordingArmed_())
             return;
 
@@ -179,6 +194,7 @@ private:
     std::function<std::int64_t()> recordPlayhead_;
     AutomationAppendSink&         sink_;
     std::function<int()>          masterDeckIndex_;
+    std::function<bool()>         applyingAutomationGuard_; // PRD-0092, optional
 
     double changeEpsilonBpm_     = 0.001;
     double collinearDeadbandBpm_ = 0.05;

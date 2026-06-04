@@ -37,7 +37,7 @@ stemDrumsMuted / stemBassMuted / stemOtherMuted`.
 What is missing is the bridge: a message-thread component that polls these deck
 atomics at UI refresh rate and grows a "live clip" on the matching lane(s) of
 the deck group's `daw` sub-tree, sample-for-sample, so the DJ sees the
-arrangement build itself as the deck plays. Per `AGENTS.md` this bridge must
+arrangement build itself as the deck plays. Per `CLAUDE.md` this bridge must
 never touch the audio thread, never allocate / lock / do I/O on the audio
 thread, and mutate the model exclusively on the message thread. It is read-only
 with respect to the decks (it only loads atomics) and write-only with respect to
@@ -197,7 +197,7 @@ onto its timeline lane(s) such that:
       no new rendering path is added by this PRD.
 - [ ] All `daw` ValueTree mutation occurs on the message thread; no audio-thread
       code path is added or modified by this PRD, and no allocation, lock, or
-      I/O is introduced on the audio thread (per `AGENTS.md`).
+      I/O is introduced on the audio thread (per `CLAUDE.md`).
 - [ ] No persistence or recording of the projection is introduced; the live clip
       is an ephemeral "live view" that is reset / overwritten each playthrough
       (persistence and event capture are EPIC-0009, see §1.5.2).

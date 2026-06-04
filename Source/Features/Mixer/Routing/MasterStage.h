@@ -12,7 +12,7 @@
 // AFTER this stage in AudioEngine, so the master meter taps the
 // pre-hard-clip signal (PRD-0058 §1.5.3).
 //
-// Audio-thread contract (AGENTS.md): no allocation, no locks, no I/O.
+// Audio-thread contract (CLAUDE.md): no allocation, no locks, no I/O.
 //==============================================================================
 
 #include "ChannelMeter.h"

@@ -18,10 +18,19 @@ DawPanel::DawPanel (MasterGridService& gridService,
       dawBranch_   (dawBranch),  // retained copy (ValueTree ref-counts internally)
       transform_ (TimelineTransform::GridSnapshot{}, kDefaultPixelsPerBeat,
                   /*leftEdgeSample*/ 0, /*viewportWidthPx*/ 0.0),
+      automationModel_ (dawBranch), // same daw branch the stack/ruler observe
       ruler_ (gridService, transform_),
-      stack_ (std::move (dawBranch), transform_, std::move (deckResolver), std::move (waveformSource))
+      stack_ (dawBranch, transform_, std::move (deckResolver),
+              std::move (waveformSource), &automationModel_)
 {
     addAndMakeVisible (ruler_);
+
+    // PRD-0093: master tempo automation lane (owner "master"), hidden by default.
+    auto tempoLaneNode = automationModel_.getOrCreateContinuousLane ("master", "tempo").getState();
+    masterTempoLane_ = std::make_unique<ContinuousAutomationLaneView> (
+        tempoLaneNode, transform_, &automationModel_, "tempo");
+    masterTempoLane_->setVisible (false);
+    addChildComponent (*masterTempoLane_);
 
     bodyViewport_.setViewedComponent (&stack_, false);
     bodyViewport_.setScrollBarsShown (true, false);
@@ -99,6 +108,11 @@ DawPanel::DawPanel (MasterGridService& gridService,
     // Wire the dispatcher into all existing lane views.
     stack_.setEditDispatcher (dispatcher_.get());
 
+    // PRD-0094: the master tempo automation lane edits through the same shared
+    // command layer, so it needs the dispatcher as well.
+    if (masterTempoLane_ != nullptr)
+        masterTempoLane_->setEditDispatcher (dispatcher_.get());
+
     // ~30 Hz: cheap enough for a smooth now-line, still change-gated for the
     // transform rebuild so an idle panel does no layout work.
     startTimerHz (30);
@@ -122,9 +136,33 @@ void DawPanel::setExpanded (bool shouldBeExpanded)
         onPreferredHeightChanged();
 }
 
+void DawPanel::setMasterAutomationRevealed (bool shouldBeRevealed)
+{
+    if (masterAutoRevealed_ == shouldBeRevealed)
+        return;
+
+    masterAutoRevealed_ = shouldBeRevealed;
+    resized();
+    repaint();
+
+    if (onPreferredHeightChanged)
+        onPreferredHeightChanged();
+}
+
 void DawPanel::setNowLineProvider (std::function<std::int64_t()> provider)
 {
     nowLineProvider_ = std::move (provider);
+
+    // PRD-0093: the automation read-only playhead indicator rides the same
+    // now-line sample. Suppressed (-1) when there is no provider.
+    auto playheadProvider = [this]() -> std::int64_t
+    {
+        return nowLineProvider_ ? nowLineProvider_() : (std::int64_t) -1;
+    };
+    stack_.setAutomationPlayheadProvider (playheadProvider);
+    if (masterTempoLane_ != nullptr)
+        masterTempoLane_->setPlayheadProvider (playheadProvider);
+
     updateNowLine();
 }
 
@@ -187,6 +225,9 @@ void DawPanel::rebuildTransform()
 void DawPanel::afterTransformChanged()
 {
     stack_.refreshClipLayout();
+    stack_.refreshAutomationTransform();
+    if (masterTempoLane_ != nullptr)
+        masterTempoLane_->refreshTransform();
     ruler_.refresh();
     updateNowLine();
     repaint();
@@ -327,6 +368,11 @@ void DawPanel::resized()
     playBounds_  = juce::Rectangle<int> (pauseBounds_.getX() - transportW - transportGap,
                                           header.getY() + 4, transportW, transportH);
 
+    // PRD-0093: master tempo automation disclosure ("M.AUTO"), left of PLAY.
+    const int masterAutoW = 60;
+    masterAutoBounds_ = juce::Rectangle<int> (playBounds_.getX() - masterAutoW - 6,
+                                              header.getY() + 4, masterAutoW, transportH);
+
     const int gutter = contentLeftGutter();
 
     // Keep the transform viewport width (content area, after the gutter) in sync.
@@ -340,6 +386,20 @@ void DawPanel::resized()
         // The ruler occupies the content area to the right of the gutter.
         ruler_.setBounds (rulerRow.withTrimmedLeft (gutter));
         ruler_.refresh();
+
+        // PRD-0093: reserve the master tempo automation lane row at the BOTTOM of
+        // the body region when revealed (beneath the channel-group stack), so the
+        // default layout (revealed = false) is unchanged.
+        if (masterTempoLane_ != nullptr && masterAutoRevealed_)
+        {
+            auto masterRow = bounds.removeFromBottom (AutomationLaneMetrics::kAutomationLaneHeight);
+            masterTempoLane_->setVisible (true);
+            masterTempoLane_->setBounds (masterRow);
+        }
+        else if (masterTempoLane_ != nullptr)
+        {
+            masterTempoLane_->setVisible (false);
+        }
 
         bodyViewport_.setVisible (true);
         bodyViewport_.setBounds (bounds);
@@ -364,6 +424,8 @@ void DawPanel::resized()
         interaction_.setVisible (false);
         playhead_.setVisible (false);
         recordPlayhead_.setVisible (false);
+        if (masterTempoLane_ != nullptr)
+            masterTempoLane_->setVisible (false);
     }
 }
 
@@ -464,6 +526,9 @@ void DawPanel::paint (juce::Graphics& g)
         drawTransportBtn (pauseBounds_, "PAUS",  paused);
         drawTransportBtn (stopBounds_,  "STOP",  !playing && !paused);
         drawTransportBtn (loopBounds_,  "LOOP",  loopArmed);
+
+        // PRD-0093: master tempo automation disclosure (fill inversion).
+        drawTransportBtn (masterAutoBounds_, "M.AUTO", masterAutoRevealed_);
     }
 
     // Blank gutter corner above the lane headers, beside the ruler (when expanded).
@@ -528,6 +593,13 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
     {
         if (onTransportLoopToggle) onTransportLoopToggle();
         repaint();
+        return;
+    }
+
+    // PRD-0093: master tempo automation disclosure.
+    if (masterAutoBounds_.contains (event.getPosition()))
+    {
+        setMasterAutomationRevealed (! masterAutoRevealed_);
         return;
     }
 }

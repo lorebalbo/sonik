@@ -25,6 +25,8 @@
 #include "../DawLayoutMetrics.h"
 #include "../../Model/ChannelGroup.h"
 #include "../../Transform/TimelineTransform.h"
+#include "../../Automation/AutomationModel.h"
+#include "../../Automation/Ui/AutomationLaneStackView.h"
 
 namespace Daw
 {
@@ -37,10 +39,15 @@ public:
     // deckTree   — the owning deck node (source-mode + stem mutes), may be invalid.
     // transform  — shared horizontal time axis (PRD-0065/0066).
     // waveformSource — read-only cache accessor passed to each lane's clips.
+    // model — optional AutomationModel (PRD-0093). When non-null the group can
+    //         reveal its automation lanes beneath the three source lanes. When
+    //         null the AUTO disclosure is inert and the group behaves exactly as
+    //         PRD-0067 (default layout unchanged).
     ChannelGroupView (juce::ValueTree trackTree,
                       juce::ValueTree deckTree,
                       const TimelineTransform& transform,
-                      ClipBlock::WaveformSource waveformSource = {});
+                      ClipBlock::WaveformSource waveformSource = {},
+                      AutomationModel* model = nullptr);
 
     ~ChannelGroupView() override;
 
@@ -49,11 +56,26 @@ public:
     bool isCollapsed() const noexcept { return collapsed_; }
     void setCollapsed (bool shouldBeCollapsed);
 
+    // PRD-0093: automation-lane disclosure (hidden by default).
+    bool isAutomationRevealed() const noexcept { return automationRevealed_; }
+    void setAutomationRevealed (bool shouldBeRevealed);
+
     int getPreferredHeight() const noexcept
     {
-        return collapsed_ ? DawLayout::kCollapsedGroupHeight
-                          : DawLayout::kExpandedGroupHeight;
+        if (collapsed_)
+            return DawLayout::kCollapsedGroupHeight;
+
+        int h = DawLayout::kExpandedGroupHeight;
+        if (automationRevealed_ && automationStack_ != nullptr)
+            h += automationStack_->getPreferredHeight();
+        return h;
     }
+
+    // PRD-0093: inject the shared read-only playhead-sample provider.
+    void setAutomationPlayheadProvider (AutomationLaneStackView::PlayheadProvider provider);
+
+    // PRD-0093: reposition automation lanes after a transform change.
+    void refreshAutomationTransform();
 
     // Re-reads the deck source mode and updates each lane's active state.
     void refreshLaneActiveness();
@@ -87,7 +109,14 @@ private:
     ChannelGroupHeader header_;
     std::array<std::unique_ptr<LaneView>, ChannelGroup::kLaneCount> lanes_;
 
+    // PRD-0093: automation lanes (created lazily on first reveal; hidden by
+    // default so the group's default footprint is unchanged from PRD-0067).
+    AutomationModel*                          automationModel_ { nullptr };
+    std::unique_ptr<AutomationLaneStackView>  automationStack_;
+    AutomationLaneStackView::PlayheadProvider automationPlayheadProvider_;
+
     bool collapsed_ { false };
+    bool automationRevealed_ { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChannelGroupView)
 };

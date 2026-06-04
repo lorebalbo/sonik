@@ -17,7 +17,7 @@ into the master output, sample-accurately and click-free, inside `processBlock`.
 But the source audio lives on disk — FLAC/MP3/WAV/AIFF originals decoded by
 PRD-0003, and Instrumental/Vocal stems persisted by EPIC-0002's stem cache as
 32-bit float WAV under `~/Library/Caches/Sonik/Stems`. Reading any of that from
-the audio thread is forbidden by `AGENTS.md`: no disk I/O, no allocation, no
+the audio thread is forbidden by `CLAUDE.md`: no disk I/O, no allocation, no
 locks in the real-time path. A naïve approach — decode the whole arrangement to
 RAM up front — does not scale: a 90-minute recorded set across four decks and
 three lanes (Original / Instrumental / Vocal) per deck could reference dozens of

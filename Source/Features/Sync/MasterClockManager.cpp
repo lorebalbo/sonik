@@ -66,6 +66,34 @@ int MasterClockManager::getMasterDeckIndex() const
 }
 
 // ---------------------------------------------------------------------------
+// PRD-0092: Automation tempo override
+// ---------------------------------------------------------------------------
+
+void MasterClockManager::setAutomationTempoOverride (double bpm)
+{
+    automationTempoOverride_ = bpm;
+    republishCurrent();
+}
+
+void MasterClockManager::clearAutomationTempoOverride()
+{
+    if (! automationTempoOverride_.has_value())
+        return;
+
+    automationTempoOverride_.reset();
+    republishCurrent();
+}
+
+void MasterClockManager::republishCurrent()
+{
+    const int currentMaster = static_cast<int> (rootState_.getProperty (IDs::masterDeckIndex, -1));
+    if (currentMaster >= 0 && getDeckTreeAt (currentMaster).isValid())
+        publishFromDeck (currentMaster);
+    else
+        publishDormant();
+}
+
+// ---------------------------------------------------------------------------
 // ValueTree::Listener
 // ---------------------------------------------------------------------------
 
@@ -212,7 +240,11 @@ void MasterClockManager::publishFromDeck (int deckIndex)
     lastMasterNativeBPM_ = nativeBpm;
 
     MasterClockSnapshot snap;
-    snap.masterBPM               = bpm;
+    // PRD-0092: a single tempo authority. When automation drives the tempo, the
+    // published BPM is the automated override; otherwise it is the derived deck
+    // BPM. lastMasterBPM_ retains the DERIVED value so clearing the override
+    // restores the deck-driven tempo cleanly.
+    snap.masterBPM               = automationTempoOverride_.value_or (bpm);
     snap.masterNativeBPM         = nativeBpm;
     snap.masterPhaseOriginSample  = anchor;
     snap.masterIsPlaying          = (getPlaybackStatus (deckTree) == "playing");
@@ -228,7 +260,9 @@ void MasterClockManager::publishDormant()
 {
     // Keep last BPM, but signal that nobody is playing and reset phase origin.
     MasterClockSnapshot snap;
-    snap.masterBPM               = lastMasterBPM_;
+    // PRD-0092: an engaged automation override still governs the published BPM
+    // even while dormant, so the grid follows the recorded tempo curve.
+    snap.masterBPM               = automationTempoOverride_.value_or (lastMasterBPM_);
     snap.masterNativeBPM         = lastMasterNativeBPM_;
     snap.masterPhaseOriginSample  = 0;
     snap.masterIsPlaying          = false;

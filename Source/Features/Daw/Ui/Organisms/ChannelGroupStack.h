@@ -26,6 +26,8 @@
 #include "../DawLayoutMetrics.h"
 #include "../../State/DawState.h"
 #include "../../Transform/TimelineTransform.h"
+#include "../../Automation/AutomationModel.h"
+#include "../../Automation/Ui/AutomationLaneStackView.h"
 
 namespace Daw
 {
@@ -41,12 +43,22 @@ public:
     // deckResolver — maps a track's deckIndex to its deck ValueTree (may return
     //                an invalid tree, in which case the group renders original-mode).
     // waveformSource — read-only waveform cache accessor passed to each clip.
+    // model — optional AutomationModel (PRD-0093) passed to each group so it can
+    //         reveal automation lanes. Null keeps the PRD-0067 behaviour.
     ChannelGroupStack (juce::ValueTree dawBranch,
                        const TimelineTransform& transform,
                        DeckResolver deckResolver,
-                       ClipBlock::WaveformSource waveformSource = {});
+                       ClipBlock::WaveformSource waveformSource = {},
+                       AutomationModel* model = nullptr);
 
     ~ChannelGroupStack() override;
+
+    // PRD-0093: inject the shared read-only playhead-sample provider into every
+    // group's automation lanes.
+    void setAutomationPlayheadProvider (AutomationLaneStackView::PlayheadProvider provider);
+
+    // PRD-0093: reposition automation lanes after a transform change.
+    void refreshAutomationTransform();
 
     int  getNumGroups() const noexcept { return static_cast<int> (groups_.size()); }
     int  getContentHeight() const;
@@ -86,6 +98,8 @@ private:
     const TimelineTransform& transform_;
     DeckResolver      deckResolver_;
     ClipBlock::WaveformSource waveformSource_;
+    AutomationModel*  automationModel_ { nullptr };
+    AutomationLaneStackView::PlayheadProvider automationPlayheadProvider_;
 
     std::vector<std::unique_ptr<ChannelGroupView>> groups_;
 

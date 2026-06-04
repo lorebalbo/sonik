@@ -23,6 +23,12 @@
 #include "../Model/DawClip.h"
 #include "../Playback/ArrangementRecompileTrigger.h"
 
+#include "../Automation/AutomationModel.h"
+#include "../Automation/ContinuousLane.h"
+#include "../Automation/BooleanLane.h"
+#include "../Automation/AutomationIds.h"
+#include "../Automation/AutomationParamRange.h"
+
 namespace Daw
 {
 
@@ -308,6 +314,133 @@ public:
         recompile_.requestRecompile();
     }
 
+    //==========================================================================
+    // PRD-0094: Automation edit commands.
+    //
+    // Every automation edit is one EPIC-0010 command on the SAME shared undo
+    // stack as the clip edits above (one interleaved history). Each command:
+    //   - begins a new undo transaction,
+    //   - mutates the lane via the PRD-0087 mutators with `&undo_` (so the change
+    //     is fully undo/redo-able and the sorted invariant is preserved),
+    //   - clamps every value to the parameter's NATIVE range (hard invariant:
+    //     the model never holds an out-of-range value — §1.5.6),
+    //   - clamps every timeline sample to >= 0 (the caller grid-snaps first).
+    //
+    // Automation-only edits do NOT trigger an arrangement recompile (the applier
+    // re-reads the model on its next tick — §1.5.7). Message thread only.
+    //==========================================================================
+
+    // AddBreakpoint — double-click on empty continuous-lane region (§1.5.1).
+    juce::ValueTree addBreakpoint (const juce::String& owner,
+                                   const juce::String& parameterId,
+                                   std::int64_t        timelineSample,
+                                   double              value,
+                                   Interpolation       interpolation = Interpolation::Linear)
+    {
+        auto lane = automationModel().getOrCreateContinuousLane (owner, parameterId);
+        if (! lane.isValid())
+            return {};
+
+        undo_.beginNewTransaction ("Automation: Add Breakpoint");
+        const std::int64_t s = juce::jmax ((std::int64_t) 0, timelineSample);
+        const double       v = clampValue (parameterId, value);
+        return lane.addBreakpoint (s, v, interpolation, &undo_);
+    }
+
+    // MoveBreakpoint — ONE command on drag end (not per mouse-move, §1.4).
+    void moveBreakpoint (const juce::String& owner,
+                         const juce::String& parameterId,
+                         juce::ValueTree     breakpointNode,
+                         std::int64_t        newSample,
+                         double              newValue)
+    {
+        auto lane = automationModel().getContinuousLane (owner, parameterId);
+        if (! lane.isValid() || ! breakpointNode.isValid())
+            return;
+
+        undo_.beginNewTransaction ("Automation: Move Breakpoint");
+        const std::int64_t s = juce::jmax ((std::int64_t) 0, newSample);
+        const double       v = clampValue (parameterId, newValue);
+        lane.moveBreakpoint (breakpointNode, s, v, &undo_);
+    }
+
+    // DeleteBreakpoint — adjacent segment re-forms automatically (§1.4).
+    void deleteBreakpoint (const juce::String& owner,
+                           const juce::String& parameterId,
+                           juce::ValueTree     breakpointNode)
+    {
+        auto lane = automationModel().getContinuousLane (owner, parameterId);
+        if (! lane.isValid() || ! breakpointNode.isValid())
+            return;
+
+        undo_.beginNewTransaction ("Automation: Delete Breakpoint");
+        lane.removeBreakpoint (breakpointNode, &undo_);
+    }
+
+    // SetInterpolation — per-segment, stored on the LEFT breakpoint (§1.5.3).
+    void setBreakpointInterpolation (const juce::String& owner,
+                                     const juce::String& parameterId,
+                                     juce::ValueTree     breakpointNode,
+                                     Interpolation       interpolation)
+    {
+        auto lane = automationModel().getContinuousLane (owner, parameterId);
+        if (! lane.isValid() || ! breakpointNode.isValid())
+            return;
+
+        undo_.beginNewTransaction ("Automation: Set Interpolation");
+        lane.setInterpolation (breakpointNode, interpolation, &undo_);
+    }
+
+    // AddBooleanStep — double-click adds a toggle (§1.5.1 / §1.5.5).
+    juce::ValueTree addBooleanStep (const juce::String& owner,
+                                    const juce::String& parameterId,
+                                    std::int64_t        sample,
+                                    bool                state)
+    {
+        auto lane = automationModel().getOrCreateBooleanLane (owner, parameterId);
+        if (! lane.isValid())
+            return {};
+
+        undo_.beginNewTransaction ("Automation: Add Toggle");
+        const std::int64_t s = juce::jmax ((std::int64_t) 0, sample);
+        return lane.addStep (s, state, &undo_);
+    }
+
+    // MoveBooleanStep — horizontal-only, grid-snapped by the caller (§1.5.5).
+    void moveBooleanStep (const juce::String& owner,
+                          const juce::String& parameterId,
+                          juce::ValueTree     stepNode,
+                          std::int64_t        newSample)
+    {
+        auto lane = automationModel().getBooleanLane (owner, parameterId);
+        if (! lane.isValid() || ! stepNode.isValid())
+            return;
+
+        undo_.beginNewTransaction ("Automation: Move Toggle");
+        const std::int64_t s = juce::jmax ((std::int64_t) 0, newSample);
+        lane.moveStep (stepNode, s, &undo_);
+    }
+
+    // DeleteBooleanStep — the boolean equivalent of DeleteBreakpoint (§1.4).
+    void deleteBooleanStep (const juce::String& owner,
+                            const juce::String& parameterId,
+                            juce::ValueTree     stepNode)
+    {
+        auto lane = automationModel().getBooleanLane (owner, parameterId);
+        if (! lane.isValid() || ! stepNode.isValid())
+            return;
+
+        undo_.beginNewTransaction ("Automation: Delete Toggle");
+        lane.removeStep (stepNode, &undo_);
+    }
+
+    // The native clamp range chosen for a parameterId (exposed for the UI's
+    // value-drag clamp so the on-screen preview matches the committed value).
+    static double clampValue (const juce::String& parameterId, double value)
+    {
+        return AutomationParamRange::forContinuousParameter (parameterId).clamp (value);
+    }
+
     //--------------------------------------------------------------------------
     // Undo / redo delegation
     //--------------------------------------------------------------------------
@@ -330,6 +463,17 @@ public:
     juce::UndoManager& undoManager() noexcept { return undo_; }
 
 private:
+    // A fresh AutomationModel wrapper over the daw branch. The lane CONTAINER /
+    // empty-lane scaffolding is structural and created WITHOUT the undo manager
+    // (an empty lane carries no user data); only the breakpoint/step MUTATIONS are
+    // recorded as undoable actions (the mutators below are always called with
+    // `&undo_`). This keeps the undo history to user-meaningful edits and avoids
+    // retaining structural subtrees in the history.
+    AutomationModel automationModel()
+    {
+        return AutomationModel (daw_, nullptr);
+    }
+
     juce::ValueTree&              daw_;
     juce::UndoManager&            undo_;
     ArrangementRecompileTrigger&  recompile_;

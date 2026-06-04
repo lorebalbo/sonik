@@ -59,6 +59,12 @@ struct AutomationAppendSink
                                         const juce::String& parameterId,
                                         std::int64_t        timelineSample,
                                         bool                value) = 0;
+
+    // Remove a previously-appended step node from its boolean lane. Used by the
+    // PRD-0091 debounce coalescer to drop a degenerate zero-duration on/off pair
+    // (the earlier step is removed and the running state reverted). A no-op for
+    // an invalid / already-detached node.
+    virtual void removeStep (juce::ValueTree step) = 0;
 };
 
 //==============================================================================
@@ -74,7 +80,7 @@ struct ThinningPolicy
 class AutomationCaptureTaps final : private juce::ValueTree::Listener
 {
 public:
-    // Dependencies are injected (no singletons, per AGENTS.md):
+    // Dependencies are injected (no singletons, per CLAUDE.md):
     //   isRecordingArmed : the PRD-0071 gate — true while Armed OR Recording.
     //   recordPlayhead   : the PRD-0071 record playhead (project samples) read
     //                      at the change instant.
@@ -104,6 +110,31 @@ public:
                              const juce::Identifier& property,
                              const juce::String&     owner,
                              const juce::String&     parameterId);
+
+    //--------------------------------------------------------------------------
+    // PRD-0092 re-entrancy guard. When set and returning true, the tap treats
+    // every observed property change as automation-originated (the playback
+    // applier is currently writing the authoritative tree) and records NOTHING,
+    // preventing a capture⇄playback feedback loop. Default (null) ⇒ unchanged
+    // behaviour. Message-thread only — a plain predicate, no atomics needed.
+    void setApplyingAutomationGuard (std::function<bool()> guard)
+    {
+        applyingAutomationGuard_ = std::move (guard);
+    }
+
+    //--------------------------------------------------------------------------
+    // Capture the current authoritative value of every registered tap as that
+    // lane's initial breakpoint/step at `timelineSample`, and prime each tap's
+    // running state so subsequent thinning is measured against the seed. Driven
+    // by the record-arm transition (PRD-0090 §1.5.6 / PRD-0091 record-start
+    // seeding) — a one-shot snapshot, not a per-parameter callback.
+    void captureInitialValues (std::int64_t timelineSample);
+
+    // Append each continuous tap's current resting value as a final breakpoint
+    // so a decimated sweep terminates on the exact value the control came to
+    // rest at, rather than a thinned approximation (PRD-0090 §1.5.1). Called on
+    // the record-stop edge. Boolean taps are unaffected (every toggle is kept).
+    void flush (std::int64_t timelineSample);
 
     int getNumTaps() const noexcept { return (int) taps_.size(); }
 
@@ -139,6 +170,7 @@ private:
     std::function<bool()>         isRecordingArmed_;
     std::function<std::int64_t()> recordPlayhead_;
     AutomationAppendSink&         sink_;
+    std::function<bool()>         applyingAutomationGuard_; // PRD-0092, optional
 
     std::vector<Tap>             taps_;
     std::list<juce::ValueTree>   listenedTrees_; // stable addresses: a moved
@@ -175,6 +207,8 @@ public:
                                 const juce::String& parameterId,
                                 std::int64_t        timelineSample,
                                 bool                value) override;
+
+    void removeStep (juce::ValueTree step) override;
 
 private:
     AutomationModel&   model_;

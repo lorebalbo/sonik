@@ -12,11 +12,13 @@ namespace Daw
 ChannelGroupStack::ChannelGroupStack (juce::ValueTree dawBranch,
                                       const TimelineTransform& transform,
                                       DeckResolver deckResolver,
-                                      ClipBlock::WaveformSource waveformSource)
+                                      ClipBlock::WaveformSource waveformSource,
+                                      AutomationModel* model)
     : dawBranch_ (std::move (dawBranch)),
       transform_ (transform),
       deckResolver_ (std::move (deckResolver)),
-      waveformSource_ (std::move (waveformSource))
+      waveformSource_ (std::move (waveformSource)),
+      automationModel_ (model)
 {
     tracks_ = dawBranch_.getChildWithName (DawIDs::tracks);
     if (dawBranch_.isValid())
@@ -64,8 +66,11 @@ void ChannelGroupStack::rebuildGroups()
         juce::ValueTree deckTree = deckResolver_ ? deckResolver_ (deckIndex)
                                                  : juce::ValueTree();
 
-        auto group = std::make_unique<ChannelGroupView> (node, deckTree, transform_, waveformSource_);
+        auto group = std::make_unique<ChannelGroupView> (node, deckTree, transform_,
+                                                         waveformSource_, automationModel_);
         group->onPreferredHeightChanged = [this]() { notifyContentHeightChanged(); };
+        if (automationPlayheadProvider_)
+            group->setAutomationPlayheadProvider (automationPlayheadProvider_);
         addAndMakeVisible (*group);
         groups_.push_back (std::move (group));
     }
@@ -100,6 +105,22 @@ void ChannelGroupStack::refreshClipLayout()
     for (const auto& g : groups_)
         if (g != nullptr)
             g->refreshClipLayout();
+}
+
+void ChannelGroupStack::setAutomationPlayheadProvider (
+    AutomationLaneStackView::PlayheadProvider provider)
+{
+    automationPlayheadProvider_ = provider;
+    for (const auto& g : groups_)
+        if (g != nullptr)
+            g->setAutomationPlayheadProvider (provider);
+}
+
+void ChannelGroupStack::refreshAutomationTransform()
+{
+    for (const auto& g : groups_)
+        if (g != nullptr)
+            g->refreshAutomationTransform();
 }
 
 void ChannelGroupStack::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher)

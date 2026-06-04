@@ -32,7 +32,7 @@
 //   - The smoothers themselves advance every sample so their internal target
 //     is always tracked exactly.
 //
-// Audio-thread contract (AGENTS.md):
+// Audio-thread contract (CLAUDE.md):
 //   - prepare() is the only path that may allocate (it does not, but is the
 //     designated message-thread setup point).
 //   - processSample() performs zero allocations, takes no locks, does no I/O.

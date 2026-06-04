@@ -123,7 +123,7 @@ that captured positions are expressed coherently in musical time:
 
 Structural events originate from deck/mixer interactions that may be triggered
 on the audio thread (e.g., a quantized cue firing) or the message thread (a UI
-click). Per `AGENTS.md`:
+click). Per `CLAUDE.md`:
 
 - Audio-thread-originated events are pushed into a pre-allocated lock-free FIFO
   (`juce::AbstractFifo`) carrying small POD event records (event type, deck id,
@@ -182,7 +182,7 @@ not introduce a competing sync notion.
   (`RecordingSessionController`, `PerformanceEventFifo`, `ClipPlacementEngine`,
   `AlignmentResolver`) plus `Ui/` additions for the record control/playhead.
 - All UI complies with `DESIGN.md`.
-- Strict `AGENTS.md` audio-thread compliance: audio thread only *enqueues* POD
+- Strict `CLAUDE.md` audio-thread compliance: audio thread only *enqueues* POD
   events into a pre-allocated FIFO; all model work is message-thread.
 
 ## 1.4. PRD Roadmap

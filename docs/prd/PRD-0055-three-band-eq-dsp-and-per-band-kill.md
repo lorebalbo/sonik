@@ -26,7 +26,7 @@ The system provides, for every mixer channel, a real 3-band EQ DSP stage inside 
 - All parameter changes (knob sweep, kill latch, MIDI input via PRD-0044) are smoothed per-sample with a 7 ms time constant for knob sweeps and a fixed 8 ms ramp for kill transitions (see §1.5.4).
 - Filter coefficients are recomputed only when a band's effective gain changes by more than `kCoefficientUpdateThresholdDb = 0.05` dB, and the recomputation publishes the new coefficients atomically (single-writer, single-reader pattern on the audio thread, see §1.5.5).
 - The EQ stage sits between the channel gain (PRD-0054) and the filter (PRD-0056), preserving the EPIC-0007 §1.2.1 signal flow.
-- All audio-thread code paths obey `AGENTS.md`: no allocations, no locks, no I/O.
+- All audio-thread code paths obey `CLAUDE.md`: no allocations, no locks, no I/O.
 - No new user-facing parameter beyond the six already declared in PRD-0052 (three band gains, three kill bools) is introduced.
 
 ## 1.3. Developer / Integration Flow

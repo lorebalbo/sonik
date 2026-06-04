@@ -9,7 +9,7 @@
 //   read()    copies from the ACTIVE buffer; retries if sequence is odd or
 //             changed (write raced the read).
 //
-// AUDIO THREAD CONTRACT (AGENTS.md §"The Audio Thread"):
+// AUDIO THREAD CONTRACT (CLAUDE.md §"The Audio Thread"):
 //   read()   → no allocation, no lock, no I/O. Pure atomic ops + memcpy.
 //   publish() → message thread only; no real-time constraint.
 //

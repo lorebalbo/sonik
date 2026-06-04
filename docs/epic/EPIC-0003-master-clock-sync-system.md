@@ -92,7 +92,7 @@ This prevents a 128 BPM master from driving a 64 BPM slave at 2× speed (double-
 
 ### 1.3.6. Audio Thread Safety
 
-All rules from AGENTS.md apply without exception:
+All rules from CLAUDE.md apply without exception:
 - `processBlock` reads only the SeqLock snapshot and per-deck atomics — no locks, no allocation, no I/O.
 - `MasterClockManager` runs only on the message thread.
 - Per-deck `phaseOffset` is published from the audio thread via `std::atomic<float>` for the phase meter UI.

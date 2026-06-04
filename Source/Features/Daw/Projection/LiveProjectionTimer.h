@@ -7,7 +7,7 @@
 // the matching lane(s) of the deck's `daw` sub-tree, sample-for-sample, so the
 // arrangement builds itself as the deck plays.
 //
-// THREADING / AGENTS.md compliance:
+// THREADING / CLAUDE.md compliance:
 //   * It only LOADS deck atomics (DeckAudioState) with acquire ordering.
 //   * It only MUTATES the `daw` ValueTree, on the message thread.
 //   * No audio-thread code, no allocation/lock/IO on the audio thread.

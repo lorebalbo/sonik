@@ -24,7 +24,7 @@ The system provides, for every mixer channel, a real per-channel filter DSP stag
 - The filter introduces no clicks when the user enters or leaves the detent, no zipper noise during fast cutoff sweeps, and no audible artefacts when the parameter crosses the detent from HPF to LPF or vice versa.
 - When the knob is parked inside the detent the filter stage is short-circuited: no per-sample coefficient computation, no allocations, no extra branches on the hot path beyond a single bypass test.
 - The filter stage sits between the EQ stage (PRD-0055) and the channel fader (PRD-0054), matching the signal flow declared in EPIC-0007 §1.2.1.
-- Every audio-thread code path obeys `AGENTS.md`: no allocations, no locks, no I/O, cross-thread parameter delivery through `std::atomic` only.
+- Every audio-thread code path obeys `CLAUDE.md`: no allocations, no locks, no I/O, cross-thread parameter delivery through `std::atomic` only.
 - No new user-facing parameter beyond the single existing filter parameter is introduced. In particular, no resonance parameter, no separate HPF/LPF toggle, no cutoff parameter, no engage/bypass parameter.
 - The implementation exposes a small, deterministic interface (cutoff in Hz, mode, bypass) that the UI PRDs (PRD-0059 knob atom, PRD-0060 channel strip organism) can bind without re-deriving filter math.
 

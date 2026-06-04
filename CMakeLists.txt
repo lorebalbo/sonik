@@ -145,6 +145,14 @@ target_sources(Sonik PRIVATE
     Source/Features/Daw/Automation/AutomationCaptureTaps.h
     Source/Features/Daw/Automation/AutomationCaptureTaps.cpp
     Source/Features/Daw/Automation/MasterTempoAutomationCapture.h
+    Source/Features/Daw/Automation/ChannelContinuousAutomationCapture.h
+    Source/Features/Daw/Automation/ChannelBooleanAutomationCapture.h
+    Source/Features/Daw/Automation/AutomationApplier.h
+    Source/Features/Daw/Automation/Ui/AutomationLaneMetrics.h
+    Source/Features/Daw/Automation/Ui/AutomationLaneViewBase.h
+    Source/Features/Daw/Automation/Ui/ContinuousAutomationLaneView.h
+    Source/Features/Daw/Automation/Ui/BooleanAutomationLaneView.h
+    Source/Features/Daw/Automation/Ui/AutomationLaneStackView.h
     Source/Features/Daw/Recording/PerformanceEventFifo.h
     Source/Features/Daw/Recording/PerformanceEventFifo.cpp
     Source/Features/Daw/Recording/ClipPlacementEngine.h
@@ -626,6 +634,11 @@ add_executable(SonikTests
     Tests/AutomationModelTests.cpp
     Tests/AutomationCaptureTapsTests.cpp
     Tests/MasterTempoAutomationCaptureTests.cpp
+    Tests/ContinuousLaneCaptureTests.cpp
+    Tests/ChannelBooleanLaneCaptureTests.cpp
+    Tests/AutomationApplierTests.cpp
+    Tests/AutomationLaneUiTests.cpp
+    Tests/AutomationEditingTests.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})
@@ -664,3 +677,34 @@ if(APPLE)
         "-framework Foundation"
     )
 endif()
+
+#==============================================================================
+# PRD-0093: AutomationUiScreenshot — standalone deterministic PNG render of the
+# automation lane organisms (the seed demo data lives only in the tool).
+#==============================================================================
+add_executable(AutomationUiScreenshot
+    Tools/AutomationUiScreenshot.cpp
+    Source/Features/Daw/State/DawState.cpp
+    Source/Features/Daw/Transform/TimelineTransform.cpp
+    Source/Features/Daw/Model/MasterGridService.cpp
+    Source/Features/Sync/MasterClockPublisher.cpp
+)
+
+target_include_directories(AutomationUiScreenshot PRIVATE Source)
+
+target_compile_definitions(AutomationUiScreenshot PRIVATE
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_STANDALONE_APPLICATION=1
+    JUCE_MODAL_LOOPS_PERMITTED=1
+)
+
+target_link_libraries(AutomationUiScreenshot PRIVATE
+    juce::juce_gui_basics
+    juce::juce_gui_extra
+    juce::juce_graphics
+    juce::juce_data_structures
+    juce::juce_core
+    juce::juce_events
+    juce::juce_recommended_config_flags
+)

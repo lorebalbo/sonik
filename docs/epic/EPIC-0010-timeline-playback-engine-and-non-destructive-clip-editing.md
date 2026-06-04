@@ -86,7 +86,7 @@ Foundational systems (non-user-facing):
 
 ### 1.3.1. Timeline Render Engine (audio-thread safety)
 
-The render engine runs inside the `processBlock` chain and must obey `AGENTS.md`
+The render engine runs inside the `processBlock` chain and must obey `CLAUDE.md`
 without exception:
 
 - **No disk I/O on the audio thread.** Clip audio is streamed by background

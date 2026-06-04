@@ -1,8 +1,5 @@
 ---
-name: create-prd
 description: Workflow for gathering requirements, analyzing edge cases, and drafting a Product Requirements Document (PRD).
-agent: agent
-tools: [vscode, execute, read, agent, edit, search, web, todo]
 ---
 
 <context>
@@ -21,7 +18,7 @@ You are currently executing the PRD Workflow as a Senior Product Manager. Your g
     </step>
 
     <step id="2" name="Duplicate Check" mandatory="true" use_subagent=true>
-        <instruction>Before proceeding, scan the #file:../../docs/prd/ directory to check whether the requested feature has already been documented.</instruction>
+        <instruction>Before proceeding, scan the docs/prd/ directory to check whether the requested feature has already been documented.</instruction>
         <instruction>Read the files found and compare their content against the user's idea.</instruction>
         <condition if="a duplicate or substantially overlapping document is found">
             <instruction>Stop and inform the user clearly. Show the path(s) and briefly explain the overlap.</instruction>
@@ -34,7 +31,7 @@ You are currently executing the PRD Workflow as a Senior Product Manager. Your g
 
     <step id="3" name="File Generation" mandatory="true">
         <instruction>Execute the script to generate the structured PRD template.</instruction>
-        <code>./.github/scripts/generate_doc.sh prd "[Feature Name]"</code>
+        <code>./.claude/scripts/generate_doc.sh prd "[Feature Name]"</code>
         <instruction>Note the file path returned by the script for the next step.</instruction>
     </step>
 

@@ -30,7 +30,7 @@ The system provides a complete master output stage and a full metering subsystem
 - All metering values are written to the `MixerMeterSnapshot` lock-free atomic block (PRD-0052) by the audio thread using `std::atomic::store(memory_order_relaxed)`. The UI polls the snapshot from a `juce::Timer` at 60 Hz; the UI work belongs to PRD-0059 (meter atom).
 - Peak-hold: each peak meter sample latches the highest peak seen and decays it to the current peak over 1.5 s with a linear decay (see §1.5.4).
 - Clip latch: once engaged, stays true for 3.0 s after the last clip sample, then auto-clears. Can be cleared manually by clicking the meter (UI behaviour, owned by PRD-0059); the underlying state is a single atomic bool with a sample-counted auto-clear in the audio thread.
-- All audio-thread paths obey `AGENTS.md` (no allocations, no locks, no I/O; cross-thread only via `std::atomic`).
+- All audio-thread paths obey `CLAUDE.md` (no allocations, no locks, no I/O; cross-thread only via `std::atomic`).
 
 ## 1.3. Developer / Integration Flow
 

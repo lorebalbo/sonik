@@ -2276,7 +2276,7 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
 
     // PRD-0053: Pre-allocate all mixer pipeline scratch buffers on the message
     // thread before the audio callback resumes. No allocation ever occurs on
-    // the audio thread (AGENTS.md immutable rule).
+    // the audio thread (CLAUDE.md immutable rule).
     const int blockSize   = currentBufferSize.load (std::memory_order_relaxed);
     const double sr       = currentSampleRate.load (std::memory_order_relaxed);
     constexpr int numCh   = 2;

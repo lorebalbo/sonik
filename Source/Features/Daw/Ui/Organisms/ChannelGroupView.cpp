@@ -9,13 +9,26 @@
 namespace Daw
 {
 
+namespace
+{
+    // PRD-0090/0093: channel owner letter from deck index via the identity map
+    // A->0 .. D->3 (§1.5.4). Out-of-range deck indices clamp to the first owner.
+    juce::String ownerForDeckIndex (int deckIndex)
+    {
+        static const char* const kOwners[4] = { "A", "B", "C", "D" };
+        return juce::String (kOwners[juce::jlimit (0, 3, deckIndex)]);
+    }
+}
+
 ChannelGroupView::ChannelGroupView (juce::ValueTree trackTree,
                                     juce::ValueTree deckTree,
                                     const TimelineTransform& transform,
-                                    ClipBlock::WaveformSource waveformSource)
+                                    ClipBlock::WaveformSource waveformSource,
+                                    AutomationModel* model)
     : trackTree_ (std::move (trackTree)),
       deckTree_  (std::move (deckTree)),
-      header_ (static_cast<int> (trackTree_.getProperty (DawIDs::deckIndex)))
+      header_ (static_cast<int> (trackTree_.getProperty (DawIDs::deckIndex))),
+      automationModel_ (model)
 {
     deckIndex_ = static_cast<int> (trackTree_.getProperty (DawIDs::deckIndex));
 
@@ -32,6 +45,18 @@ ChannelGroupView::ChannelGroupView (juce::ValueTree trackTree,
     addAndMakeVisible (header_);
     for (auto& lane : lanes_)
         addAndMakeVisible (*lane);
+
+    // PRD-0093: build the automation stack now (so populated/empty ordering and
+    // preferred height are correct) but keep it HIDDEN until disclosed — the
+    // default group footprint is therefore unchanged from PRD-0067.
+    if (automationModel_ != nullptr)
+    {
+        automationStack_ = std::make_unique<AutomationLaneStackView> (
+            ownerForDeckIndex (deckIndex_), *automationModel_, transform);
+        automationStack_->setVisible (false);
+        addChildComponent (*automationStack_);
+        header_.onToggleAutomation = [this]() { setAutomationRevealed (! automationRevealed_); };
+    }
 
     header_.onToggleCollapsed = [this]() { setCollapsed (! collapsed_); };
 
@@ -58,10 +83,43 @@ void ChannelGroupView::setCollapsed (bool shouldBeCollapsed)
     for (auto& lane : lanes_)
         lane->setVisible (! collapsed_);
 
+    // Collapsing the whole group also hides any revealed automation lanes.
+    if (automationStack_ != nullptr)
+        automationStack_->setVisible (! collapsed_ && automationRevealed_);
+
     resized();
 
     if (onPreferredHeightChanged)
         onPreferredHeightChanged();
+}
+
+void ChannelGroupView::setAutomationRevealed (bool shouldBeRevealed)
+{
+    if (automationRevealed_ == shouldBeRevealed || automationStack_ == nullptr)
+        return;
+
+    automationRevealed_ = shouldBeRevealed;
+    header_.setAutomationRevealed (automationRevealed_);
+    automationStack_->setVisible (! collapsed_ && automationRevealed_);
+
+    resized();
+
+    if (onPreferredHeightChanged)
+        onPreferredHeightChanged();
+}
+
+void ChannelGroupView::setAutomationPlayheadProvider (
+    AutomationLaneStackView::PlayheadProvider provider)
+{
+    automationPlayheadProvider_ = provider;
+    if (automationStack_ != nullptr)
+        automationStack_->setPlayheadProvider (std::move (provider));
+}
+
+void ChannelGroupView::refreshAutomationTransform()
+{
+    if (automationStack_ != nullptr)
+        automationStack_->refreshTransform();
 }
 
 LaneView& ChannelGroupView::laneFor (ChannelGroup::LaneKind kind)
@@ -86,6 +144,11 @@ void ChannelGroupView::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher
     for (auto& lane : lanes_)
         if (lane != nullptr)
             lane->setEditDispatcher (dispatcher);
+
+    // PRD-0094: automation lane editing flows through the same shared command
+    // layer, so the automation stack must receive the dispatcher too.
+    if (automationStack_ != nullptr)
+        automationStack_->setEditDispatcher (dispatcher);
 }
 
 void ChannelGroupView::refreshLaneActiveness()
@@ -135,6 +198,11 @@ void ChannelGroupView::resized()
 
     for (auto& lane : lanes_)
         lane->setBounds (bounds.removeFromTop (DawLayout::kLaneHeight));
+
+    // PRD-0093: automation lanes occupy the rows BENEATH the three source lanes.
+    if (automationStack_ != nullptr && automationRevealed_)
+        automationStack_->setBounds (
+            bounds.removeFromTop (automationStack_->getPreferredHeight()));
 }
 
 } // namespace Daw

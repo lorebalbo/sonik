@@ -119,7 +119,7 @@ Foundational systems (non-user-facing):
 
 - Save/load and export run entirely **off the real-time audio thread**.
 - The offline render driver does **not** use the live audio device; it pulls the
-  same engine in a non-real-time loop, so `processBlock`'s `AGENTS.md`
+  same engine in a non-real-time loop, so `processBlock`'s `CLAUDE.md`
   guarantees are irrelevant to export yet the engine's no-alloc/no-lock inner
   loop is preserved for code reuse.
 - During *live* (real-time) listening, all prior Epics' audio-thread rules

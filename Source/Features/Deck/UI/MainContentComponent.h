@@ -18,6 +18,12 @@
 #include "Features/Daw/Projection/DeckManagerProjectionSource.h"
 #include "Features/Daw/Recording/RecordingSessionController.h"
 #include "Features/Daw/Playback/DawPlaybackController.h"
+#include "Features/Daw/Automation/AutomationModel.h"
+#include "Features/Daw/Automation/AutomationCaptureTaps.h"
+#include "Features/Daw/Automation/ChannelContinuousAutomationCapture.h"
+#include "Features/Daw/Automation/ChannelBooleanAutomationCapture.h"
+#include "Features/Daw/Automation/MasterTempoAutomationCapture.h"
+#include "Features/Daw/Automation/AutomationApplier.h"
 #include "Features/Deck/AudioThreadState.h"
 #include "Features/Library/UI/LibraryComponent.h"
 #include "Features/Library/WatchFolderScanner.h"
@@ -52,6 +58,7 @@ public:
           audioEngine (engine),
           audioFileLoader (loader),
           trackDatabase (trackDb),
+          masterClockManager (clockMgr),
           rootState (deckState.getStateTree()),
           toolbar (deckState, mixerSchema, mixerMeters),
           layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr, clockMgr),
@@ -222,6 +229,110 @@ public:
                 return dawPanel.getDawTransport().getPlayheadSample();
             });
 
+        // EPIC-0011: automation capture + playback wiring (message thread only).
+        //
+        // The model is built over the SAME `daw` branch DawPanel built its own
+        // AutomationModel over, so both share the one `automation` ValueTree node:
+        // capture writes are observed by the DAW UI automatically. The append sink
+        // is the ONLY path capture takes into the model (no parallel back door).
+        automationModel = std::make_unique<Daw::AutomationModel> (
+                              DawState::getOrCreateDawBranch (rootState));
+        automationSink  = std::make_unique<Daw::ModelAutomationAppendSink> (*automationModel);
+
+        // The capture gate: true while Armed OR Recording (i.e. not Stopped).
+        auto isRecordingArmed = [this]() -> bool
+        {
+            return recordingController != nullptr
+                   && recordingController->state() != Daw::RecordingState::Stopped;
+        };
+
+        // The record playhead for ALL automation capture is the ABSOLUTE DAW
+        // timeline sample clips are anchored to (the projection now-line), NOT
+        // recordingController->currentTimelinePosition() (which counts from 0 and
+        // would desync breakpoints from the clips/playhead they must align with).
+        auto recordPlayhead = [this]() -> std::int64_t
+        {
+            return liveProjection != nullptr ? liveProjection->getNowLineSample() : 0;
+        };
+
+        // The deck resolver: channel index -> deck ValueTree. SAME resolution
+        // logic DawPanel uses (only Deck-typed children counted). Shared by the
+        // boolean capture component and the applier's boolean sink.
+        std::function<juce::ValueTree (int)> deckResolver =
+            [rootTree = rootState](int deckIndex) -> juce::ValueTree
+            {
+                auto decks = rootTree.getChildWithName (IDs::Decks);
+                int count = 0;
+                for (int i = 0; i < decks.getNumChildren(); ++i)
+                {
+                    auto deck = decks.getChild (i);
+                    if (deck.hasType (IDs::Deck))
+                    {
+                        if (count == deckIndex)
+                            return deck;
+                        ++count;
+                    }
+                }
+                return {};
+            };
+
+        // PRD-0090: the twenty continuous per-channel mixer lanes (filter / gain /
+        // eq.high|mid|low for channels A..D), observed on the mixer ValueTrees.
+        automationCaptureTaps = std::make_unique<Daw::AutomationCaptureTaps> (
+                                    isRecordingArmed, recordPlayhead, *automationSink);
+        Daw::ChannelContinuousAutomationCapture::registerTaps (*automationCaptureTaps, mixerSchema);
+
+        // PRD-0091: the derived per-deck boolean lanes (keyLock / pitchStretch /
+        // keyStepper), observed on the deck ValueTrees.
+        channelBooleanCapture = std::make_unique<Daw::ChannelBooleanAutomationCapture> (
+                                    deckResolver, isRecordingArmed, recordPlayhead, *automationSink);
+
+        // PRD-0089: the single master/tempo lane, polled from the authoritative
+        // published grid BPM each tick while recording.
+        masterTempoCapture = std::make_unique<Daw::MasterTempoAutomationCapture> (
+                                 [&gridService]() -> double { return gridService.snapshotGrid().bpm; },
+                                 isRecordingArmed, recordPlayhead, *automationSink);
+
+        // PRD-0092: the playback applier. tempoSink routes to the ONE tempo
+        // authority (MasterClockManager override). booleanSink routes keyLock to
+        // the deck's keyLockEnabled property; keyStepper / pitchStretch are a
+        // documented no-op (see below).
+        automationApplier = std::make_unique<Daw::AutomationApplier> (
+            *automationModel,
+            mixerSchema,
+            dawPanel.getDawTransport(),
+            [&clockMgr](double bpm) { clockMgr.setAutomationTempoOverride (bpm); },
+            [deckResolver](int ch, const juce::String& paramId, bool state)
+            {
+                if (paramId == "keyLock")
+                {
+                    // keyLock has a faithful single-boolean deck target: the
+                    // PRD-0011 keyLockEnabled property. Resolve by channel index
+                    // (identity channel<->deck) and write through the same
+                    // authoritative deck property the live UI / MIDI controls use.
+                    auto deck = deckResolver (ch);
+                    if (deck.isValid())
+                        deck.setProperty (IDs::keyLockEnabled, state, nullptr);
+                    return;
+                }
+
+                // keyStepper / pitchStretch are DERIVED boolean conditions with no
+                // faithful single-boolean deck target: the engaged flag alone
+                // cannot restore the semitone magnitude owned by PRD-0025, so
+                // writing a bare bool would be lossy/destructive. Per PRD-0092's
+                // note that the sink routes to production-appropriate targets only
+                // where one exists, these are an intentional HARMLESS NO-OP here.
+                juce::ignoreUnused (paramId, state);
+            });
+
+        // PRD-0092 re-entrancy guard: bind the applier's "applying" predicate to
+        // every capture component so values the applier writes during playback are
+        // recognised as automation-originated and are NOT re-captured (no
+        // capture<->playback feedback loop). Both sides run on the message thread.
+        automationCaptureTaps->setApplyingAutomationGuard (automationApplier->makeApplyingGuard());
+        channelBooleanCapture->setApplyingAutomationGuard (automationApplier->makeApplyingGuard());
+        masterTempoCapture->setApplyingAutomationGuard (automationApplier->makeApplyingGuard());
+
         // Drive the record playhead clock on the message thread at UI cadence and
         // promote Armed -> Recording the instant any deck begins producing audio.
         startTimerHz (30);
@@ -271,6 +382,61 @@ public:
         if (recordingController->state() == Daw::RecordingState::Armed
             && anyDeckPlaying())
             recordingController->beginCapture();
+
+        // EPIC-0011: drive automation capture + playback (message thread only).
+        driveAutomation();
+    }
+
+    // EPIC-0011: capture/playback driving, factored out of timerCallback for
+    // clarity. Message thread only — no audio-thread code. Detects record-start /
+    // record-stop edges to seed/flush lanes, polls master tempo while recording,
+    // and ticks the playback applier (which self-gates on transport playing).
+    void driveAutomation()
+    {
+        const bool recordingActive = recordingController != nullptr
+            && recordingController->state() != Daw::RecordingState::Stopped;
+        const std::int64_t nowLine = liveProjection != nullptr
+            ? liveProjection->getNowLineSample() : 0;
+
+        // RECORD-START edge: seed each lane's initial value at the now-line so
+        // every lane is defined from its first sample.
+        if (recordingActive && ! prevRecordingActive_)
+        {
+            if (automationCaptureTaps != nullptr)
+                automationCaptureTaps->captureInitialValues (nowLine);
+            if (channelBooleanCapture != nullptr)
+                channelBooleanCapture->captureInitialValues (nowLine);
+            if (masterTempoCapture != nullptr)
+                masterTempoCapture->seedAtRecordStart();
+        }
+
+        // WHILE recording: poll the master tempo each tick (continuous/boolean
+        // taps are listener-driven and need no per-tick call).
+        if (recordingActive && masterTempoCapture != nullptr)
+            masterTempoCapture->captureTick();
+
+        // RECORD-STOP edge: flush continuous lanes onto their resting value so a
+        // decimated sweep terminates exactly where the control came to rest.
+        if (! recordingActive && prevRecordingActive_)
+        {
+            if (automationCaptureTaps != nullptr)
+                automationCaptureTaps->flush (nowLine);
+        }
+
+        prevRecordingActive_ = recordingActive;
+
+        // PLAYBACK: the applier self-gates (no-op unless the transport is playing),
+        // so calling it unconditionally every tick is safe.
+        if (automationApplier != nullptr)
+            automationApplier->tick();
+
+        // PLAYBACK-STOP edge: when the transport transitions from playing to not
+        // playing, clear any automation tempo override so the master clock reverts
+        // to its derived BPM. Clearing when no override is active is a no-op.
+        const bool transportPlaying = dawPanel.getDawTransport().isPlaying();
+        if (! transportPlaying && prevTransportPlaying_)
+            masterClockManager.clearAutomationTempoOverride();
+        prevTransportPlaying_ = transportPlaying;
     }
 
     bool anyDeckPlaying() const
@@ -467,11 +633,12 @@ private:
         }
     }
 
-    DeckStateManager& deckStateManager;
-    AudioEngine&      audioEngine;
-    AudioFileLoader&  audioFileLoader;
-    TrackDatabase&    trackDatabase;
-    juce::ValueTree   rootState;
+    DeckStateManager&   deckStateManager;
+    AudioEngine&        audioEngine;
+    AudioFileLoader&    audioFileLoader;
+    TrackDatabase&      trackDatabase;
+    MasterClockManager& masterClockManager; // EPIC-0011: tempo override revert
+    juce::ValueTree     rootState;
 
     GlobalToolbar      toolbar;
     DeckLayoutManager  layoutManager;
@@ -494,6 +661,23 @@ private:
     // ---- EPIC-0010 arrangement playback ----------------------------------
     std::unique_ptr<Daw::DawPlaybackController>       playbackController;
     double                                            lastRuntimeRate_ { 44100.0 };
+
+    // ---- EPIC-0011 automation capture + playback -------------------------
+    // Declaration order is destruction-safe and respects the dependency chain:
+    // the model owns the `automation` ValueTree node; the append sink references
+    // the model; the capture components + applier reference the sink/model. So
+    // the model MUST outlive the sink, and the sink MUST outlive every capture
+    // component (reverse-order destruction guarantees this).
+    std::unique_ptr<Daw::AutomationModel>                automationModel;
+    std::unique_ptr<Daw::ModelAutomationAppendSink>      automationSink;
+    std::unique_ptr<Daw::AutomationCaptureTaps>          automationCaptureTaps;
+    std::unique_ptr<Daw::ChannelBooleanAutomationCapture> channelBooleanCapture;
+    std::unique_ptr<Daw::MasterTempoAutomationCapture>   masterTempoCapture;
+    std::unique_ptr<Daw::AutomationApplier>              automationApplier;
+
+    // Record/transport state-edge tracking for the 30 Hz timer (message thread).
+    bool prevRecordingActive_ { false };
+    bool prevTransportPlaying_ { false };
 
     static constexpr int toolbarHeight = 40;
 

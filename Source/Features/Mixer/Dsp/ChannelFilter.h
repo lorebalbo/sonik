@@ -20,7 +20,7 @@
 // the user never hears a click when entering, leaving, or crossing the
 // detent.
 //
-// Audio-thread contract (AGENTS.md):
+// Audio-thread contract (CLAUDE.md):
 //   - prepare() is the only path that may allocate (it pre-sizes the SVF
 //     state vectors); the audio thread never allocates.
 //   - processSample() takes no locks, performs no I/O, and only touches

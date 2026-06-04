@@ -11,7 +11,7 @@
 // The production sink is FifoPerformanceCaptureSink, which is gated by a
 // "recording active" predicate and enqueues a flat POD into the lock-free
 // PRD-0072 FIFO — safe to call from the audio thread (quantized cue, §1.5.2)
-// or the message thread (UI click), per AGENTS.md.
+// or the message thread (UI click), per CLAUDE.md.
 //==============================================================================
 
 #include "PerformanceEventFifo.h"

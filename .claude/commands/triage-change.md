@@ -1,8 +1,5 @@
 ---
-name: triage-change
 description: Workflow to analyze user requests for updates, fixes, or features, check for existing documentation, and route to the appropriate Epic, PRD, or direct code implementation.
-agent: agent
-tools: [vscode, execute, read, agent, edit, search, web, todo]
 ---
 
 <context>
@@ -21,7 +18,7 @@ You are executing the Request Triage Workflow as a Technical Product Manager. Yo
     </step>
 
     <step id="2" name="Documentation & Duplicate Scan" mandatory="true" use_subagent="true">
-        <instruction>Scan the `#file:../../docs/epic/` and `#file:../../docs/prd/` directories to check for existing plans related to this request.</instruction>
+        <instruction>Scan the `docs/epic/` and `docs/prd/` directories to check for existing plans related to this request.</instruction>
         <instruction>Read the relevant files and determine:</instruction>
         <substep id="2.1" name="Overlap Analysis">
             <instruction>Does this change completely overlap with an existing, un-implemented PRD or Epic?</instruction>
@@ -57,14 +54,14 @@ You are executing the Request Triage Workflow as a Technical Product Manager. Yo
         <instruction>Execute the agreed-upon path based on the approved category from Step 4.</instruction>
         <condition if="Category is New Epic">
             <instruction>Inform the user you are transitioning to the Epic creation process.</instruction>
-            <instruction>Call/Trigger the #file:./create-epic.prompt.md workflow, passing the context of the user's request.</instruction>
+            <instruction>Call/Trigger the /create-epic workflow, passing the context of the user's request.</instruction>
         </condition>
         <condition if="Category is New PRD">
             <instruction>Inform the user you are transitioning to the PRD creation process.</instruction>
-            <instruction>Call/Trigger the #file:./create-prd.prompt.md workflow, passing the context of the user's request.</instruction>
+            <instruction>Call/Trigger the /create-prd workflow, passing the context of the user's request.</instruction>
         </condition>
         <condition if="Category is Document Update">
-            <instruction>Open the relevant existing Markdown file(s) in #file:../../docs/epic/ or #file:../../docs/prd/ .</instruction>
+            <instruction>Open the relevant existing Markdown file(s) in docs/epic/ or docs/prd/ .</instruction>
             <instruction>Apply the changes, keeping the existing formatting intact.</instruction>
             <instruction>Notify the user when the document has been successfully updated.</instruction>
         </condition>

@@ -11,13 +11,13 @@
 # generates a new markdown file using the predefined template.
 #
 # Usage:
-#   ./.agents/scripts/generate_doc.sh [--verbose] <prd|adr|epic> <"Title of the Document">
+#   ./.claude/scripts/generate_doc.sh [--verbose] <prd|adr|epic> <"Title of the Document">
 #
 # Examples:
-#   ./.agents/scripts/generate_doc.sh prd "User Login Feature"    -> Creates docs/prd/PRD-0001-user-login-feature.md
-#   ./.agents/scripts/generate_doc.sh adr "Switch to PostgreSQL"  -> Creates docs/adr/ADR-0001-switch-to-postgresql.md
-#   ./.agents/scripts/generate_doc.sh epic "New Epic Feature"     -> Creates docs/epic/EPIC-0001-new-epic-feature.md
-#   ./.agents/scripts/generate_doc.sh --verbose prd "Feature"     -> Outputs process information and success messages
+#   ./.claude/scripts/generate_doc.sh prd "User Login Feature"    -> Creates docs/prd/PRD-0001-user-login-feature.md
+#   ./.claude/scripts/generate_doc.sh adr "Switch to PostgreSQL"  -> Creates docs/adr/ADR-0001-switch-to-postgresql.md
+#   ./.claude/scripts/generate_doc.sh epic "New Epic Feature"     -> Creates docs/epic/EPIC-0001-new-epic-feature.md
+#   ./.claude/scripts/generate_doc.sh --verbose prd "Feature"     -> Outputs process information and success messages
 # ==============================================================================
 
 VERBOSE=0
@@ -74,7 +74,7 @@ elif [[ "$DOC_TYPE" == "epic" ]]; then
 fi
 
 DOCS_DIR="docs/${DOC_TYPE}"
-TEMPLATE_DIR="./.github/templates"
+TEMPLATE_DIR="./.claude/templates"
 TEMPLATE_FILE="${TEMPLATE_DIR}/${DOC_TYPE}-template.md"
 
 MAX_NUM=0

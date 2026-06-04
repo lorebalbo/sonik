@@ -20,7 +20,7 @@
 //   • A juce::ValueTree::Listener (added at construction, removed at
 //     destruction) keeps the visual in sync with external writers (MIDI,
 //     other UIs).
-//   • No audio-thread interaction — see PRD-0059 §1.2 / AGENTS.md.
+//   • No audio-thread interaction — see PRD-0059 §1.2 / CLAUDE.md.
 //==============================================================================
 
 #include <juce_gui_basics/juce_gui_basics.h>

@@ -1,6 +1,6 @@
 ---
 name: "EPIC-0011: DAW Automation System"
-status: Open
+status: Implemented
 ---
 
 # 1. EPIC-0011: DAW Automation System
@@ -133,7 +133,7 @@ the audio thread directly; the audio thread reads published snapshots.
 
 ### 1.3.4. Audio-Thread Safety
 
-Per `AGENTS.md`: automation evaluation that must be sample-accurate is delivered
+Per `CLAUDE.md`: automation evaluation that must be sample-accurate is delivered
 to the audio thread via the SeqLock-published arrangement/parameter snapshot
 (EPIC-0010), not by walking lanes in `processBlock`. Continuous values are
 smoothed to avoid zipper noise, consistent with EPIC-0007's parameter smoothing.
@@ -155,8 +155,8 @@ No allocation, locks, or I/O on the audio thread.
 - [x] PRD-0087: Automation Data Model (continuous + boolean lanes in the `daw` ValueTree, breakpoint/step structures)
 - [x] PRD-0088: Automation Capture Taps (observe mixer/tempo/deck params, append via EPIC-0009 event bridge while recording)
 - [x] PRD-0089: Master-Tempo Automation Lane & Capture (records master-clock BPM changes)
-- [ ] PRD-0090: Per-Channel Continuous Lanes — Filter / High / Mid / Low / Gain (capture)
-- [ ] PRD-0091: Per-Channel Boolean Lanes — Key-Lock / Pitch-Stretch / Key-Stepper (capture)
-- [ ] PRD-0092: Automation Playback Applier (single-source-of-truth write-back; tempo → MasterClockManager; click-free snapshot delivery)
-- [ ] PRD-0093: Automation Lane UI & Rendering (DESIGN.md breakpoint curves, show/hide, per-lane bypass)
-- [ ] PRD-0094: Automation Editing (add/move/delete breakpoints, interpolation, boolean toggles) via the edit command layer
+- [x] PRD-0090: Per-Channel Continuous Lanes — Filter / High / Mid / Low / Gain (capture)
+- [x] PRD-0091: Per-Channel Boolean Lanes — Key-Lock / Pitch-Stretch / Key-Stepper (capture)
+- [x] PRD-0092: Automation Playback Applier (single-source-of-truth write-back; tempo → MasterClockManager; click-free snapshot delivery)
+- [x] PRD-0093: Automation Lane UI & Rendering (DESIGN.md breakpoint curves, show/hide, per-lane bypass)
+- [x] PRD-0094: Automation Editing (add/move/delete breakpoints, interpolation, boolean toggles) via the edit command layer

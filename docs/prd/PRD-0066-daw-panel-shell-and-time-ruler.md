@@ -32,7 +32,7 @@ The system provides a docked, collapsible DAW panel and a readable musical time 
 
 ## 1.3. Developer / Integration Flow
 
-1. A new `DawPanel` organism is created under `Source/Features/Daw/Ui/Organisms/`. It owns the panel chrome (background surface, header, collapse toggle) and, when expanded, a `TimeRuler` molecule. It holds a reference to a `TimelineTransform` (PRD-0065) and a `MasterGridService` (PRD-0064), both injected via the constructor (no singletons, per `AGENTS.md`).
+1. A new `DawPanel` organism is created under `Source/Features/Daw/Ui/Organisms/`. It owns the panel chrome (background surface, header, collapse toggle) and, when expanded, a `TimeRuler` molecule. It holds a reference to a `TimelineTransform` (PRD-0065) and a `MasterGridService` (PRD-0064), both injected via the constructor (no singletons, per `CLAUDE.md`).
 
 2. A `TimeRuler` molecule is created under `Source/Features/Daw/Ui/Molecules/`. Given the transform and the grid service, it asks the grid service for the bar/beat lines spanning the currently visible sample range, maps each to an x-pixel via the transform, and lays out one `RulerTick` atom per visible tick. Bar lines also carry a `Space Mono` numeric label.
 

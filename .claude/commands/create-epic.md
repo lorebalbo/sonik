@@ -1,8 +1,5 @@
 ---
-name: create-epic
 description: Workflow to brainstorm, identify missing features, and map out an Epic into sequential PRDs.
-agent: agent
-tools: [vscode, execute, read, agent, edit, search, web, todo]
 ---
 
 <context>
@@ -35,7 +32,7 @@ You are executing the Epic Breakdown Workflow. Your goal is to act as a Senior P
 
     <step id="3" name="Document Skeleton Generation" mandatory="true">
         <instruction>Now that the sequence is approved, use the automation script to generate the structured Epic template.</instruction>
-        <instruction>Execute: `./.github/scripts/generate_doc.sh epic "[Epic Name]"`</instruction>
+        <instruction>Execute: `./.claude/scripts/generate_doc.sh epic "[Epic Name]"`</instruction>
         <instruction>Wait for the script to finish and note the returned file path.</instruction>
     </step>
 

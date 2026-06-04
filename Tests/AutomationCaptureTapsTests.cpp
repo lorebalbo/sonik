@@ -57,6 +57,16 @@ namespace
             return lane.addStep (timelineSample, value);
         }
 
+        void removeStep (juce::ValueTree step) override
+        {
+            ++stepRemovals;
+            auto parent = step.getParent();
+            if (parent.isValid())
+                parent.removeChild (step, nullptr);
+        }
+
+        int stepRemovals = 0;
+
         AutomationModel& model;
     };
 }

@@ -81,7 +81,7 @@ and append mechanism under `Source/Features/Daw/Automation/AutomationCaptureTaps
    key `(channelGroup | master, parameterId)` to append to, and the lane shape
    (continuous breakpoint vs boolean step).
 2. `AutomationCaptureTaps` is constructed with explicit dependencies (no
-   singletons, per `AGENTS.md`): the source `ValueTree`s that hold the
+   singletons, per `CLAUDE.md`): the source `ValueTree`s that hold the
    authoritative params (mixer state, master-clock state, the deck `ValueTree`s),
    the PRD-0071 recording-armed state, the PRD-0072 event bridge, and the
    PRD-0087 automation model accessor. Dependencies are passed via the

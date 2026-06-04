@@ -11,7 +11,7 @@
 //     no allocation, no lock.
 //   - Re-prime (seek/scrub/edit) is always triggered from off the audio thread.
 //
-// AUDIO THREAD CONTRACT (AGENTS.md):
+// AUDIO THREAD CONTRACT (CLAUDE.md):
 //   readInto()  → no allocation, no lock, no I/O.
 //   All other public methods → message thread (or internal reader thread).
 //==============================================================================

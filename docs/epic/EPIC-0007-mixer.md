@@ -106,7 +106,7 @@ Foundational systems (non-user-facing):
 
 The mixer DSP runs entirely on the real-time audio thread (inside the
 `AudioProcessor::processBlock` chain). Every PRD in this Epic must comply
-with the immutable rule from `AGENTS.md`:
+with the immutable rule from `CLAUDE.md`:
 
 - No memory allocation, no locks, no I/O.
 - Parameter values are read from `std::atomic<float>` (or equivalent) into

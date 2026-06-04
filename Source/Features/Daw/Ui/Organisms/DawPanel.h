@@ -27,6 +27,8 @@
 #include "../FollowController.h"
 #include "../DawLayoutMetrics.h"
 #include "ChannelGroupStack.h"
+#include "../../Automation/AutomationModel.h"
+#include "../../Automation/Ui/ContinuousAutomationLaneView.h"
 #include "../../Model/MasterGridService.h"
 #include "../../Transform/TimelineTransform.h"
 #include "../../State/DawState.h"
@@ -74,11 +76,25 @@ public:
     bool isExpanded() const noexcept { return expanded_; }
     void setExpanded (bool shouldBeExpanded);
 
+    // PRD-0093: master tempo automation lane disclosure (hidden by default, so
+    // the panel's default expanded height is unchanged).
+    bool isMasterAutomationRevealed() const noexcept { return masterAutoRevealed_; }
+    void setMasterAutomationRevealed (bool shouldBeRevealed);
+
     // The height the parent should give this panel in the current state.
     int  getPreferredHeight() const noexcept
     {
-        return expanded_ ? kExpandedHeight : kCollapsedHeight;
+        if (! expanded_)
+            return kCollapsedHeight;
+        int h = kExpandedHeight;
+        if (masterAutoRevealed_)
+            h += AutomationLaneMetrics::kAutomationLaneHeight;
+        return h;
     }
+
+    // PRD-0093: access to the owned AutomationModel (constructed over the same
+    // daw branch the stack observes).
+    AutomationModel& getAutomationModel() noexcept { return automationModel_; }
 
     // Invoked when the preferred height changes so the parent can reflow.
     std::function<void()> onPreferredHeightChanged;
@@ -190,9 +206,19 @@ private:
     juce::ValueTree    dawBranch_;               // retained copy for EditCommandDispatcher
     juce::UndoManager  undoManager_;             // owned; EditCommandDispatcher delegates here
     TimelineTransform  transform_;
+
+    // PRD-0093: the automation data model over the same daw branch the stack
+    // observes (constructed BEFORE the stack so it can be passed in).
+    AutomationModel    automationModel_;
+
     TimeRuler          ruler_;
     juce::Viewport     bodyViewport_;
     ChannelGroupStack  stack_;
+
+    // PRD-0093: master tempo automation lane, revealed beneath the body.
+    std::unique_ptr<ContinuousAutomationLaneView> masterTempoLane_;
+    bool                 masterAutoRevealed_ { false };
+    juce::Rectangle<int> masterAutoBounds_;     // header "M.AUTO" disclosure
     InteractionLayer   interaction_;
     Playhead           playhead_;
     RecordPlayhead     recordPlayhead_;
