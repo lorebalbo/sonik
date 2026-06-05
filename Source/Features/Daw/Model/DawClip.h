@@ -42,10 +42,10 @@ struct DawClip
         node.setProperty (DawClipIDs::clipId,              clip.clipId.toString(),       nullptr);
         node.setProperty (DawClipIDs::laneId,              clip.laneId.toString(),       nullptr);
         node.setProperty (DawClipIDs::sourceFileId,        clip.sourceFileId,            nullptr);
-        node.setProperty (DawClipIDs::sourceStartSample,   clip.sourceStartSample,       nullptr);
-        node.setProperty (DawClipIDs::sourceEndSample,     clip.sourceEndSample,         nullptr);
-        node.setProperty (DawClipIDs::timelineStartSample, clip.timelineStartSample,     nullptr);
-        node.setProperty (DawClipIDs::sourceLengthSamples, clip.sourceLengthSamples,     nullptr);
+        node.setProperty (DawClipIDs::sourceStartSample,   (juce::int64) clip.sourceStartSample,   nullptr);
+        node.setProperty (DawClipIDs::sourceEndSample,     (juce::int64) clip.sourceEndSample,     nullptr);
+        node.setProperty (DawClipIDs::timelineStartSample, (juce::int64) clip.timelineStartSample, nullptr);
+        node.setProperty (DawClipIDs::sourceLengthSamples, (juce::int64) clip.sourceLengthSamples, nullptr);
         node.setProperty (DawClipIDs::gainDb,              clip.gainDb,                  nullptr);
         return node;
     }
@@ -56,10 +56,14 @@ struct DawClip
         clip.clipId              = juce::Uuid (node.getProperty (DawClipIDs::clipId).toString());
         clip.laneId              = juce::Uuid (node.getProperty (DawClipIDs::laneId).toString());
         clip.sourceFileId        = node.getProperty (DawClipIDs::sourceFileId).toString();
-        clip.sourceStartSample   = static_cast<std::int64_t> (node.getProperty (DawClipIDs::sourceStartSample));
-        clip.sourceEndSample     = static_cast<std::int64_t> (node.getProperty (DawClipIDs::sourceEndSample));
-        clip.timelineStartSample = static_cast<std::int64_t> (node.getProperty (DawClipIDs::timelineStartSample));
-        clip.sourceLengthSamples = static_cast<std::int64_t> (node.getProperty (DawClipIDs::sourceLengthSamples));
+        // Go through juce::int64 explicitly: juce::var exposes an operator int64
+        // but no operator for the platform's std::int64_t when that is a distinct
+        // type (long vs long long on LP64 Linux), so a direct static_cast would be
+        // ambiguous there. This is a no-op on macOS where the two types coincide.
+        clip.sourceStartSample   = static_cast<std::int64_t> (static_cast<juce::int64> (node.getProperty (DawClipIDs::sourceStartSample)));
+        clip.sourceEndSample     = static_cast<std::int64_t> (static_cast<juce::int64> (node.getProperty (DawClipIDs::sourceEndSample)));
+        clip.timelineStartSample = static_cast<std::int64_t> (static_cast<juce::int64> (node.getProperty (DawClipIDs::timelineStartSample)));
+        clip.sourceLengthSamples = static_cast<std::int64_t> (static_cast<juce::int64> (node.getProperty (DawClipIDs::sourceLengthSamples)));
         clip.gainDb              = static_cast<float> (static_cast<double> (node.getProperty (DawClipIDs::gainDb)));
         return clip;
     }

@@ -113,6 +113,11 @@ target_sources(Sonik PRIVATE
     Source/Features/Daw/State/DawState.h
     Source/Features/Daw/State/DawState.cpp
     Source/Features/Daw/State/DawClipModel.h
+    Source/Features/Daw/Session/SessionSchema.h
+    Source/Features/Daw/Session/SessionMigrator.h
+    Source/Features/Daw/Session/SessionMigrator.cpp
+    Source/Features/Daw/Session/SessionSerializer.h
+    Source/Features/Daw/Session/SessionSerializer.cpp
     Source/Features/Daw/Model/DawClip.h
     Source/Features/Daw/Model/ChannelGroup.h
     Source/Features/Daw/Model/MasterGridService.h
@@ -639,6 +644,10 @@ add_executable(SonikTests
     Tests/AutomationApplierTests.cpp
     Tests/AutomationLaneUiTests.cpp
     Tests/AutomationEditingTests.cpp
+    # EPIC-0012: Session Persistence & Audio Export
+    Tests/SessionSerializerTests.cpp
+    Source/Features/Daw/Session/SessionMigrator.cpp
+    Source/Features/Daw/Session/SessionSerializer.cpp
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})
