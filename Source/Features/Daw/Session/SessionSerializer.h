@@ -134,15 +134,15 @@ namespace Daw::Session
         // `.soniksession` and writing atomically. The supplied `daw` must be a
         // DawIDs::Daw branch; it is copied (the caller's live tree is untouched).
         //----------------------------------------------------------------------
-        SaveResult save (const juce::ValueTree& daw,
-                         const SessionMetadata& metadata,
-                         const juce::File& target);
+        virtual SaveResult save (const juce::ValueTree& daw,
+                                 const SessionMetadata& metadata,
+                                 const juce::File& target);
 
         //----------------------------------------------------------------------
         // Reads, validates, migrates, and reconstructs a session. The extension
         // is NOT enforced — content is authoritative.
         //----------------------------------------------------------------------
-        LoadResult load (const juce::File& source) const;
+        virtual LoadResult load (const juce::File& source) const;
 
         //----------------------------------------------------------------------
         // Builds the full SONIK_SESSION root tree (without touching disk).

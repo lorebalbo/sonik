@@ -1,6 +1,6 @@
 ---
 name: "EPIC-0012: Session Persistence & Audio Export"
-status: Open
+status: In Progress
 ---
 
 # 1. EPIC-0012: Session Persistence & Audio Export
@@ -146,7 +146,7 @@ Source/Features/Daw/
 
 ## 1.4. PRD Roadmap
 
-- [ ] PRD-0095: Session Schema & Serializer (`.soniksession` format, versioning + migration hook)
+- [x] PRD-0095: Session Schema & Serializer (`.soniksession` format, versioning + migration hook)
 - [ ] PRD-0096: Save / Save As / Open & Recent Sessions (model ⇄ file, view-state restore)
 - [ ] PRD-0097: Source-Id Resolution & Missing-Source Relocation on Open (reuse PRD-0039)
 - [ ] PRD-0098: Import External Audio File as Clip (load files into a lane)
