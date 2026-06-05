@@ -79,6 +79,15 @@ public:
     // so the owning panel/viewport can re-flow.
     std::function<void()> onContentHeightChanged;
 
+    // PRD-0098: the lane ValueTree whose content row contains `pointInStack`
+    // (stack-local coordinates), or invalid when over no lane. Used for file-
+    // drop lane targeting.
+    juce::ValueTree laneTreeAt (juce::Point<int> pointInStack) const;
+
+    // PRD-0098: the first lane of the first (topmost) group, used as the menu-
+    // import fallback target when no lane is focused (§1.5.7).
+    juce::ValueTree firstLaneTree() const;
+
     // Test access.
     ChannelGroupView* getGroupByDeckIndex (int deckIndex) const;
     const std::vector<std::unique_ptr<ChannelGroupView>>& getGroups() const { return groups_; }

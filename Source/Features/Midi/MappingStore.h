@@ -488,5 +488,12 @@ namespace sonik::midi
         // Set when the background job has been enqueued (or run inline).
         // Used by waitForUserProfilesLoaded.
         std::atomic<bool> loadJobDispatched { false };
+
+        // Guards the deferred MessageManager::callAsync continuation posted by
+        // enumerateUserProfilesAsync(): if this store is destroyed before the
+        // queued message is dispatched, the WeakReference becomes null and the
+        // continuation is a safe no-op instead of dereferencing a freed `this`
+        // (which previously locked a destroyed mutex and aborted the process).
+        JUCE_DECLARE_WEAK_REFERENCEABLE (MappingStore)
     };
 }

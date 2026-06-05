@@ -23,6 +23,7 @@
 #include "../../Deck/Database/TrackDatabase.h"
 #include "../../StemSeparation/StemCache.h"
 #include "../../StemSeparation/StemData.h"
+#include "../Import/ImportSourcePublisher.h"
 
 namespace Daw
 {
@@ -36,11 +37,30 @@ public:
     {
     }
 
+    // PRD-0098: inject the import-source publisher so an imported clip
+    // ("import:<hash>" sourceFileId) resolves to the publisher's atomic,
+    // in-memory reader instead of a disk path. Optional: when unset, import ids
+    // simply fail to resolve (silence), never crash. Message thread.
+    void setImportPublisher (Daw::Import::ImportSourcePublisher* publisher) noexcept
+    {
+        importPublisher_ = publisher;
+    }
+
     std::unique_ptr<juce::AudioFormatReader> resolve (const juce::String& contentHash,
                                                       const juce::String& laneKind) const
     {
         if (contentHash.isEmpty())
             return nullptr;
+
+        // PRD-0098: imported sources are keyed by an opaque "import:<hash>" id
+        // and are served from the atomic in-memory publisher (no disk I/O). An
+        // unpublished source resolves to nullptr -> the streamer plays silence.
+        if (contentHash.startsWith ("import:"))
+        {
+            if (importPublisher_ != nullptr)
+                return importPublisher_->makeReader (contentHash);
+            return nullptr;
+        }
 
         if (laneKind == "Instrumental")
             return resolveInstrumental (contentHash);
@@ -89,6 +109,7 @@ private:
 
     TrackDatabase&            database_;
     juce::AudioFormatManager& formatManager_;
+    Daw::Import::ImportSourcePublisher* importPublisher_ { nullptr };
 };
 
 } // namespace Daw

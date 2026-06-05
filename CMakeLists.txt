@@ -86,6 +86,43 @@ if(onnxruntime_ADDED)
     target_include_directories(onnxruntime INTERFACE "${onnxruntime_SOURCE_DIR}/include")
 endif()
 
+# LAME MP3 encoder (PRD-0100 §1.5.1) — pluggable MP3 backend dependency.
+# Detection order: pkg-config (mp3lame), then the Homebrew keg path, then a
+# generic find_library/find_path. When found we compile LameMp3EncoderBackend.cpp
+# and define SONIK_HAVE_LAME=1; when NOT found we compile NoMp3EncoderBackend.cpp
+# and leave SONIK_HAVE_LAME undefined (capability table reports MP3 unsupported).
+set(SONIK_LAME_FOUND FALSE)
+
+pkg_check_modules(MP3LAME QUIET mp3lame)
+if(MP3LAME_FOUND)
+    set(SONIK_LAME_FOUND TRUE)
+    set(SONIK_LAME_LIBRARY ${MP3LAME_LINK_LIBRARIES})
+    set(SONIK_LAME_INCLUDE_DIR ${MP3LAME_INCLUDE_DIRS})
+else()
+    # Homebrew keg-only path first, then a generic search.
+    find_library(SONIK_LAME_LIBRARY
+        NAMES mp3lame libmp3lame
+        HINTS /opt/homebrew/opt/lame/lib /usr/local/opt/lame/lib /usr/local/lib /usr/lib)
+    find_path(SONIK_LAME_INCLUDE_DIR
+        NAMES lame/lame.h
+        HINTS /opt/homebrew/opt/lame/include /usr/local/opt/lame/include /usr/local/include /usr/include)
+    if(SONIK_LAME_LIBRARY AND SONIK_LAME_INCLUDE_DIR)
+        set(SONIK_LAME_FOUND TRUE)
+    endif()
+endif()
+
+if(SONIK_LAME_FOUND)
+    message(STATUS "Sonik: LAME found -> MP3 export ENABLED "
+                   "(lib=${SONIK_LAME_LIBRARY}, include=${SONIK_LAME_INCLUDE_DIR})")
+    set(SONIK_MP3_BACKEND_SOURCES
+        Source/Features/Daw/Export/LameMp3EncoderBackend.h
+        Source/Features/Daw/Export/LameMp3EncoderBackend.cpp)
+else()
+    message(STATUS "Sonik: LAME NOT found -> MP3 export DISABLED (WAV + FLAC only)")
+    set(SONIK_MP3_BACKEND_SOURCES
+        Source/Features/Daw/Export/NoMp3EncoderBackend.cpp)
+endif()
+
 # Sonik Application
 juce_add_gui_app(Sonik
     PRODUCT_NAME "Sonik"
@@ -120,11 +157,22 @@ target_sources(Sonik PRIVATE
     Source/Features/Daw/Session/SessionSerializer.cpp
     Source/Features/Daw/Session/SourceIdResolver.h
     Source/Features/Daw/Session/SourceIdResolver.cpp
+    Source/Features/Daw/Session/SessionSourceResolution.h
+    Source/Features/Daw/Session/SessionSourceResolution.cpp
     Source/Features/Daw/Session/SessionController.h
     Source/Features/Daw/Session/SessionController.cpp
+    Source/Features/Daw/Session/Ui/SessionDialogs.h
+    Source/Features/Daw/Session/Ui/SessionDialogs.cpp
+    Source/Features/Daw/Session/Ui/UnresolvedSourcesDialog.h
+    Source/Features/Daw/Session/Ui/UnresolvedSourcesDialog.cpp
+    Source/Features/Daw/Session/Ui/SessionMenu.h
+    Source/Features/Daw/Session/Ui/SessionMenu.cpp
     Source/Features/Daw/Import/ImportSource.h
+    Source/Features/Daw/Import/ImportSourcePublisher.h
     Source/Features/Daw/Import/ImportClipPlacer.h
     Source/Features/Daw/Import/ImportClipPlacer.cpp
+    Source/Features/Daw/Import/AudioFileImporter.h
+    Source/Features/Daw/Import/AudioFileImporter.cpp
     Source/Features/Daw/Model/DawClip.h
     Source/Features/Daw/Model/ChannelGroup.h
     Source/Features/Daw/Model/MasterGridService.h
@@ -172,6 +220,20 @@ target_sources(Sonik PRIVATE
     Source/Features/Daw/Recording/AlignmentResolver.h
     Source/Features/Daw/Recording/AlignmentResolver.cpp
     Source/Features/Daw/Recording/PerformanceCaptureSink.h
+    # PRD-0099: Offline Render Driver (non-real-time engine driver, no UI)
+    Source/Features/Daw/Export/OfflineRenderDriver.h
+    Source/Features/Daw/Export/OfflineRenderDriver.cpp
+    # PRD-0100: Audio Exporter (WAV / FLAC / MP3) — programmatic API, no UI
+    Source/Features/Daw/Export/ExportOptions.h
+    Source/Features/Daw/Export/Mp3EncoderBackend.h
+    Source/Features/Daw/Export/AudioExporter.h
+    Source/Features/Daw/Export/AudioExporter.cpp
+    # PRD-0101: Export Dialog, Progress & Cancel (UI capstone)
+    Source/Features/Daw/Export/ExportRunner.h
+    Source/Features/Daw/Export/ExportJobBuilder.h
+    Source/Features/Daw/Export/Ui/ExportDialog.h
+    Source/Features/Daw/Export/Ui/ExportDialog.cpp
+    ${SONIK_MP3_BACKEND_SOURCES}
     Source/Features/Deck/Database/TrackDatabase.h
     Source/Features/Deck/Database/TrackDatabase.cpp
     Source/Features/AudioEngine/AudioEngine.h
@@ -451,6 +513,13 @@ if(APPLE)
     )
 endif()
 
+# PRD-0100: LAME MP3 backend (define + include + link) for the Sonik app.
+if(SONIK_LAME_FOUND)
+    target_compile_definitions(Sonik PRIVATE SONIK_HAVE_LAME=1)
+    target_include_directories(Sonik PRIVATE ${SONIK_LAME_INCLUDE_DIR})
+    target_link_libraries(Sonik PRIVATE ${SONIK_LAME_LIBRARY})
+endif()
+
 # Test target
 add_executable(SonikTests
     Tests/TestRunner.cpp
@@ -654,13 +723,35 @@ add_executable(SonikTests
     # EPIC-0012: Session Persistence & Audio Export
     Tests/SessionSerializerTests.cpp
     Tests/SourceIdResolverTests.cpp
+    Tests/SourceResolutionIntegrationTests.cpp
     Tests/SessionControllerTests.cpp
+    Tests/SessionIntegrationTests.cpp
     Tests/ImportClipTests.cpp
+    Tests/ImportPipelineTests.cpp
     Source/Features/Daw/Session/SessionMigrator.cpp
     Source/Features/Daw/Session/SessionSerializer.cpp
     Source/Features/Daw/Session/SourceIdResolver.cpp
+    Source/Features/Daw/Session/SessionSourceResolution.cpp
     Source/Features/Daw/Session/SessionController.cpp
+    Source/Features/Daw/Session/Ui/SessionMenu.cpp
+    Source/Features/Daw/Session/Ui/SessionDialogs.cpp
+    Source/Features/Daw/Session/Ui/UnresolvedSourcesDialog.cpp
     Source/Features/Daw/Import/ImportClipPlacer.cpp
+    Source/Features/Daw/Import/AudioFileImporter.cpp
+    # PRD-0099: Offline Render Driver (driven headlessly by OfflineRenderDriverTests)
+    Tests/OfflineRenderDriverTests.cpp
+    Source/Features/Daw/Export/OfflineRenderDriver.cpp
+    # PRD-0100: Audio Exporter
+    Tests/AudioExporterTests.cpp
+    Source/Features/Daw/Export/AudioExporter.cpp
+    # PRD-0101: Export Dialog, Progress & Cancel — the dialog .cpp is linked so
+    # the test agent can construct it headlessly (createExportDialogForTest) and
+    # call its pure seams (buildExportOptions / computeControlState /
+    # validateForExport). ExportRunner.h / ExportJobBuilder.h are header-only.
+    Source/Features/Daw/Export/Ui/ExportDialog.cpp
+    Tests/AudioExportTests.cpp
+    Tests/SessionRoundTripTests.cpp
+    ${SONIK_MP3_BACKEND_SOURCES}
 )
 
 target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})
@@ -698,6 +789,13 @@ if(APPLE)
         "-framework CoreML"
         "-framework Foundation"
     )
+endif()
+
+# PRD-0100: LAME MP3 backend for the test target (needed for the MP3 round-trip).
+if(SONIK_LAME_FOUND)
+    target_compile_definitions(SonikTests PRIVATE SONIK_HAVE_LAME=1)
+    target_include_directories(SonikTests PRIVATE ${SONIK_LAME_INCLUDE_DIR})
+    target_link_libraries(SonikTests PRIVATE ${SONIK_LAME_LIBRARY})
 endif()
 
 #==============================================================================

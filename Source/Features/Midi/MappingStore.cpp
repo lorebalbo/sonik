@@ -171,19 +171,26 @@ namespace sonik::midi
     {
         loadJobDispatched.store (true, std::memory_order_release);
 
-        threadPool->addJob ([this]() noexcept
+        juce::WeakReference<MappingStore> weakThis (this);
+
+        threadPool->addJob ([this, weakThis]() noexcept
         {
             std::vector<MappingLoadError> errors;
             std::vector<UserProfileSource> sources;
             try { sources = collectUserProfileSources (errors); }
             catch (...) { /* never propagate */ }
 
-            juce::MessageManager::callAsync ([this,
+            juce::MessageManager::callAsync ([weakThis,
                                               sources = std::move (sources),
                                               errors  = std::move (errors)]() mutable
             {
-                loadUserProfileSources (std::move (sources), std::move (errors));
-                onUserProfilesLoaded();
+                // If the store was destroyed before this queued message ran, the
+                // weak reference is now null and we must NOT touch freed state.
+                if (auto* self = weakThis.get())
+                {
+                    self->loadUserProfileSources (std::move (sources), std::move (errors));
+                    self->onUserProfilesLoaded();
+                }
             });
         });
     }

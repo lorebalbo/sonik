@@ -233,6 +233,65 @@ void DawPanel::afterTransformChanged()
     repaint();
 }
 
+//==============================================================================
+// PRD-0096: view-state capture / restore.
+//
+// The schema persists the horizontal zoom as samples-per-pixel (resolution-
+// independent: it does not depend on the viewport width or the current tempo's
+// samples-per-beat the way pixelsPerBeat does). We therefore convert at the
+// transform boundary:  samplesPerPixel = samplesPerBeat / pixelsPerBeat.
+//==============================================================================
+double DawPanel::captureViewZoomSamplesPerPixel() const
+{
+    const double samplesPerBeat = transform_.grid().samplesPerBeat;
+    const double pixelsPerBeat   = transform_.getPixelsPerBeat();
+    if (pixelsPerBeat <= 0.0)
+        return 0.0;
+    return samplesPerBeat / pixelsPerBeat;
+}
+
+void DawPanel::restoreViewState (std::optional<double>       zoomSamplesPerPixel,
+                                 std::optional<std::int64_t> scrollStartSample)
+{
+    const double samplesPerBeat = transform_.grid().samplesPerBeat;
+
+    // --- Zoom: convert samples-per-pixel back to pixels-per-beat, then clamp
+    // through the transform (which enforces kMin/kMaxPixelsPerBeat). When the
+    // persisted value is absent or non-positive, fall back to a fit-to-width
+    // default rather than applying garbage (§1.5.5).
+    bool zoomApplied = false;
+    if (zoomSamplesPerPixel.has_value() && *zoomSamplesPerPixel > 0.0 && samplesPerBeat > 0.0)
+    {
+        const double targetPpb = samplesPerBeat / *zoomSamplesPerPixel;
+        if (std::isfinite (targetPpb) && targetPpb > 0.0)
+        {
+            transform_.setPixelsPerBeat (targetPpb);
+            zoomApplied = true;
+        }
+    }
+
+    if (! zoomApplied)
+        transform_.setPixelsPerBeat (kDefaultPixelsPerBeat); // fit-to-width default
+
+    // --- Scroll: the transform clamps the left edge to its scroll bounds, so an
+    // out-of-range persisted value collapses harmlessly to the nearest valid
+    // edge; absence falls back to scroll-start (the min left edge).
+    if (scrollStartSample.has_value())
+        transform_.setLeftEdgeSample (*scrollStartSample);
+    else
+        transform_.setLeftEdgeSample (transform_.minLeftEdgeSample());
+
+    afterTransformChanged();
+}
+
+void DawPanel::setSessionTitle (const juce::String& titleWithMarker)
+{
+    if (sessionTitle_ == titleWithMarker)
+        return;
+    sessionTitle_ = titleWithMarker;
+    repaint();
+}
+
 void DawPanel::updateNowLine()
 {
     if (! nowLineProvider_)
@@ -462,12 +521,22 @@ void DawPanel::paint (juce::Graphics& g)
     g.setColour (kHeaderBg);
     g.fillRect (header);
 
-    // Title, left-aligned (Space Mono, ink on the light header).
+    // Title, left-aligned (Space Mono, ink on the light header). PRD-0096: when
+    // a session is active the indicator (file name + trailing dirty dot) is
+    // shown after the "ARRANGEMENT" label so the DJ always knows which file
+    // they are editing and whether it has unsaved changes.
     g.setColour (kInk);
     g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-    g.drawText ("ARRANGEMENT",
-                header.withTrimmedLeft (8).withTrimmedRight (kHeaderHeight + 8),
-                juce::Justification::centredLeft, false);
+    auto titleArea = header.withTrimmedLeft (8).withTrimmedRight (kHeaderHeight + 8);
+    g.drawText ("ARRANGEMENT", titleArea, juce::Justification::centredLeft, false);
+
+    if (sessionTitle_.isNotEmpty())
+    {
+        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+        g.drawText (sessionTitle_,
+                    titleArea.withTrimmedLeft (104),
+                    juce::Justification::centredLeft, true);
+    }
 
     // Collapse/expand toggle: 2-px ink border, surface fill, glyph centred.
     g.setColour (kSurface);
@@ -543,6 +612,147 @@ void DawPanel::paint (juce::Graphics& g)
     }
 }
 
+//==============================================================================
+// PRD-0098: external audio-file drag-drop import.
+//==============================================================================
+void DawPanel::paintOverChildren (juce::Graphics& g)
+{
+    if (! dropActive_ || dropHighlight_.isEmpty())
+        return;
+
+    // Monochrome drop-target highlight (DESIGN.md): a 2-px ink border around the
+    // target lane row over a sparse dithered ink wash, plus a 2-px ink marker at
+    // the snapped drop sample. No colour, no radius, no gradients.
+    g.setColour (kInk.withAlpha (0.10f));
+    g.fillRect (dropHighlight_);
+
+    g.setColour (kInk);
+    g.drawRect (dropHighlight_, 2);
+
+    if (dropMarkerX_ >= dropHighlight_.getX() && dropMarkerX_ <= dropHighlight_.getRight())
+        g.fillRect (dropMarkerX_, dropHighlight_.getY(), 2, dropHighlight_.getHeight());
+}
+
+std::int64_t DawPanel::snapImportSample (std::int64_t rawSample) const
+{
+    const bool snapOn = isSnapEnabledForImport ? isSnapEnabledForImport() : true;
+    const std::int64_t clamped = juce::jmax ((std::int64_t) 0, rawSample);
+    return snapOn ? transform_.snapSampleToGrid (clamped) : clamped;
+}
+
+juce::ValueTree DawPanel::firstLaneTree() const
+{
+    return stack_.firstLaneTree();
+}
+
+juce::ValueTree DawPanel::laneTreeAtPanelPoint (juce::Point<int> panelLocalPoint,
+                                                std::int64_t& snappedSampleOut) const
+{
+    // Content-area x = panel x minus the lane-header gutter; the transform maps
+    // content px -> timeline sample. Snap honours the live snap toggle.
+    const int contentX = panelLocalPoint.getX() - contentLeftGutter();
+    const std::int64_t raw = transform_.xToSample ((double) juce::jmax (0, contentX));
+    snappedSampleOut = snapImportSample (raw);
+
+    // Map the panel point into the channel-group stack's coordinate space (the
+    // stack scrolls inside bodyViewport_), then hit-test for the lane row.
+    const auto stackPoint = stack_.getLocalPoint (this, panelLocalPoint);
+    auto lane = stack_.laneTreeAt (stackPoint);
+    if (! lane.isValid())
+        lane = stack_.firstLaneTree();   // menu-import fallback (§1.5.7)
+    return lane;
+}
+
+void DawPanel::updateDropHighlight (int panelX, int panelY)
+{
+    // Only highlight when the cursor is over an actual lane row in the body.
+    const auto stackPoint = stack_.getLocalPoint (this, juce::Point<int> (panelX, panelY));
+    if (! stack_.laneTreeAt (stackPoint).isValid())
+    {
+        clearDropHighlight();
+        return;
+    }
+
+    std::int64_t snapped = 0;
+    laneTreeAtPanelPoint ({ panelX, panelY }, snapped);
+
+    // The lane content row spans the content area (right of the gutter). Derive a
+    // crisp, stable row band by quantising the pointer Y to the lane-height grid
+    // measured from the body top (header + ruler), accounting for body scroll.
+    const int gutter    = contentLeftGutter();
+    const int rowHeight = DawLayout::kLaneHeight;
+    const int bodyTop   = kHeaderHeight + TimeRuler::kRulerHeight;
+    const int scrollY   = bodyViewport_.getViewPositionY();
+    const int relY      = juce::jmax (0, (panelY - bodyTop) + scrollY);
+    const int rowTop    = bodyTop - scrollY + (relY / rowHeight) * rowHeight;
+
+    dropHighlight_ = juce::Rectangle<int> (gutter, rowTop,
+                                           juce::jmax (0, getWidth() - gutter),
+                                           rowHeight)
+                         .getIntersection (juce::Rectangle<int> (0, bodyTop,
+                                                                 getWidth(),
+                                                                 juce::jmax (0, getHeight() - bodyTop)));
+    dropMarkerX_   = gutter + (int) std::llround (transform_.sampleToX (snapped));
+    dropActive_    = true;
+    repaint();
+}
+
+void DawPanel::clearDropHighlight()
+{
+    if (! dropActive_ && dropHighlight_.isEmpty())
+        return;
+    dropActive_  = false;
+    dropHighlight_ = {};
+    dropMarkerX_ = -1;
+    repaint();
+}
+
+bool DawPanel::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    return isImportableFiles ? isImportableFiles (files) : false;
+}
+
+void DawPanel::fileDragEnter (const juce::StringArray& files, int x, int y)
+{
+    if (isInterestedInFileDrag (files))
+        updateDropHighlight (x, y);
+}
+
+void DawPanel::fileDragMove (const juce::StringArray& files, int x, int y)
+{
+    if (isInterestedInFileDrag (files))
+        updateDropHighlight (x, y);
+}
+
+void DawPanel::fileDragExit (const juce::StringArray&)
+{
+    clearDropHighlight();
+}
+
+void DawPanel::filesDropped (const juce::StringArray& files, int x, int y)
+{
+    clearDropHighlight();
+
+    if (! onFilesDropped || ! isInterestedInFileDrag (files))
+        return;
+
+    std::int64_t snapped = 0;
+    const auto lane = laneTreeAtPanelPoint ({ x, y }, snapped);
+    if (! lane.isValid())
+        return;
+
+    juce::Array<juce::File> audioFiles;
+    for (const auto& path : files)
+    {
+        const juce::File f (path);
+        if (f.existsAsFile())
+            audioFiles.add (f);
+    }
+
+    if (! audioFiles.isEmpty())
+        onFilesDropped (audioFiles, lane, snapped);
+}
+
 void DawPanel::mouseUp (const juce::MouseEvent& event)
 {
     dragging_ = false;
@@ -614,6 +824,28 @@ void DawPanel::mouseDown (const juce::MouseEvent& event)
         return;
     if (event.getPosition().x < contentLeftGutter())
         return;
+
+    // PRD-0098: right-click over a lane row offers an "Import Audio File..."
+    // context entry, placing the clip at the (snapped) cursor position on that
+    // lane. Left-clicks start a horizontal pan as before.
+    if (event.mods.isPopupMenu() && onImportRequestedAtPoint != nullptr)
+    {
+        std::int64_t snapped = 0;
+        const auto lane = laneTreeAtPanelPoint (event.getPosition(), snapped);
+        if (lane.isValid())
+        {
+            juce::PopupMenu menu;
+            menu.addItem (1, "Import Audio File...");
+            menu.showMenuAsync (
+                juce::PopupMenu::Options().withTargetComponent (this),
+                [this, lane, snapped] (int result)
+                {
+                    if (result == 1 && onImportRequestedAtPoint != nullptr)
+                        onImportRequestedAtPoint (lane, snapped);
+                });
+        }
+        return;
+    }
 
     dragging_  = true;
     dragLastX_ = event.getPosition().x;

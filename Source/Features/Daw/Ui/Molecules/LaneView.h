@@ -43,6 +43,10 @@ public:
 
     ChannelGroup::LaneKind getLaneKind() const noexcept { return kind_; }
 
+    // PRD-0098: the backing lane ValueTree (daw...lanes[i]) so a file drop can
+    // target the lane node under the cursor. May be invalid in tests.
+    juce::ValueTree getLaneTree() const noexcept { return laneTree_; }
+
     bool isActive() const noexcept { return active_; }
     void setActive (bool shouldBeActive);
 

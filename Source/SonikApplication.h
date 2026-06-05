@@ -33,6 +33,14 @@
 #include "Features/Mixer/State/MixerStateBridge.h"
 #include "Features/Daw/State/DawState.h"
 #include "Features/Daw/Model/MasterGridService.h"
+#include "Features/Daw/Session/SessionSerializer.h"
+#include "Features/Daw/Session/SessionController.h"
+#include "Features/Daw/Session/SessionSourceResolution.h"
+#include "Features/Daw/Session/Ui/SessionMenu.h"
+#include "Features/Daw/Import/ImportSource.h"
+#include "Features/Daw/Import/ImportSourcePublisher.h"
+#include "Features/Daw/Import/ImportClipPlacer.h"
+#include "Features/Daw/Import/AudioFileImporter.h"
 #include "Features/Midi/UI/MidiSettingsWindow.h"
 #include <memory>
 
@@ -140,6 +148,34 @@ private:
     std::unique_ptr<MainWindow>            mainWindow;
     std::unique_ptr<sonik::midi::MidiSettingsWindow> midiSettingsWindow;  // PRD-0048
     bool                                   quitSaveActive = false;
+
+    // EPIC-0012 / PRD-0096: session lifecycle. The application owns the shared
+    // ApplicationProperties (recents storage), the serializer, the controller
+    // (constructed with the live `daw` branch, the DAW UndoManager, and the
+    // PropertiesFile), and the File-menu command surface.
+    std::unique_ptr<juce::ApplicationProperties>    appProperties;       // PRD-0096
+    std::unique_ptr<Daw::Session::SessionSerializer> sessionSerializer;  // PRD-0095
+    std::unique_ptr<Daw::Session::SessionController>  sessionController;  // PRD-0096
+    std::unique_ptr<Daw::Session::Ui::SessionMenu>    sessionMenu;        // PRD-0096
+    std::unique_ptr<juce::FileChooser>                sessionFileChooser; // active picker
+    // PRD-0097: source-id resolution + missing-source relocation integration.
+    std::unique_ptr<Daw::Session::SessionSourceResolution> sourceResolution;
+    bool                                              quitSessionActive = false;
+
+    // PRD-0098: external audio-file import. The registry mints/de-dupes ref-
+    // counted source ids; the publisher atomically serves baked buffers to the
+    // engine's resolver; the placer turns decoded sources into clips as one undo
+    // transaction; the importer drives the background decode/resample/hash plus
+    // the message-thread register/publish/analyse/place. Message thread only.
+    std::unique_ptr<Daw::Import::ImportSourceRegistry>  importRegistry;
+    std::unique_ptr<Daw::Import::ImportSourcePublisher> importPublisher;
+    std::unique_ptr<Daw::Import::ImportClipPlacer>      importPlacer;
+    std::unique_ptr<Daw::Import::AudioFileImporter>     audioFileImporter;
+    std::unique_ptr<juce::FileChooser>                  importFileChooser;
+
+    void buildSessionLifecycle();   // PRD-0096
+    void updateSessionTitleUi (const juce::String& displayTitle, bool dirty);
+    void proceedWithPreparationListQuit();  // PRD-0096: post-session-guard quit chain
 
     void openMidiSettingsWindow();  // PRD-0048
 

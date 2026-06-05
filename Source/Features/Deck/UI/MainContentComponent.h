@@ -512,6 +512,16 @@ public:
     /** Access the layout manager for MIDI handler engine registration. */
     DeckLayoutManager& getLayoutManager() noexcept { return layoutManager; }
 
+    /** PRD-0096: the DAW arrangement panel — the SessionController host wires
+        view-state capture/restore, the undo baseline, and the in-DAW session
+        indicator through it. */
+    Daw::DawPanel& getDawPanel() noexcept { return dawPanel; }
+
+    /** PRD-0098: the arrangement playback controller — the host injects the
+        import-source publisher into its ClipSourceResolver so imported clips
+        ("import:<hash>") resolve to the atomic in-memory reader. */
+    Daw::DawPlaybackController* getPlaybackController() noexcept { return playbackController.get(); }
+
     void savePreparationListBeforeQuit (std::function<void(bool)> completion)
     {
         if (libraryComponent != nullptr)

@@ -88,6 +88,14 @@ public:
     // Exposed for tests: which lanes are currently active.
     bool isLaneActive (ChannelGroup::LaneKind kind) const;
 
+    // PRD-0098: the lane ValueTree whose content row contains `pointInGroup`
+    // (group-local coordinates), or an invalid tree when the point is over the
+    // header / automation area / no lane. Used for file-drop lane targeting.
+    juce::ValueTree laneTreeAt (juce::Point<int> pointInGroup) const;
+
+    // PRD-0098: the first source lane's tree (for menu-import fallback target).
+    juce::ValueTree firstLaneTree() const;
+
     // PRD-0083/0084/0085/0086: Wire edit dispatcher into all lanes.
     void setEditDispatcher (Daw::EditCommandDispatcher* dispatcher);
 

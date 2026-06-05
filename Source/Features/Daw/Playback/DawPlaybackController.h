@@ -46,6 +46,14 @@ public:
     /// Pool consumed by the AudioEngine's TimelineRenderer (audio thread reads).
     ClipStreamerPool& getPool() noexcept { return pool_; }
 
+    /// PRD-0098: inject the import-source publisher so imported clips
+    /// ("import:<hash>") resolve to the atomic in-memory reader (audible after
+    /// publish, silence before). Message thread, set once at construction time.
+    void setImportPublisher (Daw::Import::ImportSourcePublisher* publisher) noexcept
+    {
+        sourceResolver_.setImportPublisher (publisher);
+    }
+
     /// Update the runtime/device sample rate (call when the device starts/changes).
     void setRuntimeSampleRate (double runtimeRate) noexcept
     {

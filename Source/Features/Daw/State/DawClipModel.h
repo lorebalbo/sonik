@@ -26,6 +26,13 @@ namespace DawClipIDs
     DECLARE_CLIP_ID (sourceLengthSamples) // int64, total length of the source
     DECLARE_CLIP_ID (gainDb)              // float dB, default 0.0 (unity)
     DECLARE_CLIP_ID (alignmentMode)       // PRD-0074: "GridAligned"/"FirstBeatAnchored"
+    DECLARE_CLIP_ID (missingSource)       // PRD-0097: bool, true while this clip's
+                                          // sourceFileId is unresolved (Missing). The
+                                          // single source of truth for the DESIGN.md
+                                          // "Glitch" treatment and for excluding the
+                                          // clip from the EPIC-0010 snapshot. NOT
+                                          // persisted to disk (resolution is recomputed
+                                          // on every open); set/cleared by the resolver.
 
     #undef DECLARE_CLIP_ID
 }

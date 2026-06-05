@@ -156,6 +156,16 @@ public:
                     if (!clipNode.hasType (DawIDs::clip))
                         continue;
 
+                    // PRD-0097: a clip whose source did not resolve on open is
+                    // flagged Missing in the daw tree. It is preserved in the
+                    // model (never dropped) and shown with the "Glitch" treatment,
+                    // but it MUST NOT enter the engine snapshot — the audio thread
+                    // never references an unreadable source. Skip it until the
+                    // source is relocated/re-derived (which clears the flag and
+                    // triggers a recompile that re-admits the clip).
+                    if (static_cast<bool> (clipNode.getProperty (DawClipIDs::missingSource)))
+                        continue;
+
                     if (laneSnap.count >= kMaxClipsPerLane)
                         break; // clip cap exceeded for this lane
 

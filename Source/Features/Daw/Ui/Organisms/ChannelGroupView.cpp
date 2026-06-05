@@ -205,4 +205,26 @@ void ChannelGroupView::resized()
             bounds.removeFromTop (automationStack_->getPreferredHeight()));
 }
 
+juce::ValueTree ChannelGroupView::laneTreeAt (juce::Point<int> pointInGroup) const
+{
+    if (collapsed_)
+        return {};
+
+    for (const auto& lane : lanes_)
+    {
+        if (lane == nullptr)
+            continue;
+        if (lane->getBounds().contains (pointInGroup))
+            return lane->getLaneTree();
+    }
+    return {};
+}
+
+juce::ValueTree ChannelGroupView::firstLaneTree() const
+{
+    if (lanes_[0] != nullptr)
+        return lanes_[0]->getLaneTree();
+    return {};
+}
+
 } // namespace Daw

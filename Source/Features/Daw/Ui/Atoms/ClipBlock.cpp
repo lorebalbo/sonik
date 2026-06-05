@@ -34,7 +34,12 @@ ClipBlock::~ClipBlock()
 void ClipBlock::reloadClip()
 {
     if (clipNode_.isValid())
+    {
         clip_ = DawClip::fromValueTree (clipNode_);
+        // PRD-0097: the daw tree is the single source of truth for the per-clip
+        // "missing source" state; mirror it locally for paint().
+        missingSource_ = static_cast<bool> (clipNode_.getProperty (DawClipIDs::missingSource));
+    }
 }
 
 double ClipBlock::samplesPerPixelFor (const TimelineTransform& transform)
@@ -128,6 +133,14 @@ void ClipBlock::paint (juce::Graphics& g)
     else if (! inner.isEmpty())
         paintPlaceholder (g, inner);
 
+    // PRD-0097: a clip whose source did not resolve gets the DESIGN.md "Glitch"
+    // treatment — a random monochrome dithering pattern (visual noise) laid over
+    // the waveform/placeholder, signalling a system emergency without colour. The
+    // clip is preserved and inspectable; only the audio is excluded (it is also
+    // omitted from the engine snapshot by ArrangementCompiler).
+    if (missingSource_ && ! inner.isEmpty())
+        paintGlitch (g, inner);
+
     // Mandatory 2-px solid ink border, zero radius (DESIGN.md button frame).
     g.setColour (kInk);
     g.drawRect (bounds, 2);
@@ -203,6 +216,23 @@ void ClipBlock::paintPlaceholder (juce::Graphics& g, juce::Rectangle<int> inner)
     for (int y = inner.getY(); y < inner.getBottom(); y += 4)
         for (int x = inner.getX() + ((y / 4) % 2) * 2; x < inner.getRight(); x += 4)
             g.fillRect (x, y, 1, 1);
+}
+
+void ClipBlock::paintGlitch (juce::Graphics& g, juce::Rectangle<int> inner)
+{
+    // DESIGN.md §5 "Glitch / Warning States": random dithering (visual noise),
+    // strictly monochrome (#2d2d2d ink), zero radius. The randomness is seeded
+    // from the clip id so every repaint of the SAME clip is stable (no flicker),
+    // while different clips show different noise — a deterministic "broken" look.
+    auto seed = static_cast<juce::uint32> (clip_.clipId.toString().hashCode());
+    if (seed == 0) seed = 0x9E3779B9u;
+    juce::Random rng (static_cast<juce::int64> (seed));
+
+    g.setColour (kInk);
+    for (int y = inner.getY(); y < inner.getBottom(); ++y)
+        for (int x = inner.getX(); x < inner.getRight(); ++x)
+            if (rng.nextFloat() < 0.42f) // ~42% pixel density: dense, unmistakably broken
+                g.fillRect (x, y, 1, 1);
 }
 
 void ClipBlock::paintEdgeHandles (juce::Graphics& g)
@@ -382,7 +412,8 @@ void ClipBlock::valueTreePropertyChanged (juce::ValueTree& tree, const juce::Ide
      || property == DawClipIDs::timelineStartSample
      || property == DawClipIDs::sourceLengthSamples
      || property == DawClipIDs::sourceFileId
-     || property == DawClipIDs::gainDb)
+     || property == DawClipIDs::gainDb
+     || property == DawClipIDs::missingSource) // PRD-0097: toggle the Glitch look
     {
         reloadClip();
         // Re-place ourselves immediately so the block width tracks the growing

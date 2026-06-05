@@ -105,6 +105,7 @@ public:
         generation_.fetch_add (1, std::memory_order_release);
         underrunCount_.store (0, std::memory_order_relaxed);
         exhausted_ = false;
+        exhaustedFlag_.store (false, std::memory_order_release);
 
         // Restart background reader thread.
         running_.store (true, std::memory_order_relaxed);
@@ -116,8 +117,52 @@ public:
     {
         running_.store (false, std::memory_order_relaxed);
         cv_.notify_all();
+        producedCv_.notify_all();
         if (readerThread_.joinable())
             readerThread_.join();
+    }
+
+    //--------------------------------------------------------------------------
+    // PRD-0099: Offline synchronous-full-read seam (BACKGROUND THREAD ONLY).
+    //
+    // The live (audio-thread) path tolerates a prefetch miss by emitting silence
+    // (see readInto). An offline render must NEVER substitute silence for a slow
+    // read, so the offline driver puts the streamer into synchronous mode and
+    // calls waitUntilReady(n) on its OWN background thread before each readInto.
+    // waitUntilReady blocks the CALLING (non-audio) thread until either the ring
+    // holds >= n project-rate samples OR the source is exhausted (genuine end of
+    // content), so the subsequent readInto consumes real samples and only fills
+    // silence past the true source end. Live behaviour is unaffected: the flag
+    // defaults off and the audio thread never calls waitUntilReady.
+    //--------------------------------------------------------------------------
+
+    /// Enable/disable synchronous full-read mode for the streamer's lifetime
+    /// (render-scoped). Message/background thread only. Does NOT affect readInto;
+    /// it only gates whether waitUntilReady is meaningful for the caller.
+    void setSynchronousMode (bool enabled) noexcept
+    {
+        synchronousMode_.store (enabled, std::memory_order_relaxed);
+    }
+
+    bool isSynchronousMode() const noexcept
+    {
+        return synchronousMode_.load (std::memory_order_relaxed);
+    }
+
+    /// Block the calling (background) thread until at least `numSamples`
+    /// project-rate samples are ready in the ring, OR the reader has exhausted
+    /// the source (no more samples will ever arrive). Returns the number of
+    /// samples actually available at the moment it returns (>= numSamples unless
+    /// the source ended first). BACKGROUND THREAD ONLY — never the audio thread.
+    int waitUntilReady (int numSamples) noexcept
+    {
+        std::unique_lock<std::mutex> lk (producedMutex_);
+        producedCv_.wait (lk, [this, numSamples] {
+            return ! running_.load (std::memory_order_relaxed)
+                || fifo_.getNumReady() >= numSamples
+                || exhaustedFlag_.load (std::memory_order_acquire);
+        });
+        return fifo_.getNumReady();
     }
 
     /// Returns true if the source is valid (reader != nullptr or silence mode).
@@ -225,6 +270,20 @@ private:
                     break;
             }
 
+            // PRD-0099: RAII notifier — on EVERY exit path of this iteration
+            // (including all `continue`s below) mirror exhaustion into the
+            // atomic and wake any synchronous offline reader blocked in
+            // waitUntilReady(). Reader thread only; the audio thread never sees it.
+            struct ProducedNotifier
+            {
+                ClipStreamer& s;
+                ~ProducedNotifier()
+                {
+                    s.exhaustedFlag_.store (s.exhausted_, std::memory_order_release);
+                    s.producedCv_.notify_all();
+                }
+            } producedNotifier { *this };
+
             if (exhausted_)
                 continue;
 
@@ -327,9 +386,14 @@ private:
                 }
 
                 fifo_.finishedWrite (producedOut);
-                continue;
             }
+            // ProducedNotifier (declared above) fires here on iteration exit,
+            // mirroring exhaustion and waking any synchronous offline reader.
         }
+
+        // Final wake on shutdown so a blocked waitUntilReady() never deadlocks.
+        exhaustedFlag_.store (true, std::memory_order_release);
+        producedCv_.notify_all();
     }
 
     //--------------------------------------------------------------------------
@@ -362,6 +426,16 @@ private:
     // Background reader thread.
     std::thread               readerThread_;
     std::condition_variable   cv_;
+
+    // PRD-0099: offline synchronous-full-read seam. `synchronousMode_` is a
+    // render-scoped flag (live default: false). `exhaustedFlag_` mirrors the
+    // mutex-protected `exhausted_` so waitUntilReady() can observe end-of-source
+    // without taking configMutex_. `producedCv_` is signalled by the reader after
+    // each ring write / on exhaustion so an offline consumer can block for data.
+    std::atomic<bool>         synchronousMode_ { false };
+    std::atomic<bool>         exhaustedFlag_   { false };
+    std::mutex                producedMutex_;
+    std::condition_variable   producedCv_;
 };
 
 //==============================================================================

@@ -18,6 +18,7 @@
 
 #include <functional>
 #include <limits>
+#include <optional>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -42,6 +43,7 @@ namespace Daw
 {
 
 class DawPanel final : public juce::Component,
+                       public juce::FileDragAndDropTarget,
                        private juce::Timer
 {
 public:
@@ -154,12 +156,97 @@ public:
     TimelineTransform&       getTransform()       noexcept { return transform_; }
     const TimelineTransform& getTransform() const noexcept { return transform_; }
 
+    //--------------------------------------------------------------------------
+    // PRD-0096: the DAW edit-history undo manager is owned here (the
+    // EditCommandDispatcher delegates to it). The SessionController consumes it
+    // to reset the undo baseline after Open / New.
+    //--------------------------------------------------------------------------
+    juce::UndoManager& getUndoManager() noexcept { return undoManager_; }
+
+    //--------------------------------------------------------------------------
+    // PRD-0096 view-state capture/restore. The persisted view chrome is the
+    // horizontal zoom (samples-per-pixel) and the left-edge scroll sample.
+    // captureViewZoomSamplesPerPixel()/captureViewScrollStartSample() read the
+    // live transform at save time; restoreViewState() re-applies a persisted
+    // pair AFTER the UI rebuild (§1.5.5), falling back to fit-to-width/start
+    // when either value is absent or out of the transform's valid range.
+    //--------------------------------------------------------------------------
+    double       captureViewZoomSamplesPerPixel() const;
+    std::int64_t captureViewScrollStartSample()   const noexcept
+    {
+        return transform_.getLeftEdgeSample();
+    }
+    void restoreViewState (std::optional<double>       zoomSamplesPerPixel,
+                           std::optional<std::int64_t> scrollStartSample);
+
+    //--------------------------------------------------------------------------
+    // PRD-0096: the in-DAW session indicator shown in the header
+    // ("My Set.soniksession" plus a trailing dot when dirty). Setting it
+    // repaints the header.
+    //--------------------------------------------------------------------------
+    void setSessionTitle (const juce::String& titleWithMarker);
+
     // PRD-0070: follow-playhead auto-scroll state (testable).
     FollowController&       getFollowController()       noexcept { return followController_; }
     const FollowController& getFollowController() const noexcept { return followController_; }
 
+    //--------------------------------------------------------------------------
+    // PRD-0098: external audio-file drag-drop import.
+    //
+    // The panel is the OS file-drop target for the arrangement. While a supported
+    // file hovers it draws a monochrome drop-target highlight on the lane under
+    // the cursor at the snapped drop sample; an unsupported drag is rejected
+    // (no highlight, drop ignored). On drop it resolves the target lane node +
+    // snapped timeline sample and forwards them to onFilesDropped.
+    //--------------------------------------------------------------------------
+
+    // Validates whether a set of dragged file paths contains importable audio
+    // (delegated to AudioFileImporter's format whitelist). When unset, all
+    // drags are rejected. Message thread.
+    std::function<bool (const juce::StringArray& files)> isImportableFiles;
+
+    // Whether grid-snap is currently enabled for placement (mirrors the clip-
+    // drag snap toggle). When unset, snap defaults to ON. The Cmd/Ctrl override
+    // is applied on top of this at drop time.
+    std::function<bool()> isSnapEnabledForImport;
+
+    // Fired on a valid drop with the target lane node and the snapped timeline
+    // start sample. The host runs the import pipeline.
+    std::function<void (const juce::Array<juce::File>& files,
+                        juce::ValueTree lane,
+                        std::int64_t snappedSample)> onFilesDropped;
+
+    // PRD-0098: fired when the lane context menu's "Import Audio File..." is
+    // chosen, with the right-clicked lane node + snapped timeline sample. The
+    // host opens the native chooser and imports at that position. When unset the
+    // context-menu entry is not offered.
+    std::function<void (juce::ValueTree lane, std::int64_t snappedSample)> onImportRequestedAtPoint;
+
+    // PRD-0098: lane node + snapped sample for a menu/context import. Returns the
+    // lane whose content row is at `panelLocalPoint`, or the first source lane
+    // when the point is over no lane (menu-import fallback, §1.5.7). The snapped
+    // timeline sample for that point is written to `snappedSampleOut`.
+    juce::ValueTree laneTreeAtPanelPoint (juce::Point<int> panelLocalPoint,
+                                          std::int64_t& snappedSampleOut) const;
+
+    // PRD-0098: the first source lane of the topmost group (menu-import default
+    // target when no lane is focused).
+    juce::ValueTree firstLaneTree() const;
+
+    // PRD-0098: snap a raw timeline sample to the grid honouring the current
+    // snap toggle. (No Cmd override here — used by the menu/playhead path.)
+    std::int64_t snapImportSample (std::int64_t rawSample) const;
+
+    //---- juce::FileDragAndDropTarget --------------------------------------
+    bool isInterestedInFileDrag (const juce::StringArray& files) override;
+    void fileDragEnter (const juce::StringArray& files, int x, int y) override;
+    void fileDragMove  (const juce::StringArray& files, int x, int y) override;
+    void fileDragExit  (const juce::StringArray& files) override;
+    void filesDropped  (const juce::StringArray& files, int x, int y) override;
+
     void resized() override;
     void paint (juce::Graphics& g) override;
+    void paintOverChildren (juce::Graphics& g) override;
     void mouseUp (const juce::MouseEvent& event) override;
     void mouseDown (const juce::MouseEvent& event) override;
     void mouseDrag (const juce::MouseEvent& event) override;
@@ -173,6 +260,10 @@ private:
     bool gridChanged (const MasterGridService::GridContext& ctx) const;
 
     void layoutBody();
+
+    // PRD-0098 drag-drop helpers.
+    void updateDropHighlight (int panelX, int panelY); // recompute highlight rect
+    void clearDropHighlight();                          // hide highlight + repaint
 
     // PRD-0070 helpers.
     int  contentLeftGutter() const noexcept;       // px before the content axis
@@ -231,6 +322,10 @@ private:
 
     bool expanded_ { true };
 
+    // PRD-0096: current session indicator drawn in the header (already carries
+    // the trailing dirty dot when applicable). Empty => show "ARRANGEMENT".
+    juce::String sessionTitle_;
+
     juce::Rectangle<int> toggleBounds_;        // collapse / expand
     juce::Rectangle<int> followToggleBounds_;  // follow-playhead
     juce::Rectangle<int> recordButtonBounds_;  // global record arm/stop
@@ -253,6 +348,13 @@ private:
     // Drag-to-pan state (content area horizontal pan).
     bool         dragging_       { false };
     int          dragLastX_      { 0 };
+
+    // PRD-0098: external-file drop highlight state. dropActive_ is true while a
+    // supported file hovers; dropHighlight_ is the lane-row rectangle (panel-
+    // local) with a 2px ink marker at the snapped drop sample.
+    bool                 dropActive_    { false };
+    juce::Rectangle<int> dropHighlight_;            // lane row band (panel-local)
+    int                  dropMarkerX_   { -1 };     // snapped drop-sample x (panel-local)
 
     // Last-seen grid signature for change-gating the timer.
     double       lastBpm_         { -1.0 };

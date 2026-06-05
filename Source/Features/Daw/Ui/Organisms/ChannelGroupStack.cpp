@@ -95,6 +95,25 @@ ChannelGroupView* ChannelGroupStack::getGroupByDeckIndex (int deckIndex) const
     return nullptr;
 }
 
+juce::ValueTree ChannelGroupStack::laneTreeAt (juce::Point<int> pointInStack) const
+{
+    for (const auto& g : groups_)
+    {
+        if (g == nullptr)
+            continue;
+        if (g->getBounds().contains (pointInStack))
+            return g->laneTreeAt (pointInStack - g->getPosition());
+    }
+    return {};
+}
+
+juce::ValueTree ChannelGroupStack::firstLaneTree() const
+{
+    if (! groups_.empty() && groups_.front() != nullptr)
+        return groups_.front()->firstLaneTree();
+    return {};
+}
+
 void ChannelGroupStack::layoutToContentHeight (int width)
 {
     setSize (width, std::max (1, getContentHeight()));

@@ -121,6 +121,18 @@ public:
         return loopEnabled_.load (std::memory_order_relaxed);
     }
 
+    /// Current loop region start (project samples). Any thread.
+    int64_t getLoopStart() const noexcept
+    {
+        return loopStart_.load (std::memory_order_relaxed);
+    }
+
+    /// Current loop region end, exclusive (project samples). Any thread.
+    int64_t getLoopEnd() const noexcept
+    {
+        return loopEnd_.load (std::memory_order_relaxed);
+    }
+
     /// Toggle loop armed state.
     void toggleLoop()
     {

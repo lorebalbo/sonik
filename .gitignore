@@ -66,3 +66,6 @@ waf-*
 # Misc
 songs/*
 midi_mappings/*
+
+# claude
+.claude/worktrees/

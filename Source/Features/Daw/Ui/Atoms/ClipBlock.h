@@ -139,6 +139,7 @@ private:
     void reloadClip();
     void paintWaveform   (juce::Graphics& g, juce::Rectangle<int> inner);
     void paintPlaceholder (juce::Graphics& g, juce::Rectangle<int> inner);
+    void paintGlitch      (juce::Graphics& g, juce::Rectangle<int> inner); // PRD-0097
     void paintEdgeHandles (juce::Graphics& g);
 
     // Hit-zone detection for edges.
@@ -155,6 +156,7 @@ private:
     int64_t  dragStartSrcEnd_   { 0 };
     bool     dragActive_       { false };
     bool     hovered_          { false }; // true while mouse is over this clip
+    bool     missingSource_    { false }; // PRD-0097: source unresolved -> Glitch
 
     juce::ValueTree          clipNode_;
     const TimelineTransform& transform_;
