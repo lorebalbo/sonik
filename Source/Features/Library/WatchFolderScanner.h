@@ -90,6 +90,18 @@ public:
     /// (PRD-0039 AC-05).
     void setReconciliationProgressCallback (std::function<void()> callback);
 
+    // -------------------------------------------------------------------------
+    // Engine-canonical content hash (any thread).
+    //
+    // MUST stay byte-for-byte identical to AudioFileLoader::computeContentHash
+    // and AudioFileImporter::computeContentHash (MD5 of the first 64 KB + the
+    // 8-byte file size). This is the single hash the whole app keys a track by;
+    // the scanner writes it into library_tracks.content_hash so EPIC-0010
+    // playback can resolve a clip back to its source file. Exposed for reuse and
+    // testing.
+    // -------------------------------------------------------------------------
+    static juce::String computeContentHash (const juce::File& file);
+
 private:
     // -------------------------------------------------------------------------
     // juce::Thread entry point
@@ -115,7 +127,6 @@ private:
     // -------------------------------------------------------------------------
     // Utilities
     // -------------------------------------------------------------------------
-    static juce::String computeSHA256    (const juce::File& file);
     static int          countAudioFiles  (const juce::File& folder);
     static bool         isSupportedAudio (const juce::File& file);
 

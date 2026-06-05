@@ -82,15 +82,30 @@ void LaneView::rebuildClips()
         if (! clipNode.hasType (DawIDs::clip))
             continue;
 
-        auto* block = clipBlocks_.add (
-            new ClipBlock (clipNode, transform_, waveformSource_));
-        // Wire editing callbacks if a dispatcher is available.
-        if (dispatcher_ != nullptr)
-            wireClipCallbacks (*block);
-        clipLayer_.addAndMakeVisible (block);
+        addClipBlockFor (clipNode);
     }
 
     layoutClips();
+}
+
+ClipBlock* LaneView::addClipBlockFor (juce::ValueTree clipNode)
+{
+    auto* block = clipBlocks_.add (
+        new ClipBlock (clipNode, transform_, waveformSource_));
+
+    // Wire editing callbacks if a dispatcher is available.
+    if (dispatcher_ != nullptr)
+        wireClipCallbacks (*block);
+
+    clipLayer_.addAndMakeVisible (block);
+
+    // Place just this block (the content layer bounds are kept current here so the
+    // incremental add path does not need a full layoutClips() sweep).
+    const int gutter = DawLayout::kTrackHeaderWidth;
+    clipLayer_.setBounds (getLocalBounds().withTrimmedLeft (gutter));
+    block->applyTimelineBounds (0, 0, clipLayer_.getHeight());
+
+    return block;
 }
 
 void LaneView::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher)
@@ -171,14 +186,28 @@ void LaneView::resized()
 
 void LaneView::valueTreeChildAdded (juce::ValueTree& parent, juce::ValueTree& child)
 {
+    // Incremental: host only the newly-added clip. The live-projection bridge
+    // (PRD-0069) appends clips continuously while recording — especially during a
+    // loop, which spawns a fresh clip per pass — so a full rebuildClips() here would
+    // be O(n^2) and starve the UI thread (the cause of the recording-mode lag).
     if (parent == clipsContainer_ && child.hasType (DawIDs::clip))
-        rebuildClips();
+        addClipBlockFor (child);
 }
 
 void LaneView::valueTreeChildRemoved (juce::ValueTree& parent, juce::ValueTree& child, int)
 {
-    if (parent == clipsContainer_ && child.hasType (DawIDs::clip))
-        rebuildClips();
+    // Incremental: drop only the block backing the removed clip node.
+    if (parent != clipsContainer_ || ! child.hasType (DawIDs::clip))
+        return;
+
+    for (int i = 0; i < clipBlocks_.size(); ++i)
+    {
+        if (clipBlocks_[i]->getClipNode() == child)
+        {
+            clipBlocks_.remove (i); // juce::OwnedArray deletes the block
+            break;
+        }
+    }
 }
 
 void LaneView::paint (juce::Graphics& g)

@@ -248,13 +248,10 @@ private:
         trackFile.create();
         writeUniqueContent (trackFile, 42);
 
-        // Compute the SHA-256 that the scanner will compute.
-        juce::String hash;
-        {
-            juce::FileInputStream stream (trackFile);
-            juce::SHA256 sha (stream);
-            hash = sha.toHexString();
-        }
+        // Compute the SAME content hash the scanner will compute (engine-canonical
+        // MD5 heuristic), so the pre-inserted row is genuinely "unchanged" from
+        // the scanner's perspective and the no-op path is actually exercised.
+        const juce::String hash = WatchFolderScanner::computeContentHash (trackFile);
 
         // Pre-insert the row with a known date_added sentinel value.
         constexpr int64_t kSentinelDateAdded = 1000000;

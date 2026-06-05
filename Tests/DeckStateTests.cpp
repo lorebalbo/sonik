@@ -20,6 +20,7 @@ public:
         testStateMachineTransitions();
         testTrackLoading();
         testTrackLoadingProjectsPersistedKey();
+        testRecordedClipSourceResolvesAfterLoad();
         testTrackEjection();
         testActiveDeck();
         testMasterTempo();
@@ -355,6 +356,46 @@ private:
         const int keyIndex = queryInt (
             handle, "SELECT key_index FROM library_tracks WHERE file_path='/path/to/CachedKeyTrack.wav';");
         expectEquals (keyIndex, 7);
+    }
+
+    // -----------------------------------------------------------------------
+    // EPIC-0010 playback: a clip recorded from a deck carries the deck's content
+    // hash as its sourceFileId. ClipSourceResolver maps that back to a file via
+    // TrackDatabase::getFilePathForContentHash(). Historically the watch-folder
+    // scanner wrote a DIFFERENT hash (full-file SHA-256) into library_tracks than
+    // the deck computes (MD5 heuristic), so the reverse lookup never matched and
+    // recorded clips played silence. Loading a track must reconcile the library
+    // row so the deck/clip hash resolves.
+    void testRecordedClipSourceResolvesAfterLoad()
+    {
+        beginTest ("Track Loading - recorded clip source resolves after deck load (EPIC-0010)");
+        TestContext ctx;
+        ctx.mgr->addDeck();
+
+        // A library row scanned under a stale/different hash than the deck uses.
+        auto* handle = ctx.db->getDbHandle();
+        expectEquals (execSql (handle,
+            "INSERT INTO library_tracks "
+            "  (file_path, content_hash, title, date_added) "
+            "VALUES "
+            "  ('/music/set_track.wav', 'stale_scanner_hash', 'Set Track', 1000);"),
+            SQLITE_OK);
+
+        // Precondition (the bug): the deck/clip hash does not resolve yet.
+        expect (ctx.db->getFilePathForContentHash ("deck_clip_hash").isEmpty(),
+                "deck/clip hash must not resolve before the load reconciles it");
+
+        // Loading the track stamps the deck hash and reconciles the library row.
+        auto meta = makeSampleMetadata ("Set Track");
+        meta.filePath    = "/music/set_track.wav";
+        meta.contentHash = "deck_clip_hash";
+        ctx.mgr->loadTrack ("A", meta);
+
+        // A clip recorded from this deck (sourceFileId == deck hash) now resolves
+        // back to its source file at playback time.
+        expectEquals (ctx.db->getFilePathForContentHash ("deck_clip_hash"),
+                      juce::String ("/music/set_track.wav"),
+                      "deck/clip hash must resolve to the source path after load");
     }
 
     // -----------------------------------------------------------------------

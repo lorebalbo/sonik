@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cmath>
+#include <cstdint>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../DeckStateManager.h"
 #include "../../AudioEngine/AudioEngine.h"
@@ -219,6 +221,31 @@ public:
         audioEngine.setDawPlayback (&dawPanel.getArrangementPublisher(),
                                     &playbackController->getPool(),
                                     &dawPanel.getDawTransport());
+
+        // EPIC-0010 playback fix: the recorded arrangement (PRD-0069) is anchored
+        // at the master-grid phase origin, which is non-zero whenever a master
+        // deck drives the grid, while the transport plays from its origin. Seed
+        // that origin with the first clip's start on every Play so playback lands
+        // on the recorded content instead of running silently from sample 0 up to
+        // it. The arrangement is stored in project-rate samples; scale to the
+        // runtime/device rate the transport playhead advances in.
+        {
+            auto innerPlay = dawPanel.onTransportPlay; // panel's real play action
+            dawPanel.onTransportPlay = [this, innerPlay]()
+            {
+                if (playbackController != nullptr)
+                {
+                    const std::int64_t startProject = DawState::earliestClipStartSample (
+                        DawState::getOrCreateDawBranch (rootState));
+                    const std::int64_t originRuntime = static_cast<std::int64_t> (
+                        std::llround (static_cast<double> (startProject)
+                                      * playbackController->sampleRateScale()));
+                    dawPanel.getDawTransport().setOriginSample (originRuntime);
+                }
+                if (innerPlay)
+                    innerPlay();
+            };
+        }
 
         // EPIC-0010: the DAW now-line (playback cursor) tracks the transport
         // playhead. Returns -1 when stopped, so the panel hides the now-line

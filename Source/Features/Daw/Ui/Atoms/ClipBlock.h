@@ -82,6 +82,10 @@ public:
 
     const DawClip& getClip() const noexcept { return clip_; }
 
+    // The backing clip ValueTree node, so an owning LaneView can match a block to a
+    // removed child node for incremental (non-rebuild) updates.
+    juce::ValueTree getClipNode() const noexcept { return clipNode_; }
+
     //--------------------------------------------------------------------------
     // PRD-0084/0085/0086: Editing callbacks.
     //

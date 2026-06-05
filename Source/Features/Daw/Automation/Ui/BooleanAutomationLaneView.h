@@ -79,7 +79,10 @@ public:
         // A trailing "on" runs to the right edge of the body.
         if (on)
         {
-            const std::int64_t endSample = transform_.xToSample ((double) body.getRight());
+            // body.getRight() is component-x; the content axis starts at the gutter,
+            // so subtract it before inverting the transform (mirrors sampleToBodyX).
+            const std::int64_t endSample = transform_.xToSample (
+                (double) body.getRight() - (double) DawLayout::kTrackHeaderWidth);
             pushBlock (blocks, onFrom, endSample, body);
         }
 
@@ -195,8 +198,8 @@ private:
                     std::int64_t fromSample, std::int64_t toSample,
                     juce::Rectangle<int> /*body*/) const
     {
-        const double xs = TimelineTransform::alignToPixelGrid (transform_.sampleToX (fromSample));
-        const double xe = TimelineTransform::alignToPixelGrid (transform_.sampleToX (toSample));
+        const double xs = sampleToBodyX (fromSample);
+        const double xe = sampleToBodyX (toSample);
         blocks.push_back ({ xs, xe });
     }
 
@@ -216,8 +219,7 @@ private:
         for (int i = 0; i < n; ++i)
         {
             auto st = lane.getStep (i);
-            const double x = TimelineTransform::alignToPixelGrid (
-                transform_.sampleToX (BooleanLane::sampleOfNode (st)));
+            const double x = sampleToBodyX (BooleanLane::sampleOfNode (st));
             const double d = std::abs (x - px);
             if (d <= bestDist)
             {

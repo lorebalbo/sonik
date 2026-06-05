@@ -183,13 +183,32 @@ void WatchFolderScanner::setReconciliationProgressCallback (std::function<void()
 // SHA-256 helper
 // =============================================================================
 
-juce::String WatchFolderScanner::computeSHA256 (const juce::File& file)
+juce::String WatchFolderScanner::computeContentHash (const juce::File& file)
 {
+    // CRITICAL: this MUST stay byte-for-byte identical to the engine-canonical
+    // hash in AudioFileLoader::computeContentHash (and AudioFileImporter::
+    // computeContentHash): MD5 of the first 64 KB + the 8-byte file size.
+    //
+    // The deck stamps every loaded track (and therefore every clip the recorder
+    // captures) with that hash, and EPIC-0010 playback resolves a clip back to
+    // its file via getFilePathForContentHash(), which looks the hash up in
+    // library_tracks.content_hash. If the scanner wrote a DIFFERENT hash (it
+    // previously used full-file SHA-256) the reverse lookup never matched and
+    // recorded clips played silence. Do NOT "upgrade" this back to SHA-256.
     juce::FileInputStream stream (file);
-    if (!stream.openedOk())
+    if (stream.failedToOpen())
         return {};
-    juce::SHA256 hash (stream);
-    return hash.toHexString();
+
+    constexpr int hashBytes = 65536;
+    juce::MemoryBlock block;
+    auto bytesToRead = juce::jmin (stream.getTotalLength(), static_cast<int64_t> (hashBytes));
+    block.setSize (static_cast<size_t> (bytesToRead));
+    stream.read (block.getData(), static_cast<int> (bytesToRead));
+
+    int64_t fileSize = file.getSize();
+    block.append (&fileSize, sizeof (fileSize));
+
+    return juce::MD5 (block.getData(), block.getSize()).toHexString();
 }
 
 // =============================================================================
@@ -440,7 +459,7 @@ void WatchFolderScanner::ingestFile (sqlite3* bgDb,
     // ------------------------------------------------------------------
     // Compute SHA-256 content hash
     // ------------------------------------------------------------------
-    const juce::String hash = computeSHA256 (file);
+    const juce::String hash = computeContentHash (file);
     if (hash.isEmpty())
     {
         DBG ("WatchFolderScanner: cannot read/hash file (skipping): " + filePath);

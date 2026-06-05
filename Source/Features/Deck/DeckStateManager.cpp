@@ -151,6 +151,13 @@ void DeckStateManager::loadTrack (const juce::String& deckId, const TrackMetadat
     trackMeta.setProperty (IDs::hasAlbumArt,  metadata.hasAlbumArt,  nullptr);
     trackMeta.setProperty (IDs::channelCount, metadata.channelCount, nullptr);
 
+    // EPIC-0010 playback: align the library row's content_hash with the engine-
+    // canonical hash the deck stamps onto the track (and onto every clip the
+    // recorder captures from it). Without this a clip recorded from this deck
+    // could not be resolved back to its file at playback time and played silence.
+    if (metadata.filePath.isNotEmpty() && metadata.contentHash.isNotEmpty())
+        db.reconcileLibraryContentHash (metadata.filePath, metadata.contentHash);
+
     // Restore persisted data from database
     auto persisted = db.loadTrackData (metadata.filePath, metadata.contentHash);
     if (persisted.has_value())

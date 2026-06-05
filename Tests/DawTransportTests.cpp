@@ -28,6 +28,7 @@ public:
     {
         testInitialState();
         testPlayTransition();
+        testPlayFromStoppedStartsAtOrigin();
         testPauseTransition();
         testStopTransition();
         testAdvancePlayhead();
@@ -61,6 +62,45 @@ private:
         t.play();
         expect (t.isPlaying());
         expect (!t.isStopped());
+    }
+
+    // ─── play() from Stopped honours the transport origin ───────────────────
+    //
+    // EPIC-0010 playback fix: the recorded arrangement is anchored at the
+    // master-grid phase origin (non-zero whenever a master deck drives the
+    // grid). Play-from-Stopped must resume at the configured origin so the
+    // playhead lands on the recorded content, not at a hardcoded sample 0
+    // (which would render silence up to the first clip).
+    void testPlayFromStoppedStartsAtOrigin()
+    {
+        beginTest ("play() from Stopped starts at the transport origin");
+
+        Daw::DawTransport t;
+
+        // Default origin is 0 (back-compat: behaves exactly as before).
+        t.play();
+        expectEquals (t.getPlayheadSample(), (int64_t) 0, "default origin = 0");
+        t.stop();
+
+        // A non-zero origin (e.g. the first clip's start) is honoured.
+        t.setOriginSample (88200); // ~2 s @ 44.1 kHz
+        expectEquals (t.getOriginSample(), (int64_t) 88200, "origin retained");
+        t.play();
+        expectEquals (t.getPlayheadSample(), (int64_t) 88200,
+                      "play-from-stopped resumes at origin");
+
+        // Resuming from Pause must NOT snap back to the origin.
+        t.advancePlayhead (512);
+        t.pause();
+        const int64_t paused = t.getPlayheadSample();
+        t.play();
+        expectEquals (t.getPlayheadSample(), paused,
+                      "play-from-paused holds position");
+
+        // A negative origin is clamped to 0.
+        t.stop();
+        t.setOriginSample (-1000);
+        expectEquals (t.getOriginSample(), (int64_t) 0, "negative origin clamped");
     }
 
     // ─── pause() ────────────────────────────────────────────────────────────

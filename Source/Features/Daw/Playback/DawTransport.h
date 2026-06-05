@@ -60,10 +60,18 @@ public:
     //--------------------------------------------------------------------------
 
     /// Start playing from current playhead position.
+    ///
+    /// PRD-0082 §1.5.1: a play from Stopped resumes from the transport ORIGIN,
+    /// not a hardcoded sample 0. The recorded arrangement (PRD-0069) is anchored
+    /// at the master-grid phase origin, which is non-zero whenever a master deck
+    /// drives the grid; seeding the origin with the first clip's start (see
+    /// setOriginSample) makes Play land on the recorded content instead of
+    /// playing silence up to it.
     void play()
     {
         if (currentState() == State::Stopped)
-            playhead_.store (0, std::memory_order_release);  // reset to 0 on play from stop
+            playhead_.store (originSample_.load (std::memory_order_acquire),
+                             std::memory_order_release);
 
         state_.store (static_cast<int32_t> (State::Playing), std::memory_order_release);
 
@@ -101,6 +109,22 @@ public:
         playhead_.store (currentState() == State::Stopped ? -1 : clamped,
                          std::memory_order_release);
         if (onSeeked) onSeeked (clamped);
+    }
+
+    /// Set the transport origin: the sample a play-from-Stopped starts at.
+    /// EPIC-0010: the DAW layer seeds this with the start of the recorded
+    /// arrangement (DawState::earliestClipStartSample, scaled to the runtime
+    /// rate) so Play lands on the first clip. Message thread only.
+    void setOriginSample (int64_t originSample) noexcept
+    {
+        originSample_.store (juce::jmax ((int64_t) 0, originSample),
+                             std::memory_order_release);
+    }
+
+    /// Current transport origin (project/runtime samples). Any thread.
+    int64_t getOriginSample() const noexcept
+    {
+        return originSample_.load (std::memory_order_acquire);
     }
 
     /// Set the loop region.
@@ -201,6 +225,7 @@ public:
 private:
     std::atomic<int32_t>  state_       { static_cast<int32_t> (State::Stopped) };
     std::atomic<int64_t>  playhead_    { -1 };
+    std::atomic<int64_t>  originSample_ { 0 };
     std::atomic<int64_t>  loopStart_   { 0 };
     std::atomic<int64_t>  loopEnd_     { 0 };
     std::atomic<bool>     loopEnabled_ { false };

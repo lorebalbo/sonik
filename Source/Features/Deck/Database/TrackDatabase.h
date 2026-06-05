@@ -62,6 +62,14 @@ public:
     // Returns empty string if no library track matches. Message-Thread only.
     juce::String getFilePathForContentHash (const juce::String& contentHash) const;
 
+    // Reconcile a library row's content_hash to the engine-canonical hash the
+    // deck computes on load (EPIC-0010 playback). file_path is the stable unique
+    // key; a row scanned under a stale/different hash function is updated in
+    // place so getFilePathForContentHash() resolves clips recorded from this
+    // deck. No-op when no row matches the path. Message-thread only.
+    void reconcileLibraryContentHash (const juce::String& filePath,
+                                      const juce::String& contentHash);
+
     // Hot cue persistence (PRD-0012)
     void saveCuePointsJson (const juce::String& filePath, const juce::String& contentHash,
                             const juce::String& json);

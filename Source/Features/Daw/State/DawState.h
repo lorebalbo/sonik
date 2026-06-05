@@ -95,4 +95,17 @@ namespace DawState
     // no track has been created for that deck yet.
     //--------------------------------------------------------------------------
     juce::ValueTree findTrackForDeck (juce::ValueTree dawBranch, int deckIndex);
+
+    //--------------------------------------------------------------------------
+    // Returns the timeline start (project-rate samples) of the earliest playable
+    // clip in the arrangement, or 0 when there are no clips. EPIC-0010: used to
+    // seed the DawTransport origin so Play starts on the recorded content rather
+    // than at sample 0. The arrangement is anchored at the master-grid phase
+    // origin (PRD-0069), which is non-zero whenever a master deck drives the
+    // grid, so a fixed sample-0 origin would play silence up to the first clip.
+    // Clips flagged missingSource (PRD-0097) are skipped: they are silent and
+    // never enter the engine snapshot, so they must not define the start.
+    // Message-thread only.
+    //--------------------------------------------------------------------------
+    std::int64_t earliestClipStartSample (const juce::ValueTree& dawBranch);
 }

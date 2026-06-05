@@ -81,6 +81,10 @@ private:
     void valueTreeParentChanged (juce::ValueTree&) override {}
 
     void layoutClips();
+    // Create + host ONE ClipBlock for the given clip node (incremental path used by
+    // both the full rebuild and the single-child-added listener, avoiding an O(n^2)
+    // full rebuild as live-projection appends clips during recording).
+    ClipBlock* addClipBlockFor (juce::ValueTree clipNode);
     void wireClipCallbacks (ClipBlock& block);
     static void paintInactiveDither (juce::Graphics& g, juce::Rectangle<int> area);
 

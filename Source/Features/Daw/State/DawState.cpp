@@ -1,5 +1,6 @@
 #include "DawState.h"
 #include "../Model/ChannelGroup.h"
+#include "DawClipModel.h"
 
 namespace DawState
 {
@@ -73,5 +74,63 @@ namespace DawState
 
         tracks.addChild (track, -1, nullptr);
         return track;
+    }
+
+    std::int64_t earliestClipStartSample (const juce::ValueTree& dawBranch)
+    {
+        if (! dawBranch.isValid())
+            return 0;
+
+        auto tracks = dawBranch.getChildWithName (DawIDs::tracks);
+        if (! tracks.isValid())
+            return 0;
+
+        bool         found    = false;
+        std::int64_t earliest = 0;
+
+        for (int t = 0; t < tracks.getNumChildren(); ++t)
+        {
+            auto track = tracks.getChild (t);
+            if (! track.hasType (DawIDs::track))
+                continue;
+
+            auto lanes = track.getChildWithName (DawIDs::lanes);
+            if (! lanes.isValid())
+                continue;
+
+            for (int l = 0; l < lanes.getNumChildren(); ++l)
+            {
+                auto lane = lanes.getChild (l);
+                if (! lane.hasType (DawIDs::lane))
+                    continue;
+
+                auto clips = lane.getChildWithName (DawIDs::clips);
+                if (! clips.isValid())
+                    continue;
+
+                for (int c = 0; c < clips.getNumChildren(); ++c)
+                {
+                    auto clip = clips.getChild (c);
+                    if (! clip.hasType (DawIDs::clip))
+                        continue;
+
+                    // A missing-source clip is silent and excluded from the
+                    // engine snapshot (PRD-0097); it must not define the start.
+                    if (static_cast<bool> (clip.getProperty (DawClipIDs::missingSource)))
+                        continue;
+
+                    const std::int64_t start = static_cast<std::int64_t> (
+                        static_cast<double> (clip.getProperty (DawClipIDs::timelineStartSample)));
+
+                    if (! found || start < earliest)
+                    {
+                        earliest = start;
+                        found    = true;
+                    }
+                }
+            }
+        }
+
+        return found ? juce::jmax<std::int64_t> (0, earliest) : 0;
     }
 }

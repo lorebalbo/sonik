@@ -172,11 +172,17 @@ protected:
                                 juce::Rectangle<int> body,
                                 bool enabled) = 0;
 
-    // Maps a timeline sample to an x in THIS component's coordinate space (the
-    // shared transform's content axis already starts at kTrackHeaderWidth).
+    // Maps a timeline sample to an x in THIS component's coordinate space. The
+    // lane's content axis begins at the value-axis gutter (kTrackHeaderWidth),
+    // exactly like the source LaneView's clip layer (which is positioned at
+    // withTrimmedLeft(gutter)) and the ruler — so a breakpoint at sample S lands at
+    // the SAME x as the ruler tick / clip at S. The shared TimelineTransform maps
+    // S to a content-relative x (0 = leftEdgeSample); we add the gutter to place it
+    // in the body.
     double sampleToBodyX (std::int64_t sample) const
     {
-        return TimelineTransform::alignToPixelGrid (transform_.sampleToX (sample));
+        return TimelineTransform::alignToPixelGrid (
+            (double) DawLayout::kTrackHeaderWidth + transform_.sampleToX (sample));
     }
 
     // PRD-0094 seams — overridable, no-ops here (no editing in PRD-0093).
@@ -202,11 +208,15 @@ protected:
         return globalSnap && ! override;
     }
 
-    // Map a body x to a timeline sample, snapping to the master grid when snap is
-    // active for this gesture (§1.5.2).
+    // Map a body x (this component's coordinate space) to a timeline sample,
+    // snapping to the master grid when snap is active for this gesture (§1.5.2).
+    // The content axis starts at the gutter, so subtract it before inverting the
+    // transform (mirrors sampleToBodyX) — otherwise edits land kTrackHeaderWidth
+    // off in time.
     std::int64_t bodyXToSample (double bodyX, const juce::MouseEvent& event) const
     {
-        const std::int64_t raw = transform_.xToSample (bodyX);
+        const double contentX = bodyX - (double) DawLayout::kTrackHeaderWidth;
+        const std::int64_t raw = transform_.xToSample (contentX);
         return snapActive (event) ? transform_.snapSampleToGrid (raw) : raw;
     }
 

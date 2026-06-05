@@ -71,8 +71,7 @@ public:
         for (int i = 0; i < n; ++i)
         {
             auto bp = lane.getBreakpoint (i);
-            const double x = TimelineTransform::alignToPixelGrid (
-                transform_.sampleToX (ContinuousLane::sampleOfNode (bp)));
+            const double x = sampleToBodyX (ContinuousLane::sampleOfNode (bp));
             const double y = valueToY (ContinuousLane::valueOfNode (bp), body);
 
             // For a step segment, the run is horizontal to the NEXT breakpoint's x
@@ -213,8 +212,7 @@ protected:
         for (int i = 0; i < n; ++i)
         {
             auto bp = lane.getBreakpoint (i);
-            const double x = TimelineTransform::alignToPixelGrid (
-                transform_.sampleToX (ContinuousLane::sampleOfNode (bp)));
+            const double x = sampleToBodyX (ContinuousLane::sampleOfNode (bp));
             const double y = valueToY (ContinuousLane::valueOfNode (bp), body);
             const float s = 5.0f;
             g.fillRect ((float) x - s * 0.5f, (float) y - s * 0.5f, s, s);
@@ -252,8 +250,7 @@ private:
         for (int i = 0; i < n; ++i)
         {
             auto bp = lane.getBreakpoint (i);
-            const double x = TimelineTransform::alignToPixelGrid (
-                transform_.sampleToX (ContinuousLane::sampleOfNode (bp)));
+            const double x = sampleToBodyX (ContinuousLane::sampleOfNode (bp));
             const double y = valueToY (ContinuousLane::valueOfNode (bp), body);
             const double dx = x - px, dy = y - py;
             const double d2 = dx * dx + dy * dy;
@@ -280,10 +277,8 @@ private:
 
         for (int i = 0; i + 1 < n; ++i)
         {
-            const double x0 = TimelineTransform::alignToPixelGrid (
-                transform_.sampleToX (ContinuousLane::sampleOfNode (lane.getBreakpoint (i))));
-            const double x1 = TimelineTransform::alignToPixelGrid (
-                transform_.sampleToX (ContinuousLane::sampleOfNode (lane.getBreakpoint (i + 1))));
+            const double x0 = sampleToBodyX (ContinuousLane::sampleOfNode (lane.getBreakpoint (i)));
+            const double x1 = sampleToBodyX (ContinuousLane::sampleOfNode (lane.getBreakpoint (i + 1)));
             if (px >= x0 && px < x1)
                 return lane.getBreakpoint (i);
         }
