@@ -124,12 +124,15 @@ void ClipBlock::paint (juce::Graphics& g)
     // Interior (inside the 2-px border).
     auto inner = bounds.reduced (2);
 
+    // Resolve the shared waveform ONCE per paint. The accessor is backed by an
+    // in-memory cache (WaveformCache), so this is an O(1) lookup rather than the
+    // former SQLite-read-plus-deserialize that ran two-to-three times per repaint.
     WaveformData::Ptr data = (waveformSource_ && clip_.sourceFileId.isNotEmpty())
                                  ? waveformSource_ (clip_.sourceFileId)
                                  : nullptr;
 
     if (data != nullptr && ! inner.isEmpty())
-        paintWaveform (g, inner);
+        paintWaveform (g, inner, *data);
     else if (! inner.isEmpty())
         paintPlaceholder (g, inner);
 
@@ -156,10 +159,10 @@ void ClipBlock::paint (juce::Graphics& g)
     }
 }
 
-void ClipBlock::paintWaveform (juce::Graphics& g, juce::Rectangle<int> inner)
+void ClipBlock::paintWaveform (juce::Graphics& g, juce::Rectangle<int> inner, const WaveformData& data)
 {
     const double spp = samplesPerPixelFor (transform_);
-    const auto slice = computeSlice (*waveformSource_ (clip_.sourceFileId),
+    const auto slice = computeSlice (data,
                                      clip_.sourceStartSample,
                                      clip_.sourceEndSample,
                                      spp);
@@ -170,17 +173,26 @@ void ClipBlock::paintWaveform (juce::Graphics& g, juce::Rectangle<int> inner)
         return;
     }
 
-    auto data = waveformSource_ (clip_.sourceFileId);
-    const auto& tier = data->levels[static_cast<size_t> (slice.level)];
+    const auto& tier = data.levels[static_cast<size_t> (slice.level)];
 
     const int   width   = inner.getWidth();
     const float midY    = inner.getCentreY();
     const float halfH   = inner.getHeight() * 0.5f;
     const int   spanPts = slice.lastPoint - slice.firstPoint;
 
+    // Viewport culling: a recorded clip can be tens of thousands of pixels wide
+    // (it grows for the whole take), but only the columns inside the current clip
+    // region are on screen. Iterating the full width every frame is what made a
+    // long recording lag, so we restrict the loop to the visible columns while
+    // keeping the SAME px->point mapping across the full width (so the waveform
+    // stays anchored regardless of how much is on screen).
+    const auto visible = inner.getIntersection (g.getClipBounds());
+    const int  pxStart = juce::jmax (0,     visible.getX()     - inner.getX());
+    const int  pxEnd   = juce::jmin (width, visible.getRight() - inner.getX());
+
     g.setColour (kInk);
 
-    for (int px = 0; px < width; ++px)
+    for (int px = pxStart; px < pxEnd; ++px)
     {
         // Map this pixel column to a point index inside the crop slice.
         const double frac = (width > 1) ? static_cast<double> (px) / static_cast<double> (width - 1)
@@ -212,26 +224,59 @@ void ClipBlock::paintPlaceholder (juce::Graphics& g, juce::Rectangle<int> inner)
     g.setColour (kSurface);
     g.fillRect (inner);
 
+    // Cull to the on-screen region. The dither is on a fixed 4-px grid anchored
+    // to the clip's interior origin, so we advance the loop bounds to the first
+    // visible grid line instead of iterating the (possibly enormous) full width.
+    const auto vis = inner.getIntersection (g.getClipBounds());
+    if (vis.isEmpty())
+        return;
+
+    auto alignUp = [] (int value, int origin, int step)
+    {
+        if (value <= origin)
+            return origin;
+        return origin + ((value - origin + step - 1) / step) * step;
+    };
+
     g.setColour (kInk.withAlpha (0.14f));
-    for (int y = inner.getY(); y < inner.getBottom(); y += 4)
-        for (int x = inner.getX() + ((y / 4) % 2) * 2; x < inner.getRight(); x += 4)
+    for (int y = alignUp (vis.getY(), inner.getY(), 4); y < vis.getBottom(); y += 4)
+    {
+        const int rowOriginX = inner.getX() + ((y / 4) % 2) * 2;
+        for (int x = alignUp (vis.getX(), rowOriginX, 4); x < vis.getRight(); x += 4)
             g.fillRect (x, y, 1, 1);
+    }
 }
 
 void ClipBlock::paintGlitch (juce::Graphics& g, juce::Rectangle<int> inner)
 {
     // DESIGN.md §5 "Glitch / Warning States": random dithering (visual noise),
-    // strictly monochrome (#2d2d2d ink), zero radius. The randomness is seeded
-    // from the clip id so every repaint of the SAME clip is stable (no flicker),
-    // while different clips show different noise — a deterministic "broken" look.
+    // strictly monochrome (#2d2d2d ink), zero radius. The noise is deterministic
+    // per (clip, pixel): a coordinate hash, NOT a sequential RNG. That keeps the
+    // pattern stable under partial repaints / scrolling AND lets us cull the loop
+    // to the on-screen region (a missing-source clip can be very wide; iterating
+    // its full area every frame would be its own perf cliff).
     auto seed = static_cast<juce::uint32> (clip_.clipId.toString().hashCode());
     if (seed == 0) seed = 0x9E3779B9u;
-    juce::Random rng (static_cast<juce::int64> (seed));
+
+    const auto vis = inner.getIntersection (g.getClipBounds());
+    if (vis.isEmpty())
+        return;
+
+    auto pixelOn = [seed] (int x, int y) -> bool
+    {
+        // Cheap integer hash (xorshift-style mix) of the pixel coordinate + seed.
+        juce::uint32 h = seed;
+        h ^= static_cast<juce::uint32> (x) * 0x9E3779B9u;
+        h ^= static_cast<juce::uint32> (y) * 0x85EBCA6Bu;
+        h ^= h >> 15; h *= 0x2C1B3C6Du; h ^= h >> 12;
+        h *= 0x297A2D39u; h ^= h >> 15;
+        return (h & 0xFFFFu) < static_cast<juce::uint32> (0.42f * 65536.0f); // ~42% density
+    };
 
     g.setColour (kInk);
-    for (int y = inner.getY(); y < inner.getBottom(); ++y)
-        for (int x = inner.getX(); x < inner.getRight(); ++x)
-            if (rng.nextFloat() < 0.42f) // ~42% pixel density: dense, unmistakably broken
+    for (int y = vis.getY(); y < vis.getBottom(); ++y)
+        for (int x = vis.getX(); x < vis.getRight(); ++x)
+            if (pixelOn (x, y))
                 g.fillRect (x, y, 1, 1);
 }
 

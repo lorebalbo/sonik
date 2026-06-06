@@ -8,6 +8,7 @@
 #include "../../AudioEngine/AudioFileLoader.h"
 #include "../../Waveform/WaveformManager.h"
 #include "../../Waveform/WaveformData.h"
+#include "../../Waveform/WaveformCache.h"
 #include "../Database/TrackDatabase.h"
 #include "../../BeatGrid/BeatGridManager.h"
 #include "../../Sync/MasterClockManager.h"
@@ -84,19 +85,29 @@ public:
                         }
                         return {};
                     },
-                    // PRD-0068: resolve a clip's sourceFileId to cached WaveformData
-                    // via the PRD-0006 SQLite cache (content-hash keyed). A miss
-                    // returns nullptr so the clip draws a placeholder; never analyses.
-                    [&trackDb](const juce::String& sourceFileId) -> WaveformData::Ptr
+                    // PRD-0068: resolve a clip's sourceFileId to its WaveformData.
+                    // Backed by a SHARED in-memory WaveformCache so each source's
+                    // multi-megabyte mipmap is read from the PRD-0006 SQLite cache
+                    // and deserialized exactly ONCE, then handed to every clip (the
+                    // "one sample, many clip references" model). Without this, every
+                    // ClipBlock::paint hit SQLite + deserialized per frame, which is
+                    // the root cause of the recording-mode lag. This std::function
+                    // is copied down to every ClipBlock; the shared_ptr capture keeps
+                    // them all pointing at the one cache. A miss returns nullptr so
+                    // the clip draws a placeholder; it is never cached (so a clip
+                    // whose analysis lands later still picks it up) and never
+                    // triggers a fresh analysis.
+                    [cache = std::make_shared<Daw::WaveformCache> (
+                         [&trackDb](const juce::String& id) -> WaveformData::Ptr
+                         {
+                             juce::MemoryBlock block;
+                             if (! trackDb.loadWaveformData (id, block))
+                                 return nullptr;
+                             return WaveformData::deserialize (block, id);
+                         })]
+                    (const juce::String& sourceFileId) -> WaveformData::Ptr
                     {
-                        if (sourceFileId.isEmpty())
-                            return nullptr;
-
-                        juce::MemoryBlock block;
-                        if (! trackDb.loadWaveformData (sourceFileId, block))
-                            return nullptr;
-
-                        return WaveformData::deserialize (block, sourceFileId);
+                        return cache->get (sourceFileId);
                     }),
           libraryComponent (std::make_unique<LibraryComponent> (rootState, trackDb, analysisQueue))
     {

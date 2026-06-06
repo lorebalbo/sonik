@@ -141,7 +141,7 @@ private:
     void valueTreeParentChanged (juce::ValueTree&) override {}
 
     void reloadClip();
-    void paintWaveform   (juce::Graphics& g, juce::Rectangle<int> inner);
+    void paintWaveform   (juce::Graphics& g, juce::Rectangle<int> inner, const WaveformData& data);
     void paintPlaceholder (juce::Graphics& g, juce::Rectangle<int> inner);
     void paintGlitch      (juce::Graphics& g, juce::Rectangle<int> inner); // PRD-0097
     void paintEdgeHandles (juce::Graphics& g);

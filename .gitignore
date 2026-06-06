@@ -67,5 +67,8 @@ waf-*
 songs/*
 midi_mappings/*
 
+# C++
+*.idx
+
 # claude
 .claude/worktrees/

@@ -579,6 +579,7 @@ add_executable(SonikTests
     Tests/DawPanelShellTests.cpp
     Tests/ChannelGroupLayoutTests.cpp
     Tests/ClipBlockTests.cpp
+    Tests/WaveformCacheTests.cpp
     Tests/LiveProjectionBridgeTests.cpp
     Tests/DawTimelineInteractionTests.cpp
     Tests/RecordingSessionControllerTests.cpp
