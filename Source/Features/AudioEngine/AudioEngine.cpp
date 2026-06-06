@@ -2207,8 +2207,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         if (dTransport != nullptr)
             dTransport->advancePlayhead (numSamples);
 
+        // Only pull arrangement audio while the transport is actually Playing.
+        // When Paused the playhead is frozen at a positive sample (not the -1
+        // Stopped sentinel), so renderBlock would otherwise keep advancing each
+        // streamer's read cursor and emit sound with a stationary playhead.
+        // Gating here makes Pause silence the arrangement just like Stop.
         auto* dRenderer = dawRendererPtr_.load (std::memory_order_acquire);
         if (dRenderer != nullptr
+            && dTransport != nullptr
+            && dTransport->isPlaying()
             && static_cast<int>(dawMasterFeedL_.size()) >= numSamples
             && static_cast<int>(dawMasterFeedR_.size()) >= numSamples)
         {

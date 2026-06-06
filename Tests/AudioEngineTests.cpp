@@ -8,6 +8,8 @@
 #include "Features/Deck/AudioThreadState.h"
 #include "Features/Sync/MasterClockPublisher.h"
 #include "Features/Sync/MasterClockSnapshot.h"
+#include "Features/Daw/Playback/ClipStreamer.h"
+#include "Features/Daw/Import/ImportSourcePublisher.h"
 
 class AudioEngineTests : public juce::UnitTest
 {
@@ -33,6 +35,7 @@ public:
         testSyncDisengageKeepsCurrentSpeed();
         testMultipleDeckRegistration();
         testReRegisterDeck();
+        testDawPauseSilencesArrangement();
     }
 
 private:
@@ -475,6 +478,105 @@ private:
             expectEquals (outputL[i], 0.0f);
             expectEquals (outputR[i], 0.0f);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Regression: pausing the DAW transport must SILENCE the arrangement, not
+    // just freeze the playhead. The renderer is playhead-driven and has no
+    // notion of Paused vs. Playing (when Paused the playhead is frozen at a
+    // positive sample, NOT the -1 Stopped sentinel), so processBlock must gate
+    // the renderBlock call on transport->isPlaying(). Without that gate the
+    // streamers keep being pulled and audio keeps sounding with a stationary
+    // playhead — exactly the reported bug.
+    void testDawPauseSilencesArrangement()
+    {
+        beginTest ("DAW transport - Pause silences arrangement audio (not just the playhead)");
+
+        // Declared BEFORE the engine so the engine (which holds raw pointers to
+        // them) is destroyed first on teardown.
+        Daw::ArrangementPublisher publisher;
+        Daw::ClipStreamerPool     pool (4);
+        Daw::DawTransport         transport;
+
+        EngineContext ctx;
+
+        // A 1-second constant-amplitude stereo source: every sample == 1.0, so
+        // any pulled audio is unmistakably non-zero.
+        constexpr double rate      = 44100.0;
+        constexpr int    numFrames = 44100;
+        juce::AudioBuffer<float> srcBuf (2, numFrames);
+        for (int ch = 0; ch < 2; ++ch)
+            for (int i = 0; i < numFrames; ++i)
+                srcBuf.setSample (ch, i, 1.0f);
+        AudioBufferHolder::Ptr holder = new AudioBufferHolder (std::move (srcBuf), rate, numFrames);
+
+        // Prime a streamer slot, then block until its ring holds the block we
+        // will pull so the "Playing" assertion does not race the reader thread.
+        const int32_t slot = pool.resolveHandle ("daw-pause-regression");
+        expect (slot >= 0, "pool must assign a streamer slot");
+        pool.prime (slot,
+                    std::make_unique<Daw::Import::BufferAudioFormatReader> (holder),
+                    rate, /*sourceStart*/ 0, /*sourceEnd*/ numFrames);
+        if (auto* s = pool.getStreamer (slot))
+            s->waitUntilReady (256);
+
+        // Publish a single clip that covers the timeline from sample 0.
+        Daw::ArrangementSnapshot snap;
+        snap.laneCount      = 1;
+        snap.lanes[0].count = 1;
+        auto& ev = snap.lanes[0].events[0];
+        ev.sourceReadHandle    = slot;
+        ev.sourceStartSample   = 0;
+        ev.sourceEndSample     = numFrames;
+        ev.timelineStartSample = 0;
+        ev.timelineEndSample   = numFrames;
+        ev.gain                = 1.0f;
+        ev.laneIndex           = 0;
+        publisher.publish (snap);
+
+        // Wire the DAW path; this builds the TimelineRenderer (device defaults
+        // give a valid sample rate / block size even without a real device).
+        ctx.engine->setDawPlayback (&publisher, &pool, &transport);
+
+        constexpr int blockLen = 64;
+        float outL[blockLen];
+        float outR[blockLen];
+        float* outs[2] = { outL, outR };
+
+        auto renderPeak = [&]() -> float
+        {
+            for (int i = 0; i < blockLen; ++i) { outL[i] = 0.0f; outR[i] = 0.0f; }
+            ctx.engine->audioDeviceIOCallbackWithContext (nullptr, 0, outs, 2, blockLen, {});
+            float peak = 0.0f;
+            for (int i = 0; i < blockLen; ++i)
+            {
+                peak = juce::jmax (peak, std::abs (outL[i]));
+                peak = juce::jmax (peak, std::abs (outR[i]));
+            }
+            return peak;
+        };
+
+        // PLAYING -> arrangement is audible.
+        transport.play();
+        const float playingPeak = renderPeak();
+        expect (playingPeak > 0.1f,
+                "arrangement audio must be audible while transport is Playing");
+
+        // PAUSED -> playhead frozen at a positive sample, but audio must stop.
+        transport.pause();
+        expect (transport.getPlayheadSample() > 0,
+                "Pause freezes the playhead at a positive sample (not the -1 stop sentinel)");
+        const float pausedPeak = renderPeak();
+        expectWithinAbsoluteError (pausedPeak, 0.0f, 1.0e-6f,
+                "no arrangement audio may be produced while Paused");
+
+        // RESUME -> audio returns on play.
+        transport.play();
+        const float resumedPeak = renderPeak();
+        expect (resumedPeak > 0.1f, "arrangement audio must resume on Play");
+
+        // Detach before the wiring locals go out of scope.
+        ctx.engine->setDawPlayback (nullptr, nullptr, nullptr);
     }
 };
 
