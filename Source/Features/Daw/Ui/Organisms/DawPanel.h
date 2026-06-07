@@ -27,6 +27,7 @@
 #include "../Atoms/RecordPlayhead.h"
 #include "../FollowController.h"
 #include "../DawLayoutMetrics.h"
+#include "../ClipInteraction.h"
 #include "ChannelGroupStack.h"
 #include "../../Automation/AutomationModel.h"
 #include "../../Automation/Ui/ContinuousAutomationLaneView.h"
@@ -253,6 +254,14 @@ public:
     void mouseWheelMove (const juce::MouseEvent& event,
                          const juce::MouseWheelDetails& wheel) override;
     void mouseMagnify (const juce::MouseEvent& event, float scaleFactor) override;
+    bool keyPressed (const juce::KeyPress& key) override;
+
+    //--------------------------------------------------------------------------
+    // PRD-0102: shared snap settings + clip selection (owned here, injected into
+    // the clip stack). Exposed for tests and host wiring.
+    //--------------------------------------------------------------------------
+    SnapSettings&  getSnapSettings()  noexcept { return snap_; }
+    ClipSelection& getClipSelection() noexcept { return selection_; }
 
 private:
     void timerCallback() override;
@@ -273,6 +282,15 @@ private:
     void applyFollowIfNeeded();                     // auto-scroll when following
     void layoutPlayhead();
 
+    // PRD-0102 ruler scrubbing helpers.
+    bool         isInRulerBand (juce::Point<int> panelPoint) const noexcept;
+    std::int64_t timelineSampleAtPanelX (int panelX, bool bypass) const; // snapped
+    void         finalizeScrub();                  // commit the parked seek
+
+    // PRD-0102: true when a panel-local point lands on a ClipBlock (used by the
+    // interaction overlay's hitTest so clip clicks fall through to the clip).
+    bool         isPointOverClip (juce::Point<int> panelPoint);
+
     // Transparent input surface over the content area (ruler + body): it forwards
     // pan/zoom/pinch gestures to the panel so they work even above the body
     // viewport, while leaving the now-line (drawn above it) non-interactive.
@@ -284,6 +302,19 @@ private:
         std::function<void (const juce::MouseEvent&)> onDown, onDrag, onUp;
         std::function<void (const juce::MouseEvent&, const juce::MouseWheelDetails&)> onWheel;
         std::function<void (const juce::MouseEvent&, float)> onMagnify;
+
+        // PRD-0102: return true at points where the click should fall THROUGH to
+        // the component beneath (a ClipBlock), so clip drag/trim/context work.
+        // Empty lane areas and the ruler stay opaque so this layer keeps handling
+        // pan / zoom / scrub. Without this the overlay shadowed every clip.
+        std::function<bool (juce::Point<int>)> shouldPassThrough;
+
+        bool hitTest (int x, int y) override
+        {
+            if (shouldPassThrough && shouldPassThrough ({ x, y }))
+                return false; // transparent here -> clip beneath receives the event
+            return true;
+        }
 
         void mouseDown (const juce::MouseEvent& e) override { if (onDown) onDown (e); }
         void mouseDrag (const juce::MouseEvent& e) override { if (onDrag) onDrag (e); }
@@ -333,6 +364,8 @@ private:
     juce::Rectangle<int> pauseBounds_;         // PRD-0082: DAW pause
     juce::Rectangle<int> stopBounds_;          // PRD-0082: DAW stop
     juce::Rectangle<int> loopBounds_;          // PRD-0082: loop-arm toggle
+    juce::Rectangle<int> snapToggleBounds_;    // PRD-0102: grid-snap on/off
+    juce::Rectangle<int> snapGranBounds_;      // PRD-0102: snap granularity cycle
 
     // PRD-0082: DawTransport owned here so the buttons work without external wiring.
     std::unique_ptr<Daw::DawTransport>            transport_;
@@ -348,6 +381,17 @@ private:
     // Drag-to-pan state (content area horizontal pan).
     bool         dragging_       { false };
     int          dragLastX_      { 0 };
+
+    // PRD-0102: grid snap settings + single-clip selection, shared (by pointer)
+    // with every ClipBlock through the stack plumbing.
+    SnapSettings  snap_;
+    ClipSelection selection_;
+
+    // PRD-0102: ruler-scrub state. While scrubbing_ the playhead line follows the
+    // cursor live (visual only); the authoritative transport seek is committed on
+    // mouse-up (§1.5.1: no per-move audio re-prime while playing).
+    bool          scrubbing_   { false };
+    std::int64_t  scrubSample_ { 0 };
 
     // PRD-0098: external-file drop highlight state. dropActive_ is true while a
     // supported file hovers; dropHighlight_ is the lane-row rectangle (panel-

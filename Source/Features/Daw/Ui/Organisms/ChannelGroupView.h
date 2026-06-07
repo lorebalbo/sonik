@@ -99,6 +99,9 @@ public:
     // PRD-0083/0084/0085/0086: Wire edit dispatcher into all lanes.
     void setEditDispatcher (Daw::EditCommandDispatcher* dispatcher);
 
+    // PRD-0102: forward the shared snap settings + selection model to all lanes.
+    void setClipInteraction (const SnapSettings* snap, ClipSelection* selection);
+
     std::function<void()> onPreferredHeightChanged;
 
 private:

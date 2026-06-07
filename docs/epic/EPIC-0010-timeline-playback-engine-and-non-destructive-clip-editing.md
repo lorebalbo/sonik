@@ -183,3 +183,4 @@ Source/Features/Daw/
 - [x] PRD-0084: Clip Move & Trim Interactions (grid-snap drag handles)
 - [x] PRD-0085: Clip Uncrop / Extend & Split (lossless crop-window editing)
 - [x] PRD-0086: Clip Delete, Per-Clip Gain & Editing Validation
+- [x] PRD-0102: Timeline Direct-Manipulation Polish — Playhead Scrubbing, Grid Snap & Granularity, Clip Context Menu (post-Epic addition: enables the clip mouse layer that the interaction overlay had shadowed, plus ruler scrubbing and the snap toggle PRD-0084 had specified but not wired)

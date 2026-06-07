@@ -570,6 +570,31 @@ public:
 
     bool keyPressed (const juce::KeyPress& key) override
     {
+        // PRD-0102: Cmd+Shift+Z = redo, Cmd+Z = undo for the DAW arrangement
+        // edits (move / trim / extend / split / delete / gain). Multi-level: the
+        // shared juce::UndoManager keeps the full transaction history, so each
+        // press steps one more action back (or forward for redo). Handled here at
+        // the top-level content component so it works regardless of which DAW
+        // sub-component currently holds keyboard focus. Check the shift (redo)
+        // variant first since it also has the command modifier down.
+        if (key == juce::KeyPress ('z', juce::ModifierKeys::commandModifier
+                                            | juce::ModifierKeys::shiftModifier, 0))
+        {
+            if (auto* disp = dawPanel.getEditDispatcher())
+            {
+                disp->redo();
+                return true;
+            }
+        }
+        if (key == juce::KeyPress ('z', juce::ModifierKeys::commandModifier, 0))
+        {
+            if (auto* disp = dawPanel.getEditDispatcher())
+            {
+                disp->undo();
+                return true;
+            }
+        }
+
         // Cmd+1..4 to switch active deck (macOS)
         auto mods = key.getModifiers();
         if (mods.isCommandDown())

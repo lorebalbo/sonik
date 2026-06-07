@@ -1919,6 +1919,14 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                                 break;
 
                             case DeckAudioSource::DeferredAction::Seek:
+                                // EPIC-0009: capture the exact jump (cue / beat /
+                                // hot-cue / navigation seek) for the recording
+                                // projection — clip closes at the pre-jump sample,
+                                // the next opens at the target — published before
+                                // the accumulator moves.
+                                publishSeekDiscontinuity (*audioState,
+                                    static_cast<int64_t> (source->playheadAccumulator),
+                                    source->deferredSeekTarget);
                                 source->playheadAccumulator =
                                     static_cast<double> (source->deferredSeekTarget);
                                 // PRD-0017: handle slip displacement on seek
@@ -2027,6 +2035,11 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 source->playheadAccumulator = static_cast<double> (lpIn) + offset;
 
                 source->loopFadeRemaining = loopRampLen;
+
+                // EPIC-0009: publish the EXACT loop boundary so the recording
+                // projection closes the clip at lpOut and resumes at lpIn — no
+                // polled audio loss, a contiguous seam (the deck crossfades it).
+                publishSeekDiscontinuity (*audioState, lpOut, lpIn);
 
                 // PRD-0017: Loop wrap-around sets slip displacement
                 if (slipEnabled && ! source->slipDisplacedLocal)

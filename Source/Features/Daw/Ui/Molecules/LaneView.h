@@ -69,6 +69,10 @@ public:
     // blocks created after inherit the dispatcher automatically.
     void setEditDispatcher (Daw::EditCommandDispatcher* dispatcher);
 
+    // PRD-0102: inject the shared snap settings + selection model (owned by the
+    // DawPanel). Applied to all existing and future ClipBlocks on this lane.
+    void setClipInteraction (const SnapSettings* snap, ClipSelection* selection);
+
     // PRD-0070: re-place hosted ClipBlocks after a zoom/scroll transform change
     // (the lane bounds don't change on zoom, so resized() won't fire).
     void refreshClipLayout();
@@ -107,6 +111,11 @@ private:
     juce::OwnedArray<ClipBlock> clipBlocks_;
     bool                        active_ { true };
     Daw::EditCommandDispatcher* dispatcher_ { nullptr };
+
+    // PRD-0102: shared snap settings + selection (owned by DawPanel), forwarded
+    // to each ClipBlock at creation and on setClipInteraction().
+    const SnapSettings* snap_      { nullptr };
+    ClipSelection*      selection_ { nullptr };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LaneView)
 };

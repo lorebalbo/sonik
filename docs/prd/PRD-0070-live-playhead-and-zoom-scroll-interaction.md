@@ -259,6 +259,10 @@ presentational and writes no state. Making the click inert now prevents users fr
 forming a "click-to-seek" expectation that EPIC-0010's transport would then have
 to honour or break.
 
+**Superseded by PRD-0102.** Now that EPIC-0010's DAW transport exists, the ruler
+click/drag DOES scrub the transport playhead (the "click-to-seek" expectation this
+section deferred is now the intended behaviour). See PRD-0102 §1.5.1.
+
 ### 1.5.7. Keyboard Shortcuts Deferred
 
 DAWs commonly bind zoom/scroll/follow to keys (e.g. `+`/`-` to zoom, arrows to

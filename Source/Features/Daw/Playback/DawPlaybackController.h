@@ -111,7 +111,17 @@ public:
             // Convert project-rate source positions to the reader's native rate.
             const double  srcPerProject = sourceRate / projectRate;
             const int64_t readerStart   = (int64_t) std::llround ((double) primeStartProject * srcPerProject);
-            const int64_t readerEnd      = (int64_t) std::llround ((double) req.sourceEndSample * srcPerProject);
+
+            // EPIC-0009: prime a short continuation tail past the crop end so a
+            // butt-joined clip can render the crossfade tail the renderer reads
+            // (kClipFadeSamples extra RUNTIME samples). Converted to the reader's
+            // native rate. Harmless for non-joined clips — those samples are
+            // primed but never read. Reading past the true source end yields
+            // silence (the reader clamps), which is the correct fallback.
+            const int64_t tailSourceSamples =
+                (int64_t) std::ceil ((double) kClipFadeSamples * sourceRate / runtimeSampleRate_) + 2;
+            const int64_t readerEnd      = (int64_t) std::llround ((double) req.sourceEndSample * srcPerProject)
+                                           + tailSourceSamples;
 
             // Prime the streamer to emit runtime-rate samples (resampling from
             // the source rate inside the streamer's reader loop).

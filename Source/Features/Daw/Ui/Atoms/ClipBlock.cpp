@@ -29,6 +29,40 @@ ClipBlock::~ClipBlock()
 {
     if (clipNode_.isValid())
         clipNode_.removeListener (this);
+
+    if (selection_ != nullptr)
+        selection_->removeChangeListener (this);
+}
+
+void ClipBlock::setClipInteraction (const SnapSettings* snap, ClipSelection* selection)
+{
+    snap_ = snap;
+
+    if (selection_ != selection)
+    {
+        if (selection_ != nullptr)
+            selection_->removeChangeListener (this);
+
+        selection_ = selection;
+
+        if (selection_ != nullptr)
+            selection_->addChangeListener (this);
+    }
+
+    repaint();
+}
+
+void ClipBlock::changeListenerCallback (juce::ChangeBroadcaster*)
+{
+    // The selection moved; repaint so this block shows/hides its selected ring.
+    repaint();
+}
+
+int64_t ClipBlock::snapTimeline (int64_t sample, bool bypass) const
+{
+    if (snap_ == nullptr)
+        return sample;
+    return snap_->snap (sample, transform_, bypass);
 }
 
 void ClipBlock::reloadClip()
@@ -156,6 +190,18 @@ void ClipBlock::paint (juce::Graphics& g)
     {
         g.setColour (kInk.withAlpha (0.10f));
         g.fillRect (bounds.reduced (2));
+    }
+
+    // PRD-0102: selected state — a clear monochrome double-line ring inside the
+    // outer border (surface gap + inner ink ring), so the DJ always knows which
+    // clip a Delete keystroke or context-menu action will affect. DESIGN.md
+    // compliant: pure ink/surface, hard edges, zero radius.
+    if (selection_ != nullptr && selection_->isSelected (clip_.clipId.toString()))
+    {
+        g.setColour (kSurface);
+        g.drawRect (bounds.reduced (2), 1);
+        g.setColour (kInk);
+        g.drawRect (bounds.reduced (3), 2);
     }
 }
 
@@ -336,6 +382,47 @@ void ClipBlock::mouseMove (const juce::MouseEvent& e)
 void ClipBlock::mouseDown (const juce::MouseEvent& e)
 {
     grabKeyboardFocus();
+
+    // PRD-0102: any press (left, drag-start, or right-click) selects this clip —
+    // single selection, so the previously selected clip is deselected.
+    const juce::String clipId = clip_.clipId.toString();
+    if (selection_ != nullptr)
+        selection_->select (clipId);
+
+    // PRD-0102: right-click opens the clip context menu. For now it holds a
+    // single "Delete" item (extensible list); it deletes only THIS clip via the
+    // wired DeleteClip command, never the loop/beat-jump siblings. We do NOT
+    // start a drag for a popup gesture.
+    if (e.mods.isPopupMenu())
+    {
+        dragZone_   = DragZone::None;
+        dragActive_ = false;
+
+        juce::PopupMenu menu;
+        menu.addItem (1, "Delete");
+
+        juce::Component::SafePointer<ClipBlock> safe (this);
+        menu.showMenuAsync (
+            juce::PopupMenu::Options().withTargetComponent (this),
+            [safe, clipId] (int result)
+            {
+                if (result != 1 || safe == nullptr)
+                    return;
+
+                // Clear the selection BEFORE deleting: the delete synchronously
+                // removes the clip node, which destroys this block, so nothing
+                // below may touch `safe` afterwards.
+                if (safe->selection_ != nullptr)
+                    safe->selection_->clear();
+
+                if (auto cb = safe->onDelete)
+                    cb (clipId);
+            });
+        return;
+    }
+
+    // PRD-0102: open ONE undo transaction for the whole drag so all the in-drag
+    // move/trim/uncrop updates coalesce into a single undoable step.
     dragZone_          = hitZoneAt (e.x);
     dragStartX_        = e.getScreenX();
     dragStartTimeline_ = clip_.timelineStartSample;
@@ -343,34 +430,52 @@ void ClipBlock::mouseDown (const juce::MouseEvent& e)
     dragStartSrcEnd_   = clip_.sourceEndSample;
     dragActive_        = false;
 
+    if (onDragBegin)
+        onDragBegin (clipId);
+
     updateCursorForZone (dragZone_);
 }
 
 void ClipBlock::mouseDrag (const juce::MouseEvent& e)
 {
+    if (dragZone_ == DragZone::None)
+        return; // a popup/no-op press never becomes a drag
+
     const int deltaX = e.getScreenX() - dragStartX_;
     const double samplesPerPixel = ClipBlock::samplesPerPixelFor (transform_);
     const int64_t deltaSamples  = static_cast<int64_t> (deltaX * samplesPerPixel);
 
+    // PRD-0102: snapping is resolved in TIMELINE space (the moved clip start or
+    // the dragged edge's timeline position lands on a grid line). Hold Cmd/Ctrl
+    // to momentarily bypass snapping for a sample-accurate nudge (§1.5.2).
+    const bool bypass = e.mods.isCommandDown() || e.mods.isCtrlDown();
     const juce::String clipId = clip_.clipId.toString();
     dragActive_ = true;
 
     if (dragZone_ == DragZone::Body)
     {
-        const int64_t newStart = juce::jmax ((int64_t) 0, dragStartTimeline_ + deltaSamples);
+        int64_t newStart = juce::jmax ((int64_t) 0, dragStartTimeline_ + deltaSamples);
+        newStart = juce::jmax ((int64_t) 0, snapTimeline (newStart, bypass));
         if (onMoveDrag) onMoveDrag (clipId, newStart);
     }
     else if (dragZone_ == DragZone::LeftEdge)
     {
-        const int64_t newSrcStart = dragStartSrcStart_ + deltaSamples;
-        // Positive delta = trim inward; negative = uncrop outward.
-        const bool isUncrop = (deltaSamples < 0);
+        // The left edge's timeline position = timelineStart (it moves 1:1 with
+        // sourceStart). Snap that, then map back to sourceStart.
+        const int64_t snappedEdge   = snapTimeline (dragStartTimeline_ + deltaSamples, bypass);
+        const int64_t deltaSnapped  = snappedEdge - dragStartTimeline_;
+        const int64_t newSrcStart   = dragStartSrcStart_ + deltaSnapped;
+        const bool    isUncrop      = (deltaSnapped < 0); // outward = reveal earlier
         if (onLeftEdgeDrag) onLeftEdgeDrag (clipId, newSrcStart, isUncrop);
     }
     else if (dragZone_ == DragZone::RightEdge)
     {
-        const int64_t newSrcEnd = dragStartSrcEnd_ + deltaSamples;
-        const bool isUncrop = (deltaSamples > 0);
+        // The right edge's timeline position = timelineStart + cropLength. Snap
+        // that, then map back to sourceEnd (left edge / timelineStart are fixed).
+        const int64_t cropLength    = dragStartSrcEnd_ - dragStartSrcStart_;
+        const int64_t snappedEdge   = snapTimeline (dragStartTimeline_ + cropLength + deltaSamples, bypass);
+        const int64_t newSrcEnd     = dragStartSrcStart_ + (snappedEdge - dragStartTimeline_);
+        const bool    isUncrop      = (newSrcEnd > dragStartSrcEnd_); // outward = reveal later
         if (onRightEdgeDrag) onRightEdgeDrag (clipId, newSrcEnd, isUncrop);
     }
 }
@@ -383,23 +488,29 @@ void ClipBlock::mouseUp (const juce::MouseEvent& e)
     const double samplesPerPixel = ClipBlock::samplesPerPixelFor (transform_);
     const int64_t deltaSamples   = static_cast<int64_t> (deltaX * samplesPerPixel);
 
+    const bool bypass = e.mods.isCommandDown() || e.mods.isCtrlDown();
     const juce::String clipId = clip_.clipId.toString();
 
     if (dragZone_ == DragZone::Body)
     {
-        const int64_t finalStart = juce::jmax ((int64_t) 0, dragStartTimeline_ + deltaSamples);
+        int64_t finalStart = juce::jmax ((int64_t) 0, dragStartTimeline_ + deltaSamples);
+        finalStart = juce::jmax ((int64_t) 0, snapTimeline (finalStart, bypass));
         if (onMoveEnd) onMoveEnd (clipId, finalStart);
     }
     else if (dragZone_ == DragZone::LeftEdge)
     {
-        const int64_t finalSrcStart = dragStartSrcStart_ + deltaSamples;
-        const bool isUncrop = (deltaSamples < 0);
+        const int64_t snappedEdge  = snapTimeline (dragStartTimeline_ + deltaSamples, bypass);
+        const int64_t deltaSnapped = snappedEdge - dragStartTimeline_;
+        const int64_t finalSrcStart = dragStartSrcStart_ + deltaSnapped;
+        const bool isUncrop = (deltaSnapped < 0);
         if (onLeftEdgeEnd) onLeftEdgeEnd (clipId, finalSrcStart, isUncrop);
     }
     else if (dragZone_ == DragZone::RightEdge)
     {
-        const int64_t finalSrcEnd = dragStartSrcEnd_ + deltaSamples;
-        const bool isUncrop = (deltaSamples > 0);
+        const int64_t cropLength   = dragStartSrcEnd_ - dragStartSrcStart_;
+        const int64_t snappedEdge  = snapTimeline (dragStartTimeline_ + cropLength + deltaSamples, bypass);
+        const int64_t finalSrcEnd  = dragStartSrcStart_ + (snappedEdge - dragStartTimeline_);
+        const bool isUncrop = (finalSrcEnd > dragStartSrcEnd_);
         if (onRightEdgeEnd) onRightEdgeEnd (clipId, finalSrcEnd, isUncrop);
     }
 
@@ -410,11 +521,12 @@ void ClipBlock::mouseUp (const juce::MouseEvent& e)
 
 void ClipBlock::mouseDoubleClick (const juce::MouseEvent& e)
 {
-    // Split at cursor position.
+    // Split at cursor position (PRD-0102: snapped to the grid when snap is on).
     const double sampleX = static_cast<double> (e.x);
     const double samplesPerPixel = ClipBlock::samplesPerPixelFor (transform_);
     const int64_t cutOffset = static_cast<int64_t> (sampleX * samplesPerPixel);
-    const int64_t cutTimeline = clip_.timelineStartSample + cutOffset;
+    const bool bypass = e.mods.isCommandDown() || e.mods.isCtrlDown();
+    const int64_t cutTimeline = snapTimeline (clip_.timelineStartSample + cutOffset, bypass);
 
     if (onSplit) onSplit (clip_.clipId.toString(), cutTimeline);
 }
@@ -441,7 +553,13 @@ bool ClipBlock::keyPressed (const juce::KeyPress& key)
 {
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
     {
-        if (onDelete) onDelete (clip_.clipId.toString());
+        const juce::String clipId = clip_.clipId.toString();
+        // Clear the selection BEFORE deleting: the delete synchronously removes
+        // the clip node, destroying this block, so nothing may touch members
+        // afterwards.
+        if (selection_ != nullptr)
+            selection_->clear();
+        if (onDelete) onDelete (clipId);
         return true;
     }
     return false;

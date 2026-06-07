@@ -38,8 +38,10 @@ class TimelineRenderer
 public:
     //--------------------------------------------------------------------------
     // Ramp length for anti-click fade-in / fade-out at clip boundaries.
+    // Shared with the compiler / offline driver via ArrangementSnapshot so a
+    // butt-joined clip's continuation tail and this fade always match length.
     //--------------------------------------------------------------------------
-    static constexpr int kRampLengthSamples = 64;
+    static constexpr int kRampLengthSamples = kClipFadeSamples;
 
     //--------------------------------------------------------------------------
     // Construction
@@ -70,8 +72,12 @@ public:
         maxLanes_      = juce::jmin (maxLanes, kMaxLanes);
         maxClipsPerLane_ = juce::jmin (maxClipsPerLane, kMaxClipsPerLane);
 
-        // Per-lane scratch (stereo)
+        // Per-lane accumulator + per-clip scratch (stereo). Each clip renders
+        // into clipBuffer_ then is ADDED into laneBuffer_, so clips that overlap
+        // on a lane (a butt-joined pair's crossfade region) mix instead of
+        // overwriting. For disjoint clips this is identical to a direct copy.
         laneBuffer_.setSize (2, blockSize, false, true, false);
+        clipBuffer_.setSize (2, blockSize, false, true, false);
 
         // Ramp coefficient table: linear fade 0→1 over kRampLengthSamples.
         for (int i = 0; i < kRampLengthSamples; ++i)
@@ -122,8 +128,12 @@ public:
             {
                 const ClipEvent& ev = lane.events[ci];
 
+                // Effective end includes a butt-joined clip's continuation tail
+                // so its fade-out can overlap the next clip's fade-in.
+                const int64_t clipEnd = effectiveTimelineEnd (ev);
+
                 // Clip ends before this block starts → skip.
-                if (ev.timelineEndSample <= playhead)
+                if (clipEnd <= playhead)
                     continue;
 
                 // Clip starts after this block ends → no more clips can overlap.
@@ -143,19 +153,24 @@ public:
                 const int blockStart = static_cast<int> (
                     juce::jmax ((int64_t) 0, ev.timelineStartSample - playhead));
                 const int blockEnd = static_cast<int> (
-                    juce::jmin ((int64_t) numSamples,
-                               ev.timelineEndSample - playhead));
+                    juce::jmin ((int64_t) numSamples, clipEnd - playhead));
                 const int copyLen = blockEnd - blockStart;
                 if (copyLen <= 0)
                     continue;
 
-                // Temporary local buffer for this clip's contribution.
-                // We write into laneBuffer_ directly.
-                streamer->readInto (laneBuffer_, blockStart, copyLen);
+                // Render this clip into its own scratch, then ADD into the lane
+                // accumulator. Adding (not copying) lets a butt-joined pair's
+                // overlapping crossfade region sum to a constant-power blend;
+                // for disjoint clips the add lands on cleared samples (== copy).
+                streamer->readInto (clipBuffer_, blockStart, copyLen);
 
-                // Apply per-clip gain and ramps.
-                applyGainWithRamps (laneBuffer_, blockStart, copyLen,
-                                    ev.gain, ev, playhead, numSamples);
+                applyGainWithRamps (clipBuffer_, blockStart, copyLen,
+                                    ev.gain, ev, playhead);
+
+                for (int ch = 0; ch < 2; ++ch)
+                    laneBuffer_.addFrom (ch, blockStart,
+                                         clipBuffer_.getReadPointer (ch, blockStart),
+                                         copyLen);
 
                 laneHasSamples = true;
             }
@@ -178,54 +193,45 @@ private:
     // Anti-click ramp application
     //--------------------------------------------------------------------------
 
+    // Applies per-clip gain and the boundary fades for the [startSample,
+    // startSample+numSamples) span of `buffer`, whose first sample sits at
+    // timeline position (playhead + startSample).
+    //
+    // Fades are positioned by ABSOLUTE timeline sample, not block-local offset,
+    // so they land correctly for clips that start mid-block and for fades that
+    // straddle a block boundary. A butt-joined clip's fade-out is shifted onto
+    // its continuation tail [timelineEnd, timelineEnd+kRamp) so it overlaps the
+    // next clip's fade-in [timelineStart, timelineStart+kRamp) — together they
+    // form an equal-power linear crossfade once the two clips are summed.
     void applyGainWithRamps (juce::AudioBuffer<float>& buffer,
                              int startSample,
                              int numSamples,
                              float gain,
                              const ClipEvent& ev,
-                             int64_t playhead,
-                             int /*blockLen*/) noexcept
+                             int64_t playhead) noexcept
     {
-        // Apply per-clip gain uniformly.
+        const int64_t fadeInStart  = ev.timelineStartSample;
+        const int64_t fadeOutEnd   = effectiveTimelineEnd (ev);          // tail-aware
+        const int64_t fadeOutStart = fadeOutEnd - kRampLengthSamples;
+        const int     lastRamp     = kRampLengthSamples - 1;
+
         for (int ch = 0; ch < 2; ++ch)
         {
             float* data = buffer.getWritePointer (ch, startSample);
             for (int i = 0; i < numSamples; ++i)
-                data[i] *= gain;
-        }
-
-        // Fade-in ramp at clip start.
-        const int64_t clipStartInBlock = ev.timelineStartSample - playhead;
-        if (clipStartInBlock >= 0 && clipStartInBlock < numSamples)
-        {
-            const int rampStart = static_cast<int> (clipStartInBlock);
-            const int rampLen   = juce::jmin (kRampLengthSamples, numSamples - rampStart);
-
-            for (int ch = 0; ch < 2; ++ch)
             {
-                float* data = buffer.getWritePointer (ch, startSample + rampStart);
-                for (int i = 0; i < rampLen; ++i)
-                    data[i] *= rampTable_[i];
-            }
-        }
+                const int64_t tl = playhead + startSample + i; // timeline sample
+                float g = gain;
 
-        // Fade-out ramp at clip end.
-        const int64_t clipEndInBlock = ev.timelineEndSample - playhead;
-        if (clipEndInBlock > 0 && clipEndInBlock <= numSamples)
-        {
-            const int rampEnd   = static_cast<int> (clipEndInBlock);
-            const int rampStart = juce::jmax (0, rampEnd - kRampLengthSamples);
-            const int rampLen   = rampEnd - rampStart;
+                // Fade-in over [start, start+kRamp): rampTable rises 0→1.
+                if (tl >= fadeInStart && tl < fadeInStart + kRampLengthSamples)
+                    g *= rampTable_[(int) (tl - fadeInStart)];
 
-            for (int ch = 0; ch < 2; ++ch)
-            {
-                float* data = buffer.getWritePointer (ch, startSample + rampStart);
-                for (int i = 0; i < rampLen; ++i)
-                {
-                    const int rampIdx = kRampLengthSamples - rampLen + i;
-                    const float fadeOut = 1.0f - rampTable_[juce::jmin (rampIdx, kRampLengthSamples - 1)];
-                    data[i] *= fadeOut;
-                }
+                // Fade-out over [end-kRamp, end): mirror falls 1→0.
+                if (tl >= fadeOutStart && tl < fadeOutEnd)
+                    g *= 1.0f - rampTable_[juce::jmin ((int) (tl - fadeOutStart), lastRamp)];
+
+                data[i] *= g;
             }
         }
     }
@@ -254,8 +260,9 @@ private:
     int    maxLanes_         { kMaxLanes };
     int    maxClipsPerLane_  { kMaxClipsPerLane };
 
-    // Pre-allocated lane scratch buffer (stereo, maxBlockSize_).
+    // Pre-allocated lane accumulator + per-clip scratch (stereo, maxBlockSize_).
     juce::AudioBuffer<float>     laneBuffer_;
+    juce::AudioBuffer<float>     clipBuffer_;
 
     // Anti-click ramp table.
     float rampTable_[kRampLengthSamples];

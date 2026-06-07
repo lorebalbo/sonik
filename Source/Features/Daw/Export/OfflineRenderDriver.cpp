@@ -227,8 +227,16 @@ void OfflineRenderDriver::primeStreamersForRange (int64_t rangeStart,
             const double  srcPerProject = sourceRate / projectRate;
             const int64_t readerStart =
                 (int64_t) std::llround ((double) primeStartProject * srcPerProject);
+
+            // EPIC-0009: include the butt-join crossfade continuation tail
+            // (kClipFadeSamples render-rate samples) so an exported join blends
+            // exactly as live. Unused for non-joined clips; reads past the true
+            // source end yield silence.
+            const int64_t tailSourceSamples =
+                (int64_t) std::ceil ((double) kClipFadeSamples * srcPerProject) + 2;
             const int64_t readerEnd =
-                (int64_t) std::llround ((double) ev.sourceEndSample * srcPerProject);
+                (int64_t) std::llround ((double) ev.sourceEndSample * srcPerProject)
+                + tailSourceSamples;
 
             ClipStreamer* streamer = pool_->getStreamer (slot);
             jassert (streamer != nullptr);
@@ -267,7 +275,11 @@ namespace
             {
                 const ClipEvent& ev = ln.events[ci];
 
-                if (ev.timelineEndSample <= playhead)
+                // Mirror renderBlock: a butt-joined clip is read kClipFadeSamples
+                // past its end for the crossfade tail (effectiveTimelineEnd).
+                const int64_t clipEnd = effectiveTimelineEnd (ev);
+
+                if (clipEnd <= playhead)
                     continue;
                 if (ev.timelineStartSample >= playhead + numSamples)
                     break; // lane is sorted by timelineStartSample
@@ -277,7 +289,7 @@ namespace
                 const int blockStart = (int) juce::jmax ((int64_t) 0,
                                                          ev.timelineStartSample - playhead);
                 const int blockEnd = (int) juce::jmin ((int64_t) numSamples,
-                                                       ev.timelineEndSample - playhead);
+                                                       clipEnd - playhead);
                 const int copyLen = blockEnd - blockStart;
                 if (copyLen <= 0)
                     continue;

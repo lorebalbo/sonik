@@ -97,6 +97,9 @@ ClipBlock* LaneView::addClipBlockFor (juce::ValueTree clipNode)
     if (dispatcher_ != nullptr)
         wireClipCallbacks (*block);
 
+    // PRD-0102: hand the new block the shared snap settings + selection model.
+    block->setClipInteraction (snap_, selection_);
+
     clipLayer_.addAndMakeVisible (block);
 
     // Place just this block (the content layer bounds are kept current here so the
@@ -115,10 +118,26 @@ void LaneView::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher)
         wireClipCallbacks (*block);
 }
 
+void LaneView::setClipInteraction (const SnapSettings* snap, ClipSelection* selection)
+{
+    snap_      = snap;
+    selection_ = selection;
+    for (auto* block : clipBlocks_)
+        block->setClipInteraction (snap_, selection_);
+}
+
 void LaneView::wireClipCallbacks (ClipBlock& block)
 {
     if (dispatcher_ == nullptr)
         return;
+
+    // PRD-0102: open ONE undo transaction at drag start. Every in-drag update
+    // below mutates with the same UndoManager and so coalesces into this single
+    // transaction (one drag = one undo step) — replacing the previous
+    // begin-transaction-per-mouse-move which produced many undo entries.
+    block.onDragBegin = [this] (const juce::String&) {
+        dispatcher_->undoManager().beginNewTransaction ("Edit Clip");
+    };
 
     // Move (body drag)
     block.onMoveDrag = [this] (const juce::String& id, int64_t newStart) {
@@ -128,10 +147,11 @@ void LaneView::wireClipCallbacks (ClipBlock& block)
         dispatcher_->moveClip (id, finalStart);
     };
 
-    // Trim (left/right edges inward)
+    // Trim (inward) / uncrop (outward) — same edge handles, direction chosen by
+    // the block. The single drag transaction is already open (onDragBegin).
     block.onLeftEdgeDrag = [this] (const juce::String& id, int64_t newSrcStart, bool isUncrop) {
         if (isUncrop) dispatcher_->uncropClipStart (id, newSrcStart);
-        else          { dispatcher_->beginTrimDrag (id); dispatcher_->trimClipStart (id, newSrcStart); }
+        else          dispatcher_->trimClipStart (id, newSrcStart);
     };
     block.onLeftEdgeEnd = [this] (const juce::String& id, int64_t finalSrcStart, bool isUncrop) {
         if (isUncrop) dispatcher_->uncropClipStart (id, finalSrcStart);
@@ -140,7 +160,7 @@ void LaneView::wireClipCallbacks (ClipBlock& block)
 
     block.onRightEdgeDrag = [this] (const juce::String& id, int64_t newSrcEnd, bool isUncrop) {
         if (isUncrop) dispatcher_->uncropClipEnd (id, newSrcEnd);
-        else          { dispatcher_->beginTrimDrag (id); dispatcher_->trimClipEnd (id, newSrcEnd); }
+        else          dispatcher_->trimClipEnd (id, newSrcEnd);
     };
     block.onRightEdgeEnd = [this] (const juce::String& id, int64_t finalSrcEnd, bool isUncrop) {
         if (isUncrop) dispatcher_->uncropClipEnd (id, finalSrcEnd);

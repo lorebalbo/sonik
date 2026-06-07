@@ -38,6 +38,13 @@ static constexpr int kMaxLanes        = 12;
 /// thread is unaffected).
 static constexpr int kMaxClipsPerLane = 256;
 
+/// EPIC-0009 anti-click crossfade / fade length in render-rate samples.
+/// Used as the per-clip fade-in/out ramp length AND, for a butt-joined clip,
+/// as the length of the continuation tail it renders past its end so its
+/// fade-out overlaps the next clip's fade-in (an equal-power crossfade that
+/// matches the live deck's loop crossfade). 64 samples ≈ 1.5 ms @ 44.1 kHz.
+static constexpr int kClipFadeSamples = 64;
+
 //==============================================================================
 // ClipEvent
 //==============================================================================
@@ -71,7 +78,33 @@ struct ClipEvent
 
     /// Lane index within the snapshot this event belongs to.
     int32_t  laneIndex          { 0 };
+
+    /// EPIC-0009 recording continuity. A jump/loop split during recording
+    /// produces consecutive clips that butt-join on the timeline (one clip's
+    /// timelineEndSample equals the next clip's timelineStartSample) from a
+    /// single continuous take. At such a shared edge the renderer's anti-click
+    /// fade would dip the signal to silence for ~128 samples — the audible
+    /// "gap between clips". These flags tell the renderer to SUPPRESS that fade
+    /// so the reproduced audio is seamless, matching the deck (where the
+    /// loop/jump is a sample-accurate cut). They are left false for an isolated
+    /// edge that meets real silence, where the fade still runs to avoid a click.
+    bool     joinsPrev          { false }; // contiguous predecessor → crossfade-IN
+    bool     joinsNext          { false }; // contiguous successor   → crossfade-OUT
 };
+
+//==============================================================================
+// Effective render extent
+//==============================================================================
+
+/// Timeline sample (exclusive) at which a clip stops contributing audio,
+/// INCLUDING the short continuation tail a butt-joined clip renders so its
+/// fade-out can crossfade with the next clip's fade-in (EPIC-0009). For an
+/// isolated clip this is just timelineEndSample. The renderer and the offline
+/// driver's prefetch loop must agree on this so they read the same span.
+inline int64_t effectiveTimelineEnd (const ClipEvent& ev) noexcept
+{
+    return ev.timelineEndSample + (ev.joinsNext ? (int64_t) kClipFadeSamples : 0);
+}
 
 //==============================================================================
 // LaneSnapshot

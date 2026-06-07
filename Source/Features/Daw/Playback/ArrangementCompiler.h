@@ -212,9 +212,16 @@ public:
                     const int64_t scaledSourceEnd     = scale (sourceEnd);
                     const int64_t scaledTimelineStart = scale (timelineStart);
 
-                    // Compute timelineEndSample: start + crop length (runtime rate).
+                    // Compute timelineEndSample by scaling the PROJECT-rate
+                    // timeline end (start + crop length) as a single position,
+                    // rather than summing independently-rounded source deltas.
+                    // This guarantees a continuation clip's scaledTimelineStart
+                    // equals the prior clip's scaledTimelineEnd EXACTLY at any
+                    // device rate (both are scale() of the same project value),
+                    // so contiguous recording clips never develop a sub-sample
+                    // timeline gap and the butt-join detection below is exact.
                     const int64_t scaledTimelineEnd =
-                        scaledTimelineStart + (scaledSourceEnd - scaledSourceStart);
+                        scale (timelineStart + (sourceEnd - sourceStart));
 
                     // Encode sourceFileId as a 64-bit hash for the ClipEvent
                     // (diagnostic use only; audio path uses handle).
@@ -254,6 +261,23 @@ public:
                                        return a.timelineStartSample < b.timelineStartSample;
                                    return a.sourceStartSample < b.sourceStartSample;
                                });
+                }
+
+                // EPIC-0009 recording continuity: flag butt-joined clips so the
+                // renderer skips the anti-click fade at the shared edge. After
+                // the sort, a clip is contiguous with the next when its timeline
+                // end equals the next clip's timeline start (exact, thanks to the
+                // single-position scaling above). Such pairs are the two halves
+                // of one continuous take split by a jump/loop and must reproduce
+                // without the silence dip a sequential fade-out + fade-in causes.
+                for (int i = 0; i + 1 < laneSnap.count; ++i)
+                {
+                    if (laneSnap.events[i].timelineEndSample
+                            == laneSnap.events[i + 1].timelineStartSample)
+                    {
+                        laneSnap.events[i].joinsNext     = true;
+                        laneSnap.events[i + 1].joinsPrev = true;
+                    }
                 }
             }
         }

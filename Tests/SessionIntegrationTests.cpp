@@ -305,7 +305,8 @@ private:
         expect (commands.contains (CommandIDs::sessionSaveAs),     "Save As registered");
         expect (commands.contains (CommandIDs::sessionClearRecent),"Clear Recent registered");
         expect (commands.contains (CommandIDs::sessionImportAudio),"Import Audio registered (PRD-0098)");
-        expectEquals (commands.size(), 6, "exactly the six fixed session commands");
+        expect (commands.contains (CommandIDs::sessionExport),     "Export registered (EPIC-0012)");
+        expectEquals (commands.size(), 7, "exactly the seven fixed session commands");
 
         expectEquals (infoFor (*f.menu, CommandIDs::sessionNew).shortName,    juce::String ("New"));
         expectEquals (infoFor (*f.menu, CommandIDs::sessionOpen).shortName,   juce::String ("Open..."));
@@ -315,6 +316,8 @@ private:
                       juce::String ("Clear Recent"));
         expectEquals (infoFor (*f.menu, CommandIDs::sessionImportAudio).shortName,
                       juce::String ("Import Audio File..."));
+        expectEquals (infoFor (*f.menu, CommandIDs::sessionExport).shortName,
+                      juce::String ("Export..."));
 
         // The menu bar exposes a single "File" menu.
         expectEquals (f.menu->getMenuBarNames().size(), 1);

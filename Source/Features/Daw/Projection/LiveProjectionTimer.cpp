@@ -68,6 +68,7 @@ void LiveProjectionTimer::startLane (DeckProjection&     dp,
                                      int                 deckIndex,
                                      Lane                lane,
                                      std::int64_t        srcPos,
+                                     std::int64_t        timelineStart,
                                      const juce::String& sourceFileId,
                                      std::int64_t        sourceLength)
 {
@@ -87,7 +88,7 @@ void LiveProjectionTimer::startLane (DeckProjection&     dp,
     clip.sourceFileId        = sourceFileId;
     clip.sourceStartSample   = srcPos;
     clip.sourceEndSample     = srcPos;                 // zero-length until it grows
-    clip.timelineStartSample = nowLineSample_;          // raw now-line anchor (§1.5.6)
+    clip.timelineStartSample = timelineStart;           // now-line, or split seam
     clip.sourceLengthSamples = sourceLength;
     clip.gainDb              = 0.0f;
 
@@ -96,6 +97,16 @@ void LiveProjectionTimer::startLane (DeckProjection&     dp,
 
     dp.lanes[lane].clipNode = node;
     dp.lanes[lane].active   = true;
+}
+
+std::int64_t LiveProjectionTimer::laneTimelineEnd (const LaneProjection& lp)
+{
+    if (! lp.clipNode.isValid())
+        return 0;
+    const auto tlStart  = static_cast<std::int64_t> (lp.clipNode.getProperty (DawClipIDs::timelineStartSample));
+    const auto srcStart = static_cast<std::int64_t> (lp.clipNode.getProperty (DawClipIDs::sourceStartSample));
+    const auto srcEnd   = static_cast<std::int64_t> (lp.clipNode.getProperty (DawClipIDs::sourceEndSample));
+    return tlStart + (srcEnd - srcStart);
 }
 
 void LiveProjectionTimer::growLane (LaneProjection& lp, std::int64_t srcPos)
@@ -140,13 +151,20 @@ void LiveProjectionTimer::processTick()
 
         const auto audibility = resolveAudibility (deckTree, *audio);
 
-        // Detect a seek/cue: a backward move, or a forward jump beyond tolerance.
-        bool seeked = false;
-        if (dp.wasPlaying && playing)
+        // Consume any EXACT source-position discontinuity the audio thread
+        // published since the last tick (loop wrap / cue / jump). The seq is
+        // always consumed so a discontinuity that happened before recording
+        // armed never triggers a stale split.
+        const std::uint64_t seekSeq = audio->seekDiscontinuitySeq.load (std::memory_order_acquire);
+        bool         exactSeek = false;
+        std::int64_t seekFrom  = 0;
+        std::int64_t seekTo    = 0;
+        if (seekSeq != dp.lastSeekSeq)
         {
-            if (srcPos < dp.lastSourcePos
-                || srcPos > dp.lastSourcePos + kSeekToleranceSamples)
-                seeked = true;
+            seekFrom = audio->seekDiscontinuityFrom.load (std::memory_order_acquire);
+            seekTo   = audio->seekDiscontinuityTo.load   (std::memory_order_acquire);
+            dp.lastSeekSeq = seekSeq;
+            exactSeek = true;
         }
 
         // Which lanes should carry a live clip this tick.
@@ -166,32 +184,92 @@ void LiveProjectionTimer::processTick()
         const juce::String sourceFileId = readContentHash (deckTree);
         const std::int64_t sourceLength = readSourceLength (deckTree);
 
-        for (int li = 0; li < kLaneCount; ++li)
+        // A genuine split only when we were already recording this deck's
+        // playback (there is an open clip to close at the exact out-point and
+        // reopen at the exact in-point).
+        const bool splitNow = exactSeek && dp.wasPlaying && playing && capturing;
+
+        // Heuristic fallback for any discontinuity NOT published exactly
+        // (e.g. an un-instrumented seek path): coarse, but never worse than before.
+        bool heuristicSeek = false;
+        if (! exactSeek && dp.wasPlaying && playing)
         {
-            auto& lp = dp.lanes[li];
-            if (want[li])
+            if (srcPos < dp.lastSourcePos
+                || srcPos > dp.lastSourcePos + kSeekToleranceSamples)
+                heuristicSeek = true;
+        }
+
+        if (splitNow)
+        {
+            // Phase 1 — close every open lane at the EXACT pre-jump sample so
+            // none of the played audio up to the loop-out / jump-out is lost.
+            // The seam (the clip's exact timeline end) anchors the reopen so the
+            // two clips butt-join with no gap.
+            std::array<std::int64_t, kLaneCount> seam { 0, 0, 0 };
+            const std::int64_t pre = juce::jmax<std::int64_t> (0, seekFrom - dp.lastSourcePos);
+            for (int li = 0; li < kLaneCount; ++li)
             {
-                if (! lp.active || seeked)
+                auto& lp = dp.lanes[li];
+                if (lp.active)
                 {
-                    if (lp.active)
-                        finaliseLane (lp);     // close the pre-seek span
-                    startLane (dp, deckIndex, static_cast<Lane> (li),
-                               srcPos, sourceFileId, sourceLength);
+                    growLane (lp, seekFrom);
+                    seam[static_cast<size_t> (li)] = laneTimelineEnd (lp);
+                    finaliseLane (lp);
                 }
                 else
                 {
-                    growLane (lp, srcPos);
+                    seam[static_cast<size_t> (li)] = nowLineSample_ + pre;
                 }
             }
-            else if (lp.active)
-            {
-                finaliseLane (lp);
-            }
-        }
 
-        // Steady-state forward progress advances the now-line (PRD-0070).
-        if (dp.wasPlaying && playing && ! seeked && srcPos > dp.lastSourcePos)
-            maxAdvance = juce::jmax (maxAdvance, srcPos - dp.lastSourcePos);
+            // Phase 2 — reopen wanted lanes at the seam, starting at the EXACT
+            // in-point, and grow to the live position (capturing the post-jump
+            // head that polling would otherwise have skipped).
+            for (int li = 0; li < kLaneCount; ++li)
+            {
+                if (want[li])
+                {
+                    startLane (dp, deckIndex, static_cast<Lane> (li),
+                               seekTo, seam[static_cast<size_t> (li)],
+                               sourceFileId, sourceLength);
+                    growLane (dp.lanes[li], srcPos);
+                }
+            }
+
+            // The deck's real progress this tick is the pre-jump + post-jump
+            // spans; feed it to the shared now-line (max across decks).
+            const std::int64_t post = juce::jmax<std::int64_t> (0, srcPos - seekTo);
+            maxAdvance = juce::jmax (maxAdvance, pre + post);
+        }
+        else
+        {
+            for (int li = 0; li < kLaneCount; ++li)
+            {
+                auto& lp = dp.lanes[li];
+                if (want[li])
+                {
+                    if (! lp.active || heuristicSeek)
+                    {
+                        if (lp.active)
+                            finaliseLane (lp);     // close the pre-seek span
+                        startLane (dp, deckIndex, static_cast<Lane> (li),
+                                   srcPos, nowLineSample_, sourceFileId, sourceLength);
+                    }
+                    else
+                    {
+                        growLane (lp, srcPos);
+                    }
+                }
+                else if (lp.active)
+                {
+                    finaliseLane (lp);
+                }
+            }
+
+            // Steady-state forward progress advances the now-line (PRD-0070).
+            if (dp.wasPlaying && playing && ! heuristicSeek && srcPos > dp.lastSourcePos)
+                maxAdvance = juce::jmax (maxAdvance, srcPos - dp.lastSourcePos);
+        }
 
         dp.wasPlaying    = playing;
         dp.lastSourcePos = srcPos;

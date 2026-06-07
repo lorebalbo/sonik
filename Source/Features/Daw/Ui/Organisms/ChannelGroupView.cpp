@@ -151,6 +151,13 @@ void ChannelGroupView::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher
         automationStack_->setEditDispatcher (dispatcher);
 }
 
+void ChannelGroupView::setClipInteraction (const SnapSettings* snap, ClipSelection* selection)
+{
+    for (auto& lane : lanes_)
+        if (lane != nullptr)
+            lane->setClipInteraction (snap, selection);
+}
+
 void ChannelGroupView::refreshLaneActiveness()
 {
     // Default (no deck tree): treat the deck as in original mode.

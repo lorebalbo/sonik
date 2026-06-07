@@ -40,11 +40,18 @@ DawPanel::DawPanel (MasterGridService& gridService,
     // handlers in panel coordinates so header toggles still work normally.
     interaction_.onDown    = [this] (const juce::MouseEvent& e) { mouseDown (e.getEventRelativeTo (this)); };
     interaction_.onDrag    = [this] (const juce::MouseEvent& e) { mouseDrag (e.getEventRelativeTo (this)); };
-    interaction_.onUp      = [this] (const juce::MouseEvent& e) { dragging_ = false; juce::ignoreUnused (e); };
+    interaction_.onUp      = [this] (const juce::MouseEvent& e) { dragging_ = false; finalizeScrub(); juce::ignoreUnused (e); };
     interaction_.onWheel   = [this] (const juce::MouseEvent& e, const juce::MouseWheelDetails& w)
                              { mouseWheelMove (e.getEventRelativeTo (this), w); };
     interaction_.onMagnify = [this] (const juce::MouseEvent& e, float s)
                              { mouseMagnify (e.getEventRelativeTo (this), s); };
+    // PRD-0102: let clicks fall through to a clip when the cursor is over one, so
+    // clip drag/trim/context menu work; the overlay still owns empty-area pan and
+    // ruler scrub. The point arrives in interaction-local space.
+    interaction_.shouldPassThrough = [this] (juce::Point<int> p)
+    {
+        return isPointOverClip (getLocalPoint (&interaction_, p));
+    };
     addAndMakeVisible (interaction_);
 
     // The now-line overlay sits above the ruler + body and never eats input.
@@ -107,6 +114,16 @@ DawPanel::DawPanel (MasterGridService& gridService,
 
     // Wire the dispatcher into all existing lane views.
     stack_.setEditDispatcher (dispatcher_.get());
+
+    // PRD-0102: share the snap settings + selection model with every clip, and
+    // route file-import placement through the same snap toggle/granularity.
+    stack_.setClipInteraction (&snap_, &selection_);
+    isSnapEnabledForImport = [this]() { return snap_.enabled; };
+
+    // PRD-0102: accept keyboard focus so a Delete keystroke after a ruler click
+    // (which parks the playhead but leaves the clip selected, §1.5.5) still
+    // deletes the selected clip via keyPressed().
+    setWantsKeyboardFocus (true);
 
     // PRD-0094: the master tempo automation lane edits through the same shared
     // command layer, so it needs the dispatcher as well.
@@ -294,6 +311,16 @@ void DawPanel::setSessionTitle (const juce::String& titleWithMarker)
 
 void DawPanel::updateNowLine()
 {
+    // PRD-0102: while the DJ is scrubbing the ruler, the playhead line follows
+    // the cursor live (scrubSample_) regardless of the transport position — the
+    // authoritative seek is committed on mouse-up (§1.5.1).
+    if (scrubbing_)
+    {
+        const double x = transform_.sampleToX (scrubSample_);
+        playhead_.setLineX ((int) std::llround (TimelineTransform::alignToPixelGrid (x)));
+        return;
+    }
+
     if (! nowLineProvider_)
     {
         playhead_.setLineX (-1);
@@ -335,6 +362,71 @@ void DawPanel::applyFollowIfNeeded()
     const double target = FollowController::reanchorTargetX (viewportWidth);
     transform_.scrollByX (nowLineX - target);
     afterTransformChanged();
+}
+
+//==============================================================================
+// PRD-0102: ruler scrubbing + selection-delete.
+//==============================================================================
+bool DawPanel::isInRulerBand (juce::Point<int> p) const noexcept
+{
+    if (! expanded_)
+        return false;
+    const int top    = kHeaderHeight;
+    const int bottom = kHeaderHeight + TimeRuler::kRulerHeight;
+    return p.getY() >= top && p.getY() < bottom && p.getX() >= contentLeftGutter();
+}
+
+std::int64_t DawPanel::timelineSampleAtPanelX (int panelX, bool bypass) const
+{
+    const int contentX = panelX - contentLeftGutter();
+    const std::int64_t raw = transform_.xToSample (static_cast<double> (juce::jmax (0, contentX)));
+    return snap_.snap (juce::jmax ((std::int64_t) 0, raw), transform_, bypass);
+}
+
+void DawPanel::finalizeScrub()
+{
+    if (! scrubbing_)
+        return;
+
+    scrubbing_ = false;
+    if (transport_ != nullptr)
+        transport_->seek (scrubSample_); // commit the parked / play-from-here position
+    updateNowLine();
+    repaint();
+}
+
+bool DawPanel::isPointOverClip (juce::Point<int> panelPoint)
+{
+    // The ruler / header is never "over a clip" (scrubbing owns the ruler).
+    if (panelPoint.getY() < kHeaderHeight + TimeRuler::kRulerHeight)
+        return false;
+
+    const auto stackPoint = stack_.getLocalPoint (this, panelPoint);
+    for (auto* hit = stack_.getComponentAt (stackPoint); hit != nullptr; hit = hit->getParentComponent())
+    {
+        if (dynamic_cast<ClipBlock*> (hit) != nullptr)
+            return true;
+        if (hit == &stack_)
+            break;
+    }
+    return false;
+}
+
+bool DawPanel::keyPressed (const juce::KeyPress& key)
+{
+    // PRD-0102: Delete / Backspace removes the selected clip (the §1.5.5 path
+    // that works even when focus left the clip, e.g. after a ruler scrub).
+    if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+    {
+        const juce::String id = selection_.selectedId();
+        if (id.isNotEmpty() && dispatcher_ != nullptr)
+        {
+            selection_.clear();
+            dispatcher_->deleteClip (id);
+            return true;
+        }
+    }
+    return false;
 }
 
 void DawPanel::timerCallback()
@@ -431,6 +523,14 @@ void DawPanel::resized()
     const int masterAutoW = 60;
     masterAutoBounds_ = juce::Rectangle<int> (playBounds_.getX() - masterAutoW - 6,
                                               header.getY() + 4, masterAutoW, transportH);
+
+    // PRD-0102: grid-snap toggle + granularity selector, left of M.AUTO.
+    const int snapW = 52;
+    const int granW = 52;
+    snapToggleBounds_ = juce::Rectangle<int> (masterAutoBounds_.getX() - snapW - 6,
+                                              header.getY() + 4, snapW, transportH);
+    snapGranBounds_   = juce::Rectangle<int> (snapToggleBounds_.getX() - granW - transportGap,
+                                              header.getY() + 4, granW, transportH);
 
     const int gutter = contentLeftGutter();
 
@@ -598,6 +698,11 @@ void DawPanel::paint (juce::Graphics& g)
 
         // PRD-0093: master tempo automation disclosure (fill inversion).
         drawTransportBtn (masterAutoBounds_, "M.AUTO", masterAutoRevealed_);
+
+        // PRD-0102: grid-snap toggle (active/inactive fill inversion) + the
+        // granularity selector (a plain button showing the current subdivision).
+        drawTransportBtn (snapToggleBounds_, "SNAP", snap_.enabled);
+        drawTransportBtn (snapGranBounds_, labelForGranularity (snap_.granularity), false);
     }
 
     // Blank gutter corner above the lane headers, beside the ruler (when expanded).
@@ -635,9 +740,14 @@ void DawPanel::paintOverChildren (juce::Graphics& g)
 
 std::int64_t DawPanel::snapImportSample (std::int64_t rawSample) const
 {
-    const bool snapOn = isSnapEnabledForImport ? isSnapEnabledForImport() : true;
+    const bool snapOn = isSnapEnabledForImport ? isSnapEnabledForImport() : snap_.enabled;
     const std::int64_t clamped = juce::jmax ((std::int64_t) 0, rawSample);
-    return snapOn ? transform_.snapSampleToGrid (clamped) : clamped;
+    if (! snapOn)
+        return clamped;
+    // PRD-0102: honour the current snap granularity so a file drop lands on the
+    // same grid the clip edits use (not always the beat grid).
+    const SnapSettings forced { true, snap_.granularity };
+    return forced.snap (clamped, transform_);
 }
 
 juce::ValueTree DawPanel::firstLaneTree() const
@@ -812,6 +922,21 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
         setMasterAutomationRevealed (! masterAutoRevealed_);
         return;
     }
+
+    // PRD-0102: grid-snap toggle + granularity cycle. Both only repaint the
+    // header; the new state is read at the start of the next edit/scrub gesture.
+    if (snapToggleBounds_.contains (event.getPosition()))
+    {
+        snap_.enabled = ! snap_.enabled;
+        repaint();
+        return;
+    }
+    if (snapGranBounds_.contains (event.getPosition()))
+    {
+        snap_.granularity = nextGranularity (snap_.granularity);
+        repaint();
+        return;
+    }
 }
 
 void DawPanel::mouseDown (const juce::MouseEvent& event)
@@ -824,6 +949,25 @@ void DawPanel::mouseDown (const juce::MouseEvent& event)
         return;
     if (event.getPosition().x < contentLeftGutter())
         return;
+
+    // PRD-0102: a press on the time ruler begins a playhead scrub. A click parks
+    // the playhead; a press-drag moves it live (the seek is committed on
+    // mouse-up, §1.5.1). Right-clicks on the ruler do nothing (no context menu).
+    if (isInRulerBand (event.getPosition()))
+    {
+        if (event.mods.isPopupMenu())
+            return;
+
+        const bool bypass = event.mods.isCommandDown() || event.mods.isCtrlDown();
+        scrubbing_   = true;
+        scrubSample_ = timelineSampleAtPanelX (event.getPosition().x, bypass);
+        // Grab focus so a Delete keystroke still targets the selected clip even
+        // though the ruler click does not change the selection (§1.5.5).
+        grabKeyboardFocus();
+        updateNowLine();
+        repaint();
+        return;
+    }
 
     // PRD-0098: right-click over a lane row offers an "Import Audio File..."
     // context entry, placing the clip at the (snapped) cursor position on that
@@ -853,6 +997,16 @@ void DawPanel::mouseDown (const juce::MouseEvent& event)
 
 void DawPanel::mouseDrag (const juce::MouseEvent& event)
 {
+    // PRD-0102: live ruler scrub — move the playhead line with the cursor. The
+    // transport seek itself is committed on mouse-up (finalizeScrub).
+    if (scrubbing_)
+    {
+        const bool bypass = event.mods.isCommandDown() || event.mods.isCtrlDown();
+        scrubSample_ = timelineSampleAtPanelX (event.getPosition().x, bypass);
+        updateNowLine();
+        return;
+    }
+
     if (! dragging_)
         return;
 

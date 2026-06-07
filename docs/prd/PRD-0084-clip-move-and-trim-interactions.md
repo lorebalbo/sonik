@@ -208,6 +208,11 @@ control later is a UI addition that does not change this PRD's snap-resolution
 call site. A temporary snap override (e.g. hold a modifier to suspend snapping
 during a drag) is also deferred to keep this PRD's input handling simple.
 
+**Superseded by PRD-0102.** The snap-to-grid toggle this PRD specified was not
+wired in the shipped code; PRD-0102 implements it, adds the deferred granularity
+selector (bar / beat / 1/2 / 1/4) and the deferred momentary-bypass modifier
+(Cmd/Ctrl), and applies snapping to move, trim, uncrop, split, and ruler scrub.
+
 ### 1.5.3. Edge Hit-Zone Width vs Body, and Narrow Clips
 
 The clip needs three press regions — left trim, body move, right trim — but on a

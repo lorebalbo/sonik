@@ -28,13 +28,15 @@
 
 #include "../../Model/DawClip.h"
 #include "../../Transform/TimelineTransform.h"
+#include "../ClipInteraction.h"
 #include "Features/Waveform/WaveformData.h"
 
 namespace Daw
 {
 
 class ClipBlock final : public juce::Component,
-                        private juce::ValueTree::Listener
+                        private juce::ValueTree::Listener,
+                        private juce::ChangeListener
 {
 public:
     // Resolves a clip's sourceFileId to a cached WaveformData (PRD-0006). A
@@ -93,6 +95,11 @@ public:
     // Each callback receives the clip's clipId and the relevant new value.
     //--------------------------------------------------------------------------
 
+    /// Drag begin: fired once on mouse-down before any move/trim/uncrop drag so
+    /// the owner opens a SINGLE undo transaction that all subsequent in-drag
+    /// updates coalesce into (PRD-0102: one drag = one undo step).
+    std::function<void (const juce::String& clipId)> onDragBegin;
+
     /// Body drag: called each mouse-move during a body drag with the new
     /// candidate timelineStartSample (already snapped if snap is enabled).
     std::function<void (const juce::String& clipId, int64_t newTimelineStart)> onMoveDrag;
@@ -118,8 +125,13 @@ public:
     /// Gain: called when the user right-click → gain changes (simplified: scroll wheel).
     std::function<void (const juce::String& clipId, float gainDbDelta)> onGainScroll;
 
-    /// Whether grid-snap is enabled for drags.
-    bool snapEnabled { false };
+    //--------------------------------------------------------------------------
+    // PRD-0102: shared snap settings + selection model. Both are owned by the
+    // DawPanel and injected (by pointer) through the lane plumbing. Either may be
+    // null (e.g. in PRD-0068 unit tests) — the block then behaves as before:
+    // no snapping, no selection highlight.
+    //--------------------------------------------------------------------------
+    void setClipInteraction (const SnapSettings* snap, ClipSelection* selection);
 
     void paint (juce::Graphics& g) override;
 
@@ -139,6 +151,14 @@ private:
     void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override {}
     void valueTreeChildOrderChanged (juce::ValueTree&, int, int) override {}
     void valueTreeParentChanged (juce::ValueTree&) override {}
+
+    // PRD-0102: repaint the selected-state outline when the selection moves.
+    void changeListenerCallback (juce::ChangeBroadcaster* source) override;
+
+    // PRD-0102: snap a timeline sample to the grid honouring snap settings and
+    // the momentary bypass modifier. Returns the input unchanged when no snap
+    // settings are wired, snap is off, or `bypass` is true.
+    int64_t snapTimeline (int64_t sample, bool bypass) const;
 
     void reloadClip();
     void paintWaveform   (juce::Graphics& g, juce::Rectangle<int> inner, const WaveformData& data);
@@ -161,6 +181,11 @@ private:
     bool     dragActive_       { false };
     bool     hovered_          { false }; // true while mouse is over this clip
     bool     missingSource_    { false }; // PRD-0097: source unresolved -> Glitch
+
+    // PRD-0102: shared snap settings + selection (owned by DawPanel). Null in
+    // isolated unit tests; the block degrades to "no snap / no selection".
+    const SnapSettings* snap_      { nullptr };
+    ClipSelection*      selection_ { nullptr };
 
     juce::ValueTree          clipNode_;
     const TimelineTransform& transform_;

@@ -61,6 +61,13 @@ struct StubDeck
     void setPaused()  { audio.playbackStatus.store ((int) PlaybackStatusCode::paused,  std::memory_order_release); }
     void setPos (juce::int64 pos) { audio.playheadPosition.store (pos, std::memory_order_release); }
 
+    // Simulate the audio thread stamping an exact source-position discontinuity
+    // (loop wrap / cue / jump) the instant before the next poll observes it.
+    void publishDiscontinuity (juce::int64 from, juce::int64 to)
+    {
+        publishSeekDiscontinuity (audio, from, to);
+    }
+
     void setStems (bool stems) { tree.setProperty (IDs::sourceMode, stems ? "stems" : "original", nullptr); }
     void muteVocals (bool m) { audio.stemVocalsMuted.store (m, std::memory_order_release); }
     void muteInstrumental (bool m)
@@ -320,6 +327,55 @@ public:
             expectEquals (clipCount (dawBranch, 0, LaneKind::Original), 2);
             auto fresh = DawClip::fromValueTree (lastClip (dawBranch, 0, LaneKind::Original));
             expectEquals ((int) fresh.sourceStartSample, 1000);
+        }
+
+        //----------------------------------------------------------------------
+        // EPIC-0009: an EXACT loop wrap published by the audio thread must
+        // capture the FULL audio up to the loop-out and resume at the loop-in,
+        // with a gapless (contiguous) timeline seam — unlike the polled
+        // approximation that drops the tail/head and leaves a gap.
+        beginTest ("Loop wrap captures full audio with a contiguous, gapless seam");
+        {
+            MasterClockPublisher publisher;
+            publisher.publish ({ 120.0, 120.0, /*phase*/ 0, true });
+            Daw::MasterGridService grid (publisher, [] { return 44100.0; });
+
+            juce::ValueTree root (IDs::SonikState);
+            auto dawBranch = DawState::getOrCreateDawBranch (root);
+
+            StubDeck deck ("A", "hash-A");
+            StubSource source; source.add (&deck);
+            Daw::LiveProjectionTimer bridge (source, dawBranch, grid);
+
+            // Loop region [1000, 2000). Open the clip, poll once mid-loop at 1500.
+            deck.setPlaying (1000); bridge.processTick();
+            deck.setPos (1500);     bridge.processTick();
+
+            // Audio thread wraps: leaves lpOut=2000, resumes lpIn=1000; the next
+            // poll observes 1200 (well past the wrap the poller never saw).
+            deck.publishDiscontinuity (2000, 1000);
+            deck.setPos (1200);     bridge.processTick();
+
+            auto clips = laneClips (dawBranch, 0, LaneKind::Original);
+            expectEquals (clips.getNumChildren(), 2);
+
+            auto c0 = DawClip::fromValueTree (clips.getChild (0));
+            auto c1 = DawClip::fromValueTree (clips.getChild (1));
+
+            // clip0 captured the FULL loop up to the exact loop-out (not 1500).
+            expectEquals ((int) c0.sourceStartSample, 1000);
+            expectEquals ((int) c0.sourceEndSample,   2000,
+                          "outgoing clip must reach the exact loop-out (no lost tail)");
+
+            // clip1 resumes at the exact loop-in (not the 1200 poll).
+            expectEquals ((int) c1.sourceStartSample, 1000,
+                          "incoming clip must start at the exact loop-in (no lost head)");
+
+            // The seam is gapless: clip1 begins exactly where clip0 ends.
+            const int c0End = (int) (c0.timelineStartSample
+                                     + (c0.sourceEndSample - c0.sourceStartSample));
+            expectEquals ((int) c1.timelineStartSample, c0End,
+                          "loop seam must be contiguous (no silent gap)");
         }
 
         //----------------------------------------------------------------------

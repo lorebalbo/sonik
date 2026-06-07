@@ -70,8 +70,18 @@ public:
     void play()
     {
         if (currentState() == State::Stopped)
-            playhead_.store (originSample_.load (std::memory_order_acquire),
-                             std::memory_order_release);
+        {
+            // PRD-0102: a ruler click/scrub while stopped PARKS the playhead at a
+            // chosen sample (>= 0). Resume from that parked position so the DJ can
+            // "play from here". Only when the playhead is unset (-1, e.g. after a
+            // Stop) do we fall back to the transport ORIGIN (PRD-0082 §1.5.1: the
+            // start of the recorded arrangement) so Play still lands on the first
+            // clip instead of silence.
+            const int64_t parked = playhead_.load (std::memory_order_acquire);
+            if (parked < 0)
+                playhead_.store (originSample_.load (std::memory_order_acquire),
+                                 std::memory_order_release);
+        }
 
         state_.store (static_cast<int32_t> (State::Playing), std::memory_order_release);
 
@@ -103,11 +113,16 @@ public:
 
     /// Seek to `targetSample` (project samples from timeline origin).
     /// Works in any state.  The audio thread picks up the new position next block.
+    ///
+    /// PRD-0102: seeking while Stopped now PARKS the playhead at the clamped
+    /// position (instead of forcing -1) so a ruler click/scrub can choose a
+    /// visible play-start point while stopped. This is safe because the
+    /// arrangement render path pulls audio only while isPlaying() is true
+    /// (AudioEngine), so a parked playhead produces no sound until Play.
     void seek (int64_t targetSample)
     {
         const int64_t clamped = juce::jmax ((int64_t) 0, targetSample);
-        playhead_.store (currentState() == State::Stopped ? -1 : clamped,
-                         std::memory_order_release);
+        playhead_.store (clamped, std::memory_order_release);
         if (onSeeked) onSeeked (clamped);
     }
 

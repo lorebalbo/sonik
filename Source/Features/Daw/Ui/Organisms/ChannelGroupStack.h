@@ -72,6 +72,10 @@ public:
     // PRD-0083/0084/0085/0086: Wire edit dispatcher into every group/lane.
     void setEditDispatcher (Daw::EditCommandDispatcher* dispatcher);
 
+    // PRD-0102: forward the shared snap settings + selection model into every
+    // group (and thereby every lane/clip). Re-applied after group rebuilds.
+    void setClipInteraction (const SnapSettings* snap, ClipSelection* selection);
+
     void resized() override;
     void paint (juce::Graphics& g) override;
 
@@ -111,6 +115,13 @@ private:
     AutomationLaneStackView::PlayheadProvider automationPlayheadProvider_;
 
     std::vector<std::unique_ptr<ChannelGroupView>> groups_;
+
+    // Wiring retained so groups created by a later rebuildGroups() (track add /
+    // remove) inherit it too — previously a rebuilt group lost its editing
+    // dispatcher entirely (PRD-0102 fix; mirrors the snap/selection wiring).
+    Daw::EditCommandDispatcher* dispatcher_ { nullptr };
+    const SnapSettings*         snap_       { nullptr };
+    ClipSelection*              selection_  { nullptr };
 
     static inline const juce::Colour kBodyBg { 0xFFF3F3F4 }; // surface-container-low
 

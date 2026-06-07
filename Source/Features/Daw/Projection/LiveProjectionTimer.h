@@ -118,14 +118,23 @@ private:
     {
         bool                          wasPlaying    = false;
         std::int64_t                  lastSourcePos = 0;
+        std::uint64_t                 lastSeekSeq   = 0; // last consumed discontinuity seq
         std::array<LaneProjection, kLaneCount> lanes;
     };
 
     static ChannelGroup::LaneKind laneKindFor (Lane lane);
 
+    // Opens a fresh live clip on `lane` anchored at `timelineStart` (the now-line
+    // for an ordinary open, or the just-closed clip's exact timeline end for a
+    // discontinuity split, so the seam is gapless).
     void startLane   (DeckProjection&, int deckIndex, Lane,
-                      std::int64_t srcPos, const juce::String& sourceFileId,
+                      std::int64_t srcPos, std::int64_t timelineStart,
+                      const juce::String& sourceFileId,
                       std::int64_t sourceLength);
+
+    // Timeline end (exclusive) a lane's current clip has grown to, == its
+    // timelineStart + (sourceEnd - sourceStart). Used to butt-join the split.
+    static std::int64_t laneTimelineEnd (const LaneProjection&);
     void growLane    (LaneProjection&, std::int64_t srcPos);
     void finaliseLane (LaneProjection&);
 

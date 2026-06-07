@@ -70,7 +70,33 @@ struct DeckAudioState
     std::atomic<bool>   isSynced            { false };
     std::atomic<double> deckBPM             { 0.0 };   // from BeatGrid::bpm
     std::atomic<float>  pitchFaderMultiplier { 1.0f }; // mirrors speedMultiplier from pitch fader
+
+    // EPIC-0009 recording: EXACT source-position discontinuities published by the
+    // audio thread the instant they occur (loop wrap-back, cue/beat/hot-cue jump).
+    // The 60 Hz message-thread projection (LiveProjectionTimer) polls too coarsely
+    // to see the true boundary, so it would drop ~16 ms of audio and misplace the
+    // seam at every loop pass. Instead the audio thread stamps the precise sample
+    // it LEFT (`From`) and RESUMED at (`To`); the projection closes the recorded
+    // clip at `From` and opens the next at `To`, capturing every sample with a
+    // contiguous timeline. `seekDiscontinuitySeq` is bumped LAST with release so a
+    // reader that observes a new seq (acquire) also sees the matching From/To.
+    // Audio thread writes; message thread reads.
+    std::atomic<uint64_t> seekDiscontinuitySeq  { 0 };
+    std::atomic<int64_t>  seekDiscontinuityFrom { 0 }; // exact source pos left
+    std::atomic<int64_t>  seekDiscontinuityTo   { 0 }; // exact source pos resumed at
 };
+
+// Audio-thread-safe publication of an exact source-position discontinuity for the
+// recording projection (no allocation, no lock, no I/O). Call AT the instant the
+// playhead jumps, with the sample just left and the sample resumed at.
+inline void publishSeekDiscontinuity (DeckAudioState& s,
+                                      int64_t fromSample,
+                                      int64_t toSample) noexcept
+{
+    s.seekDiscontinuityFrom.store (fromSample, std::memory_order_relaxed);
+    s.seekDiscontinuityTo.store   (toSample,   std::memory_order_relaxed);
+    s.seekDiscontinuitySeq.fetch_add (1, std::memory_order_release); // publish last
+}
 
 // Syncs ValueTree property changes to DeckAudioState atomics on the message thread.
 class AudioStateSync final : private juce::ValueTree::Listener

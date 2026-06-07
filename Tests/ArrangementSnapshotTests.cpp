@@ -66,6 +66,37 @@ static juce::ValueTree buildDawWithClips()
     return daw;
 }
 
+// Builds a lane holding two clips that butt-join on the timeline: clip A spans
+// timeline [0, 400) and clip B spans [400, 700). Their SOURCE crops are
+// discontinuous (B starts at source 1000), modelling a jump/loop split of one
+// continuous take — exactly the recording case that must reproduce seamlessly.
+static juce::ValueTree buildDawWithContiguousClips()
+{
+    juce::ValueTree root ("SonikState");
+    auto daw   = DawState::getOrCreateDawBranch (root);
+    auto track = DawState::ensureTrackForDeck (daw, 0);
+
+    auto lanesNode = track.getChildWithName (DawIDs::lanes);
+    auto laneNode  = lanesNode.getChild (0);
+    auto clipsNode = laneNode.getOrCreateChildWithName (DawIDs::clips, nullptr);
+    const auto laneId = juce::Uuid (laneNode.getProperty (DawIDs::laneId).toString());
+
+    DawClip a;
+    a.clipId = juce::Uuid(); a.laneId = laneId; a.sourceFileId = "take";
+    a.sourceStartSample = 0;   a.sourceEndSample = 400;
+    a.timelineStartSample = 0;  a.sourceLengthSamples = 100000; a.gainDb = 0.0f;
+    clipsNode.addChild (DawClip::toValueTree (a), -1, nullptr);
+
+    DawClip b;
+    b.clipId = juce::Uuid(); b.laneId = laneId; b.sourceFileId = "take";
+    b.sourceStartSample = 1000; b.sourceEndSample = 1300;   // 300-sample crop
+    b.timelineStartSample = 400;  // == clip A's timeline end → butt-join
+    b.sourceLengthSamples = 100000; b.gainDb = 0.0f;
+    clipsNode.addChild (DawClip::toValueTree (b), -1, nullptr);
+
+    return daw;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Test class
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,6 +115,9 @@ public:
         testCompilerTimelineEndSample();
         testCompilerNonUnityGain();
         testCompilerHandleResolver();
+        testCompilerFlagsButtJoinedClips();
+        testCompilerDoesNotFlagSeparatedClips();
+        testCompilerButtJoinExactAtNonUnityScale();
         testPublisherCoherence_singleThread();
         testPublisherCoherence_concurrent();
         testRecompileTriggerCoalescing();
@@ -172,6 +206,78 @@ private:
         expectEquals (ev1.sourceEndSample,     (int64_t) 500);
         const int64_t expectedEnd = 200 + (500 - 100);
         expectEquals (ev1.timelineEndSample, expectedEnd);
+    }
+
+    // ─── Compiler: butt-joined clips are flagged for seamless playback ─────
+
+    void testCompilerFlagsButtJoinedClips()
+    {
+        beginTest ("Compiler flags butt-joined clips (joinsNext / joinsPrev)");
+
+        auto daw = buildDawWithContiguousClips();
+        Daw::ArrangementCompiler compiler;
+        Daw::ArrangementSnapshot snap;
+        compiler.compile (daw, snap);
+
+        const auto& lane0 = snap.lanes[0];
+        expectEquals (lane0.count, 2);
+
+        // events[0] = clip A (timeline 0..400), events[1] = clip B (400..700).
+        const auto& a = lane0.events[0];
+        const auto& b = lane0.events[1];
+        expectEquals (a.timelineEndSample,   b.timelineStartSample,
+                      "the two clips must butt-join exactly on the timeline");
+
+        // The shared edge is suppressed on BOTH sides.
+        expect (a.joinsNext, "outgoing clip must skip its fade-out at the join");
+        expect (b.joinsPrev, "incoming clip must skip its fade-in at the join");
+
+        // The OUTER edges (meet silence) keep their fades.
+        expect (! a.joinsPrev, "clip A start meets silence → keep fade-in");
+        expect (! b.joinsNext, "clip B end meets silence → keep fade-out");
+    }
+
+    void testCompilerDoesNotFlagSeparatedClips()
+    {
+        beginTest ("Compiler does NOT flag clips separated by a gap");
+
+        // buildDawWithClips places clip2 at [50,150) and clip1 at [200,600):
+        // a 50-sample silence gap, so neither edge may be suppressed.
+        auto daw = buildDawWithClips();
+        Daw::ArrangementCompiler compiler;
+        Daw::ArrangementSnapshot snap;
+        compiler.compile (daw, snap);
+
+        const auto& lane0 = snap.lanes[0];
+        expectEquals (lane0.count, 2);
+        for (int i = 0; i < lane0.count; ++i)
+        {
+            expect (! lane0.events[i].joinsPrev, "separated clip must keep fade-in");
+            expect (! lane0.events[i].joinsNext, "separated clip must keep fade-out");
+        }
+    }
+
+    void testCompilerButtJoinExactAtNonUnityScale()
+    {
+        beginTest ("Butt-join stays exact under a non-unity sample-rate scale");
+
+        // At 48 kHz the project->runtime scale is non-integer; the scaled
+        // timeline end of clip A must still land EXACTLY on the scaled timeline
+        // start of clip B so the join is detected (regression for the
+        // independently-rounded-delta gap).
+        auto daw = buildDawWithContiguousClips();
+        Daw::ArrangementCompiler compiler (
+            [] (const Daw::ArrangementCompiler::ClipResolveRequest&) -> int32_t { return 0; },
+            48000.0 / 44100.0);
+        Daw::ArrangementSnapshot snap;
+        compiler.compile (daw, snap);
+
+        const auto& lane0 = snap.lanes[0];
+        expectEquals (lane0.count, 2);
+        expectEquals (lane0.events[0].timelineEndSample, lane0.events[1].timelineStartSample,
+                      "scaled timeline end/start must match exactly at 48 kHz");
+        expect (lane0.events[0].joinsNext && lane0.events[1].joinsPrev,
+                "the join must still be detected at a non-unity scale");
     }
 
     // ─── Compiler: gain conversion ────────────────────────────────────────

@@ -71,6 +71,15 @@ void ChannelGroupStack::rebuildGroups()
         group->onPreferredHeightChanged = [this]() { notifyContentHeightChanged(); };
         if (automationPlayheadProvider_)
             group->setAutomationPlayheadProvider (automationPlayheadProvider_);
+
+        // PRD-0102: re-apply the retained wiring so a group created here (after
+        // the initial setEditDispatcher/setClipInteraction calls) is fully
+        // editable — clips on a newly-loaded track move/trim/delete and honour
+        // snap + selection just like the original groups.
+        if (dispatcher_ != nullptr)
+            group->setEditDispatcher (dispatcher_);
+        group->setClipInteraction (snap_, selection_);
+
         addAndMakeVisible (*group);
         groups_.push_back (std::move (group));
     }
@@ -144,9 +153,19 @@ void ChannelGroupStack::refreshAutomationTransform()
 
 void ChannelGroupStack::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher)
 {
+    dispatcher_ = dispatcher; // retained so rebuilt groups inherit it
     for (const auto& g : groups_)
         if (g != nullptr)
             g->setEditDispatcher (dispatcher);
+}
+
+void ChannelGroupStack::setClipInteraction (const SnapSettings* snap, ClipSelection* selection)
+{
+    snap_      = snap;       // retained so rebuilt groups inherit them
+    selection_ = selection;
+    for (const auto& g : groups_)
+        if (g != nullptr)
+            g->setClipInteraction (snap, selection);
 }
 
 void ChannelGroupStack::resized()
