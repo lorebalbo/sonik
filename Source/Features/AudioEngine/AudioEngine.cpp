@@ -190,6 +190,20 @@ void AudioEngine::setDawPlayback (Daw::ArrangementPublisher* publisher,
     rebuildDawRenderer();
 }
 
+void AudioEngine::setMetronomeEnabled (bool enabled) noexcept
+{
+    metronomeEnabled_.store (enabled, std::memory_order_release);
+}
+
+void AudioEngine::setMetronomeGrid (double  beatLenRuntimeSamples,
+                                    int64_t phaseOriginRuntimeSamples,
+                                    int     beatsPerBar) noexcept
+{
+    metroBeatLenRuntime_.store     (beatLenRuntimeSamples,     std::memory_order_relaxed);
+    metroPhaseOriginRuntime_.store (phaseOriginRuntimeSamples, std::memory_order_relaxed);
+    metroBeatsPerBar_.store        (beatsPerBar,               std::memory_order_relaxed);
+}
+
 void AudioEngine::rebuildDawRenderer()
 {
     JUCE_ASSERT_MESSAGE_THREAD;
@@ -2248,6 +2262,110 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Metronome (testing aid). An audible click locked to the master grid,
+    // summed into the live output here. It is NOT captured by the DAW recording
+    // (a reconstruction from the source files via LiveProjectionTimer) nor by an
+    // offline export (which re-renders clips), so it is audible yet never
+    // recorded. Two clock sources, in priority order:
+    //   1. DAW transport playing  -> tick the published runtime-domain grid.
+    //   2. otherwise master clock  -> tick the master deck's native beat grid
+    //      (live DJing / recording), straight off the lock-free publisher.
+    // -----------------------------------------------------------------------
+    if (metronomeEnabled_.load (std::memory_order_acquire))
+    {
+        const double sr = currentSampleRate.load (std::memory_order_relaxed);
+        int beatsPerBar = metroBeatsPerBar_.load (std::memory_order_relaxed);
+        if (beatsPerBar < 1)
+            beatsPerBar = 4;
+
+        int     clockSource = 0;   // 0 none, 1 DAW transport, 2 master clock
+        int64_t origin      = 0;
+        double  beatLen     = 0.0;
+        int64_t refPos      = 0;   // block-start timeline position in that domain
+
+        auto* dT = dawTransport_.load (std::memory_order_acquire);
+        if (dT != nullptr && dT->isPlaying())
+        {
+            beatLen = metroBeatLenRuntime_.load (std::memory_order_relaxed);
+            origin  = metroPhaseOriginRuntime_.load (std::memory_order_relaxed);
+            refPos  = dT->getPlayheadSample();         // post-advance: == renderBlock's block start
+            if (beatLen > 0.0 && refPos >= 0)
+                clockSource = 1;
+        }
+        else if (cachedClockPublisher_ != nullptr && sr > 0.0)
+        {
+            const auto snap = cachedClockPublisher_->read();
+            if (snap.masterIsPlaying && snap.masterNativeBPM > 0.0)
+            {
+                beatLen = (sr * 60.0) / snap.masterNativeBPM;            // source-domain samples/beat
+                origin  = snap.masterPhaseOriginSample;
+                refPos  = cachedClockPublisher_->masterPlayheadSample.load (std::memory_order_relaxed);
+                if (beatLen > 0.0)
+                    clockSource = 2;
+            }
+        }
+
+        int clickStartInBlock = 0; // sample offset where a click fired THIS block begins
+
+        if (clockSource != metroPrevClockSource_)
+        {
+            // Clock source changed (transport start/stop, master promotion).
+            // Re-baseline so we neither fire on the transition nor dump a burst
+            // of "missed" beats.
+            metroPrevClockSource_ = clockSource;
+            metroLastBeatIndex_   = (clockSource != 0)
+                ? static_cast<int64_t> (std::floor (static_cast<double> (refPos - origin) / beatLen))
+                : std::numeric_limits<int64_t>::min();
+        }
+        else if (clockSource != 0)
+        {
+            const int64_t startIdx =
+                static_cast<int64_t> (std::floor (static_cast<double> (refPos - origin) / beatLen));
+            if (metroLastBeatIndex_ == std::numeric_limits<int64_t>::min())
+                metroLastBeatIndex_ = startIdx;
+
+            const int64_t targetIdx = metroLastBeatIndex_ + 1;
+            const double  targetPos = static_cast<double> (origin)
+                                    + static_cast<double> (targetIdx) * beatLen;
+            const int     offset    = static_cast<int> (
+                std::llround (targetPos - static_cast<double> (refPos)));
+
+            if (offset < 0)
+            {
+                // Playhead jumped past one or more beats (seek/loop wrap): resync
+                // without firing a click.
+                metroLastBeatIndex_ = startIdx;
+            }
+            else if (offset < numSamples)
+            {
+                // A beat boundary lands inside this block: fire a click at it.
+                metroLastBeatIndex_         = targetIdx;
+                metroClickSamplesRemaining_ = static_cast<int> (metroClickHi_.size());
+                clickStartInBlock           = offset;
+                metroClickIsDownbeat_ =
+                    (((targetIdx % beatsPerBar) + beatsPerBar) % beatsPerBar) == 0;
+            }
+            // else: the next beat is in a future block — nothing to do this block.
+        }
+
+        // Emit any in-flight click (it may span several blocks; only the block it
+        // fires in starts at clickStartInBlock, later blocks start at 0).
+        if (metroClickSamplesRemaining_ > 0 && ! metroClickHi_.empty() && ! metroClickLo_.empty())
+        {
+            const std::vector<float>& wave = metroClickIsDownbeat_ ? metroClickHi_ : metroClickLo_;
+            const int total = static_cast<int> (wave.size());
+            for (int i = clickStartInBlock; i < numSamples && metroClickSamplesRemaining_ > 0; ++i)
+            {
+                const float s = wave[static_cast<size_t> (total - metroClickSamplesRemaining_)];
+                outL[i] = juce::jlimit (-1.0f, 1.0f, outL[i] + s);
+                outR[i] = juce::jlimit (-1.0f, 1.0f, outR[i] + s);
+                --metroClickSamplesRemaining_;
+            }
+        }
+    }
+
     for (int i = 0; i < numSamples; ++i)
     {
         outL[i] = juce::jlimit (-1.0f, 1.0f, outL[i]);
@@ -2324,6 +2442,33 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     dawMasterFeedL_.assign (static_cast<size_t>(blockSize), 0.0f);
     dawMasterFeedR_.assign (static_cast<size_t>(blockSize), 0.0f);
     rebuildDawRenderer();
+
+    // Metronome (testing aid): pre-render the click waveforms at the device rate
+    // on the message thread so the audio thread never allocates. A short
+    // enveloped sine burst — brighter & louder on the downbeat, softer on the
+    // off-beats — with a 1 ms attack ramp so the onset itself doesn't click.
+    {
+        const int clickLen = juce::jmax (1, static_cast<int> (0.045 * sr)); // ~45 ms
+        metroClickHi_.assign (static_cast<size_t> (clickLen), 0.0f);
+        metroClickLo_.assign (static_cast<size_t> (clickLen), 0.0f);
+
+        const auto fillClick = [clickLen, sr] (std::vector<float>& buf,
+                                               double freq, float amp)
+        {
+            for (int i = 0; i < clickLen; ++i)
+            {
+                const double t   = static_cast<double> (i) / sr;
+                const double atk = juce::jmin (1.0, t / 0.001);          // 1 ms ramp-in
+                const double env = std::exp (-t * 42.0);                  // fast decay
+                buf[static_cast<size_t> (i)] = static_cast<float> (
+                    amp * atk * env
+                    * std::sin (2.0 * juce::MathConstants<double>::pi * freq * t));
+            }
+        };
+
+        fillClick (metroClickHi_, 1567.98, 0.60f); // downbeat (G6-ish), accented
+        fillClick (metroClickLo_, 1046.50, 0.40f); // beat (C6-ish), softer
+    }
 }
 void AudioEngine::audioDeviceStopped()
 {

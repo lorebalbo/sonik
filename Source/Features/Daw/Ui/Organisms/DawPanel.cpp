@@ -504,13 +504,18 @@ void DawPanel::resized()
                                                 header.getY() + 4,
                                                 recordWidth, toggleSize);
 
-    // PRD-0082: Transport buttons to the left of the Record button.
+    // Metronome (testing aid) toggle: a labelled button between LOOP and REC.
+    const int metroW = 52;
+    metroBounds_ = juce::Rectangle<int> (recordButtonBounds_.getX() - metroW - 6,
+                                         header.getY() + 4, metroW, toggleSize);
+
+    // PRD-0082: Transport buttons to the left of the Metronome button.
     // STOP | PAUSE | PLAY | LOOP (each 44px wide)
     const int transportW = 44;
     const int transportH = toggleSize;
     const int transportGap = 4;
 
-    loopBounds_  = juce::Rectangle<int> (recordButtonBounds_.getX() - transportW - 6,
+    loopBounds_  = juce::Rectangle<int> (metroBounds_.getX() - transportW - 6,
                                           header.getY() + 4, transportW, transportH);
     stopBounds_  = juce::Rectangle<int> (loopBounds_.getX()  - transportW - transportGap,
                                           header.getY() + 4, transportW, transportH);
@@ -695,6 +700,9 @@ void DawPanel::paint (juce::Graphics& g)
         drawTransportBtn (pauseBounds_, "PAUS",  paused);
         drawTransportBtn (stopBounds_,  "STOP",  !playing && !paused);
         drawTransportBtn (loopBounds_,  "LOOP",  loopArmed);
+
+        // Metronome (testing aid) toggle: active/inactive fill inversion.
+        drawTransportBtn (metroBounds_, "METRO", metronomeOn_);
 
         // PRD-0093: master tempo automation disclosure (fill inversion).
         drawTransportBtn (masterAutoBounds_, "M.AUTO", masterAutoRevealed_);
@@ -912,6 +920,15 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
     if (loopBounds_.contains (event.getPosition()))
     {
         if (onTransportLoopToggle) onTransportLoopToggle();
+        repaint();
+        return;
+    }
+
+    // Metronome (testing aid) toggle: flip the owned state and notify the host.
+    if (metroBounds_.contains (event.getPosition()))
+    {
+        metronomeOn_ = ! metronomeOn_;
+        if (onMetronomeToggle) onMetronomeToggle (metronomeOn_);
         repaint();
         return;
     }

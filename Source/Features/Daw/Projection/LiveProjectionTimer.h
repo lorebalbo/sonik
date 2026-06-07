@@ -92,8 +92,8 @@ public:
     // before Record was pressed.
     void resetTimeline()
     {
-        nowLineSample_ = grid_.snapshotGrid().phaseOriginSample;
-        lastTickMs_    = 0.0; // force re-baseline on first tick after arm()
+        nowLineSample_   = grid_.snapshotGrid().phaseOriginSample;
+        sessionAnchored_ = false; // re-anchor to the grid on the take's first clip
     }
 
     // Gate clip writing behind an external predicate. When the provider returns
@@ -141,6 +141,17 @@ private:
     static juce::String readContentHash (const juce::ValueTree& deckTree);
     static std::int64_t readSourceLength (const juce::ValueTree& deckTree);
 
+    // Snap a fresh clip's timeline start so the deck's first captured downbeat
+    // lands exactly on a master-grid beat line. Pure: the deck's source beatgrid
+    // (anchor + interval) positions the downbeat, then it is snapped against the
+    // master grid (origin + samples-per-beat) and the start is backed out so the
+    // whole clip aligns. With no usable beatgrid it returns rawTimelineStart.
+    static std::int64_t snapStartToGrid (std::int64_t  beatgridAnchor,
+                                         double        beatgridInterval,
+                                         std::int64_t  sourceStart,
+                                         std::int64_t  rawTimelineStart,
+                                         const MasterGridService::GridContext& gridCtx);
+
     DeckProjectionSource& decks_;
     juce::ValueTree       dawBranch_;
     MasterGridService&    grid_;
@@ -148,7 +159,10 @@ private:
     std::map<int, DeckProjection> projection_;   // keyed by deck index
     std::int64_t                  nowLineSample_ = 0;
     std::function<bool()>         capturingProvider_;
-    double                        lastTickMs_    = 0.0; // for wall-clock advance
+    // False until the first clip of a take is opened; on that edge the now-line
+    // is re-anchored to the live grid origin so the record cursor sits on a beat
+    // (the origin published while dormant is 0 and would place it off-grid).
+    bool                          sessionAnchored_ = false;
 };
 
 } // namespace Daw

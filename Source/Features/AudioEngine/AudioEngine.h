@@ -23,6 +23,8 @@
 #include "../Daw/Playback/DawTransport.h"              // PRD-0082
 #include <array>
 #include <atomic>
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 class MasterClockPublisher; // PRD-0026
@@ -149,6 +151,28 @@ public:
                          Daw::ClipStreamerPool*     streamerPool,
                          Daw::DawTransport*         transport) noexcept;
 
+    /// Metronome (testing aid). Toggles an audible click locked to the master
+    /// grid. The click is summed into the LIVE output only — it is never part of
+    /// the DAW recording (a source-file reconstruction, not an output capture)
+    /// nor of an offline export, so "audible but not recorded" is intrinsic.
+    /// Message thread.
+    void setMetronomeEnabled (bool enabled) noexcept;
+
+    /// True while the metronome is enabled (any thread).
+    bool isMetronomeEnabled() const noexcept
+    {
+        return metronomeEnabled_.load (std::memory_order_acquire);
+    }
+
+    /// Publish the DAW arrangement grid expressed in the transport's runtime
+    /// sample domain so the audio-thread metronome can tick on the beat during
+    /// arrangement playback. (During live recording the click is driven straight
+    /// from the master clock on the audio thread, so this is only consumed while
+    /// the DAW transport is playing.) Message thread.
+    void setMetronomeGrid (double  beatLenRuntimeSamples,
+                           int64_t phaseOriginRuntimeSamples,
+                           int     beatsPerBar) noexcept;
+
     float getCpuLoad() const     { return cpuMonitor.loadPercent.load (std::memory_order_relaxed); }
     bool  getCpuOverload() const { return cpuMonitor.overloadWarning.load (std::memory_order_relaxed); }
 
@@ -234,6 +258,22 @@ private:
     std::atomic<Daw::TimelineRenderer*>     dawRendererPtr_ { nullptr };
     // Pre-allocated master feed buffer for the timeline renderer (sized in audioDeviceAboutToStart).
     std::vector<float> dawMasterFeedL_, dawMasterFeedR_;
+
+    // --- Metronome (testing aid) -----------------------------------------
+    // Cross-thread controls: message thread writes, audio thread reads.
+    std::atomic<bool>    metronomeEnabled_        { false };
+    std::atomic<double>  metroBeatLenRuntime_     { 0.0 }; // samples/beat, transport domain
+    std::atomic<int64_t> metroPhaseOriginRuntime_ { 0 };   // grid origin, transport domain
+    std::atomic<int>     metroBeatsPerBar_        { 4 };
+    // Pre-rendered click waveforms (built in audioDeviceAboutToStart, read on
+    // the audio thread): a brighter/louder downbeat and a softer regular beat.
+    std::vector<float>   metroClickHi_;
+    std::vector<float>   metroClickLo_;
+    // Audio-thread-only beat tracking + in-flight click state.
+    int64_t  metroLastBeatIndex_         { std::numeric_limits<int64_t>::min() };
+    int      metroPrevClockSource_       { 0 }; // 0 none, 1 transport, 2 master clock
+    int      metroClickSamplesRemaining_ { 0 };
+    bool     metroClickIsDownbeat_       { false };
 
     // CPU load monitoring
     struct CpuLoadMonitor

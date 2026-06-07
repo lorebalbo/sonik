@@ -114,6 +114,10 @@ public:
     std::function<void()> onTransportStop;
     std::function<void()> onTransportLoopToggle;
 
+    /// Metronome (testing aid) toggle. The panel owns the on/off state and
+    /// passes the new value; the host routes it to AudioEngine::setMetronomeEnabled.
+    std::function<void (bool)> onMetronomeToggle;
+
     /// Polled each timer tick to draw the correct active state for transport buttons.
     std::function<bool()> isTransportPlaying;
     std::function<bool()> isTransportPaused;
@@ -351,6 +355,10 @@ private:
     std::function<std::int64_t()>  recordPlayheadProvider_;
     RecordUiState                  lastRecordState_ { RecordUiState::Idle };
 
+    // Metronome (testing aid) on/off, owned here; the host is notified via
+    // onMetronomeToggle and renders the active/inactive fill from this flag.
+    bool metronomeOn_ { false };
+
     bool expanded_ { true };
 
     // PRD-0096: current session indicator drawn in the header (already carries
@@ -364,6 +372,7 @@ private:
     juce::Rectangle<int> pauseBounds_;         // PRD-0082: DAW pause
     juce::Rectangle<int> stopBounds_;          // PRD-0082: DAW stop
     juce::Rectangle<int> loopBounds_;          // PRD-0082: loop-arm toggle
+    juce::Rectangle<int> metroBounds_;         // metronome (testing aid) toggle
     juce::Rectangle<int> snapToggleBounds_;    // PRD-0102: grid-snap on/off
     juce::Rectangle<int> snapGranBounds_;      // PRD-0102: snap granularity cycle
 

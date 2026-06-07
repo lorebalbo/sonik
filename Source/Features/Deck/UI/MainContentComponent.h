@@ -62,6 +62,7 @@ public:
           audioFileLoader (loader),
           trackDatabase (trackDb),
           masterClockManager (clockMgr),
+          gridService_ (gridService),
           rootState (deckState.getStateTree()),
           toolbar (deckState, mixerSchema, mixerMeters),
           layoutManager (deckState, engine, loader, waveformMgr, beatGridMgr, stemMgr, clockMgr),
@@ -371,6 +372,14 @@ public:
         channelBooleanCapture->setApplyingAutomationGuard (automationApplier->makeApplyingGuard());
         masterTempoCapture->setApplyingAutomationGuard (automationApplier->makeApplyingGuard());
 
+        // Metronome (testing aid): route the DawPanel toggle to the engine. The
+        // click is summed into the live output only, so it is heard but is never
+        // part of the DAW recording (a source-file reconstruction) or an export.
+        dawPanel.onMetronomeToggle = [this] (bool on)
+        {
+            audioEngine.setMetronomeEnabled (on);
+        };
+
         // Drive the record playhead clock on the message thread at UI cadence and
         // promote Armed -> Recording the instant any deck begins producing audio.
         startTimerHz (30);
@@ -410,6 +419,20 @@ public:
                     trigger->requestRecompile();
                 }
             }
+
+            // Metronome (testing aid): publish the DAW grid in the transport's
+            // runtime sample domain so the audio-thread click stays locked to the
+            // grid during arrangement playback. Phase origin and BPM come from the
+            // single master-grid authority; the scale matches the compiler's.
+            const auto   grid        = gridService_.snapshotGrid();
+            const double runtimeRate = audioEngine.getSampleRate();
+            const double bpm         = grid.bpm > 0.0 ? grid.bpm : 120.0;
+            const double beatLenRt   = (runtimeRate > 0.0)
+                                           ? (runtimeRate * 60.0 / bpm) : 0.0;
+            const double scale       = playbackController->sampleRateScale();
+            const auto   originRt     = static_cast<std::int64_t> (
+                std::llround (static_cast<double> (grid.phaseOriginSample) * scale));
+            audioEngine.setMetronomeGrid (beatLenRt, originRt, DawState::kBeatsPerBar);
         }
 
         if (recordingController == nullptr)
@@ -711,6 +734,7 @@ private:
     AudioFileLoader&    audioFileLoader;
     TrackDatabase&      trackDatabase;
     MasterClockManager& masterClockManager; // EPIC-0011: tempo override revert
+    Daw::MasterGridService& gridService_;    // metronome grid publication
     juce::ValueTree     rootState;
 
     GlobalToolbar      toolbar;

@@ -6,9 +6,41 @@
 
 #include "../Model/DawClip.h"
 #include "../../Deck/DeckIdentifiers.h"
+#include "../../Deck/AudioThreadState.h"
+
+#include <cmath>
 
 namespace Daw
 {
+
+//==============================================================================
+std::int64_t LiveProjectionTimer::snapStartToGrid (std::int64_t  beatgridAnchor,
+                                                   double        beatgridInterval,
+                                                   std::int64_t  sourceStart,
+                                                   std::int64_t  rawTimelineStart,
+                                                   const MasterGridService::GridContext& gridCtx)
+{
+    const double gridInterval = gridCtx.samplesPerBeat;
+    if (beatgridInterval <= 0.0 || gridInterval <= 0.0)
+        return rawTimelineStart; // no usable grid: leave the raw placement
+
+    // First source downbeat at or after the clip's source start.
+    const double beatsAhead = static_cast<double> (sourceStart - beatgridAnchor) / beatgridInterval;
+    const std::int64_t firstDownbeatSrc =
+        beatgridAnchor
+        + static_cast<std::int64_t> (std::llround (std::ceil (beatsAhead) * beatgridInterval));
+    const std::int64_t downbeatOffset = firstDownbeatSrc - sourceStart; // >= 0 source samples
+
+    // With the live 1:1 source->timeline mapping the downbeat would land here;
+    // snap it to the nearest master-grid line and back the start out so every
+    // captured beat aligns to the grid.
+    const std::int64_t gridOrigin = gridCtx.phaseOriginSample;
+    const double beats = static_cast<double> (rawTimelineStart + downbeatOffset - gridOrigin)
+                       / gridInterval;
+    const std::int64_t snappedDownbeat =
+        gridOrigin + static_cast<std::int64_t> (std::llround (std::llround (beats) * gridInterval));
+    return snappedDownbeat - downbeatOffset;
+}
 
 const std::int64_t LiveProjectionTimer::kSeekToleranceSamples =
     static_cast<std::int64_t> (0.08 * DawState::kProjectSampleRate);
@@ -134,6 +166,10 @@ void LiveProjectionTimer::processTick()
     const int numDecks = decks_.getNumDecks();
     std::int64_t maxAdvance = 0;
 
+    // One coherent read of the master grid for this tick (origin + samples/beat),
+    // used to re-anchor the now-line and grid-snap fresh clip placements.
+    const auto gridCtx = grid_.snapshotGrid();
+
     for (int slot = 0; slot < numDecks; ++slot)
     {
         auto* audio = decks_.getAudioState (slot);
@@ -222,6 +258,15 @@ void LiveProjectionTimer::processTick()
                 }
             }
 
+            // A loop wrap repeats continuous audio, so its reopen must butt-join
+            // the seam gaplessly. A cue/beat/hot-cue jump is a genuine
+            // discontinuity: re-snap the reopen to the grid so the post-jump beats
+            // land on grid lines (an off-beat cue would otherwise inherit the
+            // seam's arbitrary, off-grid phase). loopActive distinguishes the two.
+            const bool looping = audio->loopActive.load (std::memory_order_acquire);
+            const std::int64_t jumpAnchor    = audio->beatgridAnchor.load (std::memory_order_acquire);
+            const double       jumpInterval  = audio->beatgridInterval.load (std::memory_order_acquire);
+
             // Phase 2 — reopen wanted lanes at the seam, starting at the EXACT
             // in-point, and grow to the live position (capturing the post-jump
             // head that polling would otherwise have skipped).
@@ -229,9 +274,13 @@ void LiveProjectionTimer::processTick()
             {
                 if (want[li])
                 {
+                    const std::int64_t rawStart = seam[static_cast<size_t> (li)];
+                    const std::int64_t start    = looping
+                        ? rawStart
+                        : snapStartToGrid (jumpAnchor, jumpInterval, seekTo, rawStart, gridCtx);
+
                     startLane (dp, deckIndex, static_cast<Lane> (li),
-                               seekTo, seam[static_cast<size_t> (li)],
-                               sourceFileId, sourceLength);
+                               seekTo, start, sourceFileId, sourceLength);
                     growLane (dp.lanes[li], srcPos);
                 }
             }
@@ -252,8 +301,25 @@ void LiveProjectionTimer::processTick()
                     {
                         if (lp.active)
                             finaliseLane (lp);     // close the pre-seek span
+
+                        // First clip of the take: re-anchor the now-line to the
+                        // live grid origin (a beat line). Recording may have been
+                        // armed while the decks were dormant, where the grid origin
+                        // is published as 0 — anchoring now keeps the record cursor
+                        // on a beat and the first clip aligned to the grid.
+                        if (! sessionAnchored_)
+                        {
+                            nowLineSample_   = gridCtx.phaseOriginSample;
+                            sessionAnchored_ = true;
+                        }
+
+                        const std::int64_t start = snapStartToGrid (
+                            audio->beatgridAnchor.load (std::memory_order_acquire),
+                            audio->beatgridInterval.load (std::memory_order_acquire),
+                            srcPos, nowLineSample_, gridCtx);
+
                         startLane (dp, deckIndex, static_cast<Lane> (li),
-                                   srcPos, nowLineSample_, sourceFileId, sourceLength);
+                                   srcPos, start, sourceFileId, sourceLength);
                     }
                     else
                     {
@@ -275,22 +341,9 @@ void LiveProjectionTimer::processTick()
         dp.lastSourcePos = srcPos;
     }
 
-    // When recording is active but no deck advanced this tick, keep the
-    // timeline moving in real time so the record cursor advances over silence.
-    const double nowMs = juce::Time::getMillisecondCounterHiRes();
-    if (maxAdvance == 0 && capturingProvider_ && capturingProvider_())
-    {
-        if (lastTickMs_ > 0.0)
-        {
-            const double dt   = (nowMs - lastTickMs_) * 0.001;
-            const double sr   = grid_.snapshotGrid().sampleRate;
-            const double rate = sr > 0.0 ? sr : DawState::kProjectSampleRate;
-            if (dt > 0.0)
-                maxAdvance = static_cast<std::int64_t> (std::llround (dt * rate));
-        }
-    }
-    lastTickMs_ = nowMs;
-
+    // The now-line advances ONLY by real deck progress: the record cursor parks
+    // at the grid origin until a deck starts playing and freezes whenever every
+    // deck is silent, so it never drifts to a between-beats position over silence.
     nowLineSample_ += maxAdvance;
 }
 
