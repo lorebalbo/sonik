@@ -246,19 +246,19 @@ void LaneView::paint (juce::Graphics& g)
     if (! active_)
         paintInactiveDither (g, contentCell);
 
-    // ---- Lane header cell -----------------------------------------------
+    // ---- Lane header cell: flat, Logic-style — the row's tonal step does the
+    // separating (DESIGN.md "no-line" rule); the only ink is the track-header
+    // column's continuous 2-px right edge.
     g.setColour (kHeaderFill);
     g.fillRect (headerCell);
 
     g.setColour (kInk);
-    g.drawRect (headerCell, 2);                 // 2-px solid border
-    g.drawLine ((float) contentCell.getX(), (float) bounds.getY(),
-                (float) contentCell.getX(), (float) bounds.getBottom(), 2.0f);
+    g.fillRect (gutter - 2, bounds.getY(), 2, bounds.getHeight());
 
     g.setColour (active_ ? kInk : kInkDim);
-    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
+    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::bold));
     g.drawText (labelForKind (kind_),
-                headerCell.withTrimmedLeft (6).withTrimmedRight (4),
+                headerCell.withTrimmedLeft (20).withTrimmedRight (6),
                 juce::Justification::centredLeft, false);
 }
 

@@ -56,9 +56,20 @@ public:
     bool isCollapsed() const noexcept { return collapsed_; }
     void setCollapsed (bool shouldBeCollapsed);
 
-    // PRD-0093: automation-lane disclosure (hidden by default).
+    // PRD-0093 (revised): automation-lane disclosure, Logic-style. The track
+    // header dropdown selects ONE automatable parameter; only that lane is shown
+    // beneath the source lanes. Revealing without an explicit selection shows
+    // the default parameter (gain/volume).
     bool isAutomationRevealed() const noexcept { return automationRevealed_; }
     void setAutomationRevealed (bool shouldBeRevealed);
+
+    // Select the automation parameter shown for this track (empty = hide). Also
+    // updates the header dropdown label.
+    void setAutomationParameter (const juce::String& parameterId);
+    const juce::String& getAutomationParameter() const noexcept { return selectedAutoParam_; }
+
+    // The mixer channel node backing the header volume fader (deck N -> channel N).
+    void setMixerChannelTree (juce::ValueTree channelTree);
 
     int getPreferredHeight() const noexcept
     {
@@ -113,6 +124,10 @@ private:
 
     LaneView& laneFor (ChannelGroup::LaneKind kind);
 
+    void showAutomationMenu();
+    void updateHeaderAutomationDisplay();
+    static juce::String labelForParameter (const juce::String& parameterId, bool isBoolean);
+
     juce::ValueTree trackTree_;
     juce::ValueTree deckTree_;
     int             deckIndex_ { 0 };
@@ -128,6 +143,10 @@ private:
 
     bool collapsed_ { false };
     bool automationRevealed_ { false };
+
+    // The parameter the header dropdown currently targets ("gain" by default so
+    // a bare reveal shows the volume lane, like Logic's default Volume display).
+    juce::String selectedAutoParam_ { "gain" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChannelGroupView)
 };

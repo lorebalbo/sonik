@@ -17,6 +17,7 @@
 // Editing is PRD-0094; this view is read-only apart from the inherited bypass.
 //==============================================================================
 
+#include <algorithm>
 #include <vector>
 
 #include "AutomationLaneViewBase.h"
@@ -117,22 +118,37 @@ public:
 
 protected:
     //--------------------------------------------------------------------------
-    // PRD-0094 — editing gestures wired into the PRD-0093 seams.
+    // PRD-0094 (revised) — Logic-style editing gestures wired into the seams:
+    //   * click an empty spot   → create a node there and arm it for the same-
+    //                             gesture drag (Logic's pointer-tool behaviour);
+    //   * click a node          → select it;
+    //   * drag a node           → the node AND its connecting segments follow
+    //                             the cursor live (preview); ONE model write
+    //                             lands on mouse-up (single undo step);
+    //   * double-click a node   → delete it;
+    //   * hover a node          → hollow highlight ring (instant feedback);
+    //   * while dragging        → a value readout chip rides the node.
     //--------------------------------------------------------------------------
 
-    // DOUBLE-CLICK empty region → AddBreakpoint (snapped time, clamped value, §1.5.1).
+    // DOUBLE-CLICK on a node → DeleteBreakpoint (Logic). Empty double-clicks are
+    // covered by the click-to-create path of the first click.
     void onBodyMouseDoubleClick (const juce::MouseEvent& event) override
     {
         if (editDispatcher() == nullptr) return;
 
-        const std::int64_t sample = bodyXToSample ((double) event.x, event);
-        const double value = yToValue ((double) event.y);
-        selected_ = editDispatcher()->addBreakpoint (owner(), parameterId(), sample, value);
-        repaint();
+        auto bp = hitTestBreakpoint ((double) event.x, (double) event.y);
+        if (bp.isValid())
+        {
+            editDispatcher()->deleteBreakpoint (owner(), parameterId(), bp);
+            if (bp == selected_)
+                selected_ = juce::ValueTree();
+            hovered_ = juce::ValueTree();
+            repaint();
+        }
     }
 
-    // SINGLE-CLICK selects the nearest breakpoint (or clears on empty, §1.5.1).
-    // A drag from here moves the selection live; the model write lands on mouse-up.
+    // PRESS — select the node under the cursor, or CREATE one on an empty spot
+    // (snapped time, clamped value) and arm it for the drag that may follow.
     void onBodyMouseDown (const juce::MouseEvent& event) override
     {
         dragging_ = false;
@@ -143,11 +159,18 @@ protected:
         }
 
         selected_ = hitTestBreakpoint ((double) event.x, (double) event.y);
+
+        if (! selected_.isValid() && editDispatcher() != nullptr)
+        {
+            const std::int64_t sample = bodyXToSample ((double) event.x, event);
+            const double value = yToValue ((double) event.y);
+            selected_ = editDispatcher()->addBreakpoint (owner(), parameterId(), sample, value);
+        }
         repaint();
     }
 
-    // Live drag preview of the selected breakpoint — the model is NOT mutated per
-    // move; only the committed value lands on mouse-up (§1.4).
+    // Live drag preview of the selected breakpoint — the node and its segments
+    // follow the cursor each frame; the model write lands on mouse-up (§1.4).
     void onBodyMouseDrag (const juce::MouseEvent& event) override
     {
         if (editDispatcher() == nullptr || ! selected_.isValid())
@@ -155,7 +178,7 @@ protected:
 
         dragging_ = true;
         previewSample_ = bodyXToSample ((double) event.x, event);
-        previewValue_  = yToValue ((double) event.y); // free cursor; value pins on commit
+        previewValue_  = yToValue ((double) event.y);
         repaint();
     }
 
@@ -170,6 +193,30 @@ protected:
         editDispatcher()->moveBreakpoint (owner(), parameterId(), selected_, sample, value);
         dragging_ = false;
         repaint();
+    }
+
+    // HOVER — highlight the node under the cursor and hint the two affordances:
+    // pointing hand over a node (drag it), crosshair over empty lane (create).
+    void onBodyMouseMove (const juce::MouseEvent& event) override
+    {
+        auto hit = hitTestBreakpoint ((double) event.x, (double) event.y);
+        setMouseCursor (hit.isValid() ? juce::MouseCursor::PointingHandCursor
+                                      : juce::MouseCursor::CrosshairCursor);
+        if (hit != hovered_)
+        {
+            hovered_ = hit;
+            repaint();
+        }
+    }
+
+    void onBodyMouseExit (const juce::MouseEvent&) override
+    {
+        setMouseCursor (juce::MouseCursor::NormalCursor);
+        if (hovered_.isValid())
+        {
+            hovered_ = juce::ValueTree();
+            repaint();
+        }
     }
 
     bool keyPressed (const juce::KeyPress& key) override
@@ -189,11 +236,20 @@ protected:
 
     void paintLaneBody (juce::Graphics& g, juce::Rectangle<int> /*body*/, bool /*enabled*/) override
     {
-        const auto pts = computePolyline();
-        if (pts.empty())
+        const auto body = getBodyBounds();
+        const auto dps  = computeDisplayBreakpoints();   // preview-substituted
+        if (dps.empty())
             return;
 
-        const auto body = getBodyBounds();
+        // Build the polyline from the DISPLAY breakpoints so a dragged node and
+        // both its connecting segments follow the cursor live (Logic feel).
+        std::vector<Point> pts;
+        for (size_t i = 0; i < dps.size(); ++i)
+        {
+            if (i > 0 && dps[i - 1].step)
+                pts.push_back ({ dps[i].x, dps[i - 1].y }); // step corner
+            pts.push_back ({ dps[i].x, dps[i].y });
+        }
 
         // ---- Dithered fill beneath the curve (constant density) ----------
         paintDitherUnderCurve (g, pts, body);
@@ -206,20 +262,28 @@ protected:
             path.lineTo ((float) pts[i].x, (float) pts[i].y);
         g.strokePath (path, juce::PathStrokeType (2.0f));
 
-        // ---- Filled square breakpoint dots --------------------------------
-        ContinuousLane lane (getLaneNode());
-        const int n = lane.getNumBreakpoints();
-        for (int i = 0; i < n; ++i)
+        // ---- Breakpoint dots: filled squares; the selected node is larger,
+        // the hovered node carries a hollow highlight ring (instant feedback).
+        for (const auto& dp : dps)
         {
-            auto bp = lane.getBreakpoint (i);
-            const double x = sampleToBodyX (ContinuousLane::sampleOfNode (bp));
-            const double y = valueToY (ContinuousLane::valueOfNode (bp), body);
-            const float s = 5.0f;
-            g.fillRect ((float) x - s * 0.5f, (float) y - s * 0.5f, s, s);
+            const float s = dp.selected ? 7.0f : 5.0f;
+            g.setColour (kInk);
+            g.fillRect ((float) dp.x - s * 0.5f, (float) dp.y - s * 0.5f, s, s);
+
+            if (dp.hovered && ! dp.selected)
+            {
+                const float r = 11.0f;
+                g.drawRect ((float) dp.x - r * 0.5f, (float) dp.y - r * 0.5f, r, r, 1.0f);
+            }
         }
 
         // ---- Read-only HOLLOW live marker at the playhead -----------------
+        ContinuousLane lane (getLaneNode());
         paintLiveMarker (g, lane, body);
+
+        // ---- Value readout chip riding the dragged node --------------------
+        if (dragging_ && selected_.isValid())
+            paintValueReadout (g, body);
     }
 
 private:
@@ -228,6 +292,86 @@ private:
         return getLocalBounds()
                    .withTrimmedLeft (DawLayout::kTrackHeaderWidth)
                    .reduced (0, AutomationLaneMetrics::kBodyInsetY);
+    }
+
+    //--------------------------------------------------------------------------
+    // Display geometry: the model breakpoints with the live drag preview
+    // substituted for the selected node, re-sorted by x so dragging a node past
+    // its neighbour previews the same reorder the model commit performs.
+    //--------------------------------------------------------------------------
+    struct DisplayBp { double x; double y; bool step; bool selected; bool hovered; };
+
+    std::vector<DisplayBp> computeDisplayBreakpoints() const
+    {
+        std::vector<DisplayBp> out;
+
+        ContinuousLane lane (getLaneNode());
+        if (! lane.isValid())
+            return out;
+
+        const auto body = getBodyBounds();
+        const int n = lane.getNumBreakpoints();
+        out.reserve ((size_t) n);
+
+        for (int i = 0; i < n; ++i)
+        {
+            auto bp = lane.getBreakpoint (i);
+            const bool sel = (bp == selected_);
+
+            std::int64_t sample = ContinuousLane::sampleOfNode (bp);
+            double       value  = ContinuousLane::valueOfNode (bp);
+            if (sel && dragging_)
+            {
+                sample = previewSample_;
+                value  = range_.clampToWindow (previewValue_);
+            }
+
+            out.push_back ({ sampleToBodyX (sample),
+                             valueToY (value, body),
+                             ContinuousLane::interpolationOfNode (bp) == Interpolation::Step,
+                             sel,
+                             bp == hovered_ });
+        }
+
+        std::stable_sort (out.begin(), out.end(),
+                          [] (const DisplayBp& a, const DisplayBp& b) { return a.x < b.x; });
+        return out;
+    }
+
+    // Formats the dragged value for the readout chip (native parameter units).
+    juce::String formattedPreviewValue() const
+    {
+        const double v = range_.clampToWindow (previewValue_);
+        juce::String text (v, std::abs (v) < 10.0 ? 2 : 1);
+        if (v > 0.0 && range_.minValue < 0.0)
+            text = "+" + text;
+        return paramLabel_ + " " + text;
+    }
+
+    void paintValueReadout (juce::Graphics& g, juce::Rectangle<int> body)
+    {
+        const double x = sampleToBodyX (previewSample_);
+        const double y = valueToY (range_.clampToWindow (previewValue_), body);
+
+        const juce::String text = formattedPreviewValue();
+        const juce::Font font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold);
+        const int w = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font, text)) + 8;
+        const int h = 14;
+
+        // Place above-right of the node, flipped/clamped to stay inside the body.
+        int bx = (int) std::llround (x) + 8;
+        int by = (int) std::llround (y) - h - 6;
+        if (bx + w > body.getRight()) bx = (int) std::llround (x) - w - 8;
+        by = juce::jlimit (body.getY(), juce::jmax (body.getY(), body.getBottom() - h), by);
+        bx = juce::jlimit (body.getX(), juce::jmax (body.getX(), body.getRight() - w), bx);
+
+        const juce::Rectangle<int> chip (bx, by, w, h);
+        g.setColour (kSurface);
+        g.fillRect (chip);
+        g.setColour (kInk);
+        g.drawRect (chip, 1);
+        g.setFont (font);
+        g.drawText (text, chip, juce::Justification::centred, false);
     }
 
     //--------------------------------------------------------------------------
@@ -401,6 +545,7 @@ private:
 
     // PRD-0094 editing state (message thread only).
     juce::ValueTree selected_;
+    juce::ValueTree hovered_;
     bool            dragging_      { false };
     std::int64_t    previewSample_ { 0 };
     double          previewValue_  { 0.0 };

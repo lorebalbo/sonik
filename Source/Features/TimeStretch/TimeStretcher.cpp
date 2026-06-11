@@ -85,6 +85,11 @@ int TimeStretcher::getLatency() const
     return static_cast<int> (stretcher->getLatency());
 }
 
+int TimeStretcher::getStartPad() const
+{
+    return stretcher != nullptr ? static_cast<int> (stretcher->getPreferredStartPad()) : 0;
+}
+
 int TimeStretcher::getBufferedOutputSamples() const
 {
     if (stretcher == nullptr)

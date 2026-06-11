@@ -119,6 +119,7 @@ private:
         bool                          wasPlaying    = false;
         std::int64_t                  lastSourcePos = 0;
         std::uint64_t                 lastSeekSeq   = 0; // last consumed discontinuity seq
+        bool                          lastKeyLock   = false; // for key-lock-toggle splits
         std::array<LaneProjection, kLaneCount> lanes;
     };
 
@@ -130,11 +131,14 @@ private:
     void startLane   (DeckProjection&, int deckIndex, Lane,
                       std::int64_t srcPos, std::int64_t timelineStart,
                       const juce::String& sourceFileId,
-                      std::int64_t sourceLength);
+                      std::int64_t sourceLength,
+                      double sourceBpm,
+                      bool keyLock);
 
-    // Timeline end (exclusive) a lane's current clip has grown to, == its
-    // timelineStart + (sourceEnd - sourceStart). Used to butt-join the split.
-    static std::int64_t laneTimelineEnd (const LaneProjection&);
+    // Timeline end (exclusive) a lane's current clip has grown to, ==
+    // timelineStart + STRETCHED source span (span * stretchRatio). Used to
+    // butt-join a split at the musical (stretched) end. ratio 1.0 => 1:1.
+    static std::int64_t laneTimelineEnd (const LaneProjection&, double stretchRatio);
     void growLane    (LaneProjection&, std::int64_t srcPos);
     void finaliseLane (LaneProjection&);
 
@@ -145,11 +149,15 @@ private:
     // lands exactly on a master-grid beat line. Pure: the deck's source beatgrid
     // (anchor + interval) positions the downbeat, then it is snapped against the
     // master grid (origin + samples-per-beat) and the start is backed out so the
-    // whole clip aligns. With no usable beatgrid it returns rawTimelineStart.
+    // whole clip aligns. `stretchRatio` (timeline/source = sourceBpm/masterBpm)
+    // maps the source-domain downbeat offset into the stretched timeline so a
+    // SYNC'd deck snaps correctly too (1.0 => 1:1). No usable beatgrid =>
+    // rawTimelineStart.
     static std::int64_t snapStartToGrid (std::int64_t  beatgridAnchor,
                                          double        beatgridInterval,
                                          std::int64_t  sourceStart,
                                          std::int64_t  rawTimelineStart,
+                                         double        stretchRatio,
                                          const MasterGridService::GridContext& gridCtx);
 
     DeckProjectionSource& decks_;

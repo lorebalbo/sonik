@@ -277,6 +277,11 @@ void SidebarMolecule::rebuild()
             item->secondaryLabel = juce::String (missingCount);
         item->isActive = (activeSection == ActiveSection::Collection);
         item->onClick  = [this] { selectCollection(); };
+        item->onRightClick = [this] (juce::Point<int> screenPos)
+        {
+            if (onCollectionMenuRequested)
+                onCollectionMenuRequested (screenPos);
+        };
         addItem (std::move (item));
     }
 

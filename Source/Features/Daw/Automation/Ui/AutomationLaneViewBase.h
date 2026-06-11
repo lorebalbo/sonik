@@ -128,9 +128,11 @@ public:
         if (enabled)
             paintPlayhead (g, bodyCell);
 
-        // ---- 2-px lane frame around the body ----------------------------
-        g.setColour (kInk);
-        g.drawRect (bodyCell, 2);
+        // ---- Lane edges: a 1-px ink rule above and below the body (a quiet
+        // sub-track row, Logic-style) instead of a heavy boxed frame.
+        g.setColour (kInk.withAlpha (0.35f));
+        g.fillRect (bodyCell.getX(), bodyCell.getY(), bodyCell.getWidth(), 1);
+        g.fillRect (bodyCell.getX(), bodyCell.getBottom() - 1, bodyCell.getWidth(), 1);
 
         // ---- Left value-axis gutter -------------------------------------
         paintGutter (g, gutterCell, enabled);
@@ -149,17 +151,20 @@ public:
     void mouseDown (const juce::MouseEvent& event) override { onBodyMouseDown (event); }
     void mouseDrag (const juce::MouseEvent& event) override { onBodyMouseDrag (event); }
     void mouseDoubleClick (const juce::MouseEvent& event) override { onBodyMouseDoubleClick (event); }
+    void mouseMove (const juce::MouseEvent& event) override { onBodyMouseMove (event); }
+    void mouseExit (const juce::MouseEvent& event) override { onBodyMouseExit (event); }
 
     void resized() override
     {
-        // The bypass button lives in the rightmost slice of the gutter.
-        const int w   = AutomationLaneMetrics::kBypassButtonWidth;
-        const int ins = AutomationLaneMetrics::kBypassButtonInset;
+        // The bypass button sits just left of the track-header column edge,
+        // vertically centred in the lane row.
+        const int w = AutomationLaneMetrics::kBypassButtonWidth;
+        const int h = juce::jmin (16, getHeight() - 6);
         bypassButtonBounds_ = juce::Rectangle<int> (
-            DawLayout::kTrackHeaderWidth - w - ins,
-            ins,
+            DawLayout::kTrackHeaderWidth - w - 8,
+            (getHeight() - h) / 2,
             w,
-            getHeight() - 2 * ins);
+            h);
     }
 
 protected:
@@ -190,6 +195,8 @@ protected:
     virtual void onBodyMouseUp (const juce::MouseEvent&) {}
     virtual void onBodyMouseDrag (const juce::MouseEvent&) {}
     virtual void onBodyMouseDoubleClick (const juce::MouseEvent&) {}
+    virtual void onBodyMouseMove (const juce::MouseEvent&) {}
+    virtual void onBodyMouseExit (const juce::MouseEvent&) {}
 
     //--------------------------------------------------------------------------
     // PRD-0094 editing helpers (subclasses use these).
@@ -253,31 +260,33 @@ private:
 
     void paintGutter (juce::Graphics& g, juce::Rectangle<int> cell, bool enabled)
     {
+        // Flat gutter cell continuing the track-header column: header tone,
+        // single 2-px ink right edge — no boxed frame (Logic sub-track header).
         g.setColour (kGutterFill);
         g.fillRect (cell);
         g.setColour (kInk);
-        g.drawRect (cell, 2);
+        g.fillRect (cell.getRight() - 2, cell.getY(), 2, cell.getHeight());
 
-        // Parameter label (all-caps Space Mono), top-left.
-        g.setColour (kInk);
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::bold));
+        // Parameter label (all-caps Space Mono), vertically centred, indented
+        // beneath the track name like Logic's automation sub-track.
+        g.setColour (enabled ? kInk : kInk.withAlpha (0.45f));
+        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold));
         g.drawText (paramLabel_,
-                    cell.withTrimmedLeft (5).withTrimmedTop (2)
-                        .withWidth (DawLayout::kTrackHeaderWidth
-                                    - AutomationLaneMetrics::kBypassButtonWidth - 10)
-                        .withHeight (12),
-                    juce::Justification::topLeft, false);
+                    cell.withTrimmedLeft (20).withTrimmedRight (
+                        AutomationLaneMetrics::kBypassButtonWidth + 40),
+                    juce::Justification::centredLeft, false);
 
-        // Min (bottom) / max (top) value labels, small Space Mono.
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 8.0f, juce::Font::plain));
-        auto labelCol = cell.withTrimmedLeft (5)
-                            .withWidth (DawLayout::kTrackHeaderWidth
-                                        - AutomationLaneMetrics::kBypassButtonWidth - 10);
-        g.drawText (maxLabel_, labelCol.removeFromTop (cell.getHeight() / 2)
-                                       .removeFromBottom (10),
-                    juce::Justification::bottomLeft, false);
-        g.drawText (minLabel_, labelCol.removeFromBottom (10),
-                    juce::Justification::bottomLeft, false);
+        // Max (top) / min (bottom) range labels, right-aligned before the
+        // bypass button — they describe the lane's value axis.
+        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 7.0f, juce::Font::plain));
+        auto rangeCol = juce::Rectangle<int> (bypassButtonBounds_.getX() - 32,
+                                              cell.getY() + 1,
+                                              28,
+                                              cell.getHeight() - 2);
+        g.drawText (maxLabel_, rangeCol.withHeight (rangeCol.getHeight() / 2),
+                    juce::Justification::topRight, false);
+        g.drawText (minLabel_, rangeCol.withTrimmedTop (rangeCol.getHeight() / 2),
+                    juce::Justification::bottomRight, false);
 
         // Bypass (enable) button — DESIGN.md fill inversion: enabled = filled ink.
         g.setColour (enabled ? kInk : kSurface);
@@ -286,8 +295,7 @@ private:
         g.drawRect (bypassButtonBounds_, 2);
         g.setColour (enabled ? kSurface : kInk);
         g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 8.0f, juce::Font::bold));
-        // "ON" when enabled (driving the mix), "BYP" when bypassed.
-        g.drawText (enabled ? juce::String ("ON") : juce::String ("BYP"),
+        g.drawText (enabled ? juce::String ("ON") : juce::String ("OFF"),
                     bypassButtonBounds_, juce::Justification::centred, false);
     }
 

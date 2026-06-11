@@ -36,7 +36,8 @@ class ChannelGroupStack final : public juce::Component,
                                 private juce::ValueTree::Listener
 {
 public:
-    using DeckResolver = std::function<juce::ValueTree (int deckIndex)>;
+    using DeckResolver    = std::function<juce::ValueTree (int deckIndex)>;
+    using ChannelResolver = std::function<juce::ValueTree (int channelIndex)>;
 
     // dawBranch    — the "Daw" branch (holds the "tracks" container).
     // transform    — shared horizontal time axis (PRD-0065/0066).
@@ -56,6 +57,11 @@ public:
     // PRD-0093: inject the shared read-only playhead-sample provider into every
     // group's automation lanes.
     void setAutomationPlayheadProvider (AutomationLaneStackView::PlayheadProvider provider);
+
+    // Maps a track's deck index to its mixer channel ValueTree (identity
+    // deck N -> channel N) so each track header's volume fader drives the
+    // authoritative channel fader. Retained for groups rebuilt later.
+    void setMixerChannelResolver (ChannelResolver resolver);
 
     // PRD-0093: reposition automation lanes after a transform change.
     void refreshAutomationTransform();
@@ -110,6 +116,7 @@ private:
     juce::ValueTree   tracks_;
     const TimelineTransform& transform_;
     DeckResolver      deckResolver_;
+    ChannelResolver   channelResolver_;
     ClipBlock::WaveformSource waveformSource_;
     AutomationModel*  automationModel_ { nullptr };
     AutomationLaneStackView::PlayheadProvider automationPlayheadProvider_;

@@ -4,6 +4,8 @@
 
 #include "DawPanel.h"
 
+#include "../Atoms/PixelIcons.h"
+
 #include <cmath>
 #include <cstdint>
 
@@ -81,7 +83,17 @@ DawPanel::DawPanel (MasterGridService& gridService,
 
     onTransportPlay  = [this]() { transport_->play();  repaint(); };
     onTransportPause = [this]() { transport_->pause(); repaint(); };
-    onTransportStop  = [this]() { transport_->stop();  repaint(); };
+
+    // Stop returns the playhead to the beginning (Logic-style): the transport
+    // resets its playhead, and the view scrolls back to the arrangement start so
+    // the DJ is looking at where the next Play will land.
+    onTransportStop  = [this]()
+    {
+        transport_->stop();
+        transform_.setLeftEdgeSample (transform_.minLeftEdgeSample());
+        followController_.setEnabled (true);
+        afterTransformChanged();
+    };
     onTransportLoopToggle = [this]() { transport_->toggleLoop(); repaint(); };
 
     // PRD-0079/0083: Create the arrangement compiler / recompile trigger / dispatcher.
@@ -100,6 +112,14 @@ DawPanel::DawPanel (MasterGridService& gridService,
     {
         if (s == Daw::DawTransport::State::Playing && recompileTrigger_ != nullptr)
             recompileTrigger_->requestRecompile();
+
+        // Logic-style "catch on play": starting playback re-engages the default
+        // follow behaviour even after a manual scroll disengaged it.
+        if (s == Daw::DawTransport::State::Playing)
+        {
+            followController_.setEnabled (true);
+            applyFollowIfNeeded();
+        }
         repaint();
     };
     transport_->onSeeked = [this] (std::int64_t)
@@ -147,6 +167,26 @@ void DawPanel::setExpanded (bool shouldBeExpanded)
 
     expanded_ = shouldBeExpanded;
     resized();
+    repaint();
+
+    if (onPreferredHeightChanged)
+        onPreferredHeightChanged();
+}
+
+void DawPanel::setFullSize (bool shouldBeFullSize)
+{
+    if (fullSize_ == shouldBeFullSize)
+        return;
+
+    fullSize_ = shouldBeFullSize;
+
+    // Full-size only makes sense with the timeline visible.
+    if (fullSize_ && ! expanded_)
+    {
+        expanded_ = true;
+        resized();
+    }
+
     repaint();
 
     if (onPreferredHeightChanged)
@@ -309,6 +349,49 @@ void DawPanel::setSessionTitle (const juce::String& titleWithMarker)
     repaint();
 }
 
+//==============================================================================
+// LCD (position + tempo). The position is the bar.beat of the live playhead —
+// the scrub preview while scrubbing, else the transport now-line, else bar 1.
+//==============================================================================
+juce::String DawPanel::computeLcdPosition() const
+{
+    std::int64_t sample = -1;
+    if (scrubbing_)
+        sample = scrubSample_;
+    else if (nowLineProvider_)
+        sample = nowLineProvider_();
+
+    const auto&  grid = transform_.grid();
+    double beats = 0.0;
+    if (sample >= 0 && grid.samplesPerBeat > 0.0)
+        beats = static_cast<double> (sample - grid.phaseOriginSample) / grid.samplesPerBeat;
+
+    const int bar  = juce::jmax (1, (int) std::floor (beats / DawState::kBeatsPerBar) + 1);
+    const int beat = juce::jmax (1, (int) std::floor (std::fmod (juce::jmax (0.0, beats),
+                                                                 (double) DawState::kBeatsPerBar)) + 1);
+    return juce::String (bar) + "." + juce::String (beat);
+}
+
+juce::String DawPanel::computeLcdTempo() const
+{
+    const double bpm = transform_.grid().bpm;
+    if (bpm <= 0.0)
+        return "---";
+    return juce::String (bpm, 1);
+}
+
+void DawPanel::refreshLcd()
+{
+    auto position = computeLcdPosition();
+    auto tempo    = computeLcdTempo();
+    if (position == lcdPosition_ && tempo == lcdTempo_)
+        return;
+
+    lcdPosition_ = std::move (position);
+    lcdTempo_    = std::move (tempo);
+    repaint (lcdBounds_);
+}
+
 void DawPanel::updateNowLine()
 {
     // PRD-0102: while the DJ is scrubbing the ruler, the playhead line follows
@@ -426,6 +509,57 @@ bool DawPanel::keyPressed (const juce::KeyPress& key)
             return true;
         }
     }
+
+    //--------------------------------------------------------------------------
+    // Contextual DAW transport shortcuts. These fire only while the DAW panel
+    // owns keyboard focus (any click in the panel grabs it), so the same keys
+    // keep their deck meaning when the DJ is working elsewhere — the deck
+    // handler in MainContentComponent stays the fallback.
+    //--------------------------------------------------------------------------
+    const auto mods = key.getModifiers();
+    if (! mods.isCommandDown() && ! mods.isCtrlDown() && ! mods.isAltDown())
+    {
+        // Space — play/pause toggle.
+        if (key == juce::KeyPress::spaceKey)
+        {
+            const bool playing = isTransportPlaying && isTransportPlaying();
+            if (playing) { if (onTransportPause) onTransportPause(); }
+            else         { if (onTransportPlay)  onTransportPlay();  }
+            repaint();
+            return true;
+        }
+
+        // Return — stop and send the playhead back to the beginning.
+        if (key == juce::KeyPress::returnKey)
+        {
+            if (onTransportStop)
+                onTransportStop();
+            repaint();
+            return true;
+        }
+
+        const auto ch = juce::CharacterFunctions::toLowerCase (key.getTextCharacter());
+
+        // R — record arm/stop toggle.
+        if (ch == 'r')
+        {
+            if (onRecordToggle)
+                onRecordToggle();
+            repaint();
+            return true;
+        }
+
+        // M — metronome on/off.
+        if (ch == 'm')
+        {
+            metronomeOn_ = ! metronomeOn_;
+            if (onMetronomeToggle)
+                onMetronomeToggle (metronomeOn_);
+            repaint();
+            return true;
+        }
+    }
+
     return false;
 }
 
@@ -464,6 +598,10 @@ void DawPanel::timerCallback()
         updateNowLine();
     }
 
+    // Keep the LCD's bar.beat position + tempo readout live (repaints only the
+    // LCD cell, and only when the displayed strings actually change).
+    refreshLcd();
+
     // Keep the record playhead in step and repaint the header when its state
     // changes so the Record button reflects idle / armed / recording.
     updateRecordPlayhead();
@@ -486,56 +624,49 @@ void DawPanel::resized()
 
     auto header = bounds.removeFromTop (kHeaderHeight);
 
-    // Always-visible collapse/expand toggle: a square button on the right.
-    const int toggleSize = kHeaderHeight - 8;
-    toggleBounds_ = juce::Rectangle<int> (header.getRight() - toggleSize - 4,
-                                          header.getY() + 4,
-                                          toggleSize, toggleSize);
+    //--------------------------------------------------------------------------
+    // Control bar, Logic-style: [ title block over the track-header gutter ]
+    // [ segmented transport | LCD | cycle+metronome, centred as one group ]
+    // [ snap dropdown + tempo-lane disclosure + view toggles on the right ].
+    // Transport buttons share their 2-px borders (a segmented cluster) so the
+    // bar reads as one engineered unit instead of floating chips.
+    //--------------------------------------------------------------------------
+    const int btn   = 30;                      // square button side
+    const int y     = header.getY() + (kHeaderHeight - btn) / 2;
+    const int step  = btn - 2;                 // segmented: borders coincide
 
-    // Follow-playhead toggle: a labelled button to the left of the collapse one.
-    const int followWidth = 64;
-    followToggleBounds_ = juce::Rectangle<int> (toggleBounds_.getX() - followWidth - 6,
-                                                header.getY() + 4,
-                                                followWidth, toggleSize);
+    // Right cluster (right -> left): collapse fold + full-size (segmented pair),
+    // snap dropdown, master tempo automation disclosure.
+    toggleBounds_     = { header.getRight() - btn - 8, y, btn, btn };
+    fullScreenBounds_ = { toggleBounds_.getX() - step, y, btn, btn };
 
-    // Global Record button: a labelled square to the left of the follow toggle.
-    const int recordWidth = 64;
-    recordButtonBounds_ = juce::Rectangle<int> (followToggleBounds_.getX() - recordWidth - 6,
-                                                header.getY() + 4,
-                                                recordWidth, toggleSize);
+    const int snapW = 100;
+    snapBounds_       = { fullScreenBounds_.getX() - snapW - 14, y, snapW, btn };
 
-    // Metronome (testing aid) toggle: a labelled button between LOOP and REC.
-    const int metroW = 52;
-    metroBounds_ = juce::Rectangle<int> (recordButtonBounds_.getX() - metroW - 6,
-                                         header.getY() + 4, metroW, toggleSize);
+    const int masterAutoW = 58;
+    masterAutoBounds_ = { snapBounds_.getX() - masterAutoW + 2, y, masterAutoW, btn };
 
-    // PRD-0082: Transport buttons to the left of the Metronome button.
-    // STOP | PAUSE | PLAY | LOOP (each 44px wide)
-    const int transportW = 44;
-    const int transportH = toggleSize;
-    const int transportGap = 4;
+    // Centre group: [PLAY|PAUSE|STOP|REC]  LCD  [LOOP|METRO].
+    const int lcdW       = 200;
+    const int transportW = 4 * step + 2;       // 4 segmented buttons
+    const int pairW      = 2 * step + 2;       // loop + metronome pair
+    const int gapLcd     = 10;
+    const int groupW     = transportW + gapLcd + lcdW + gapLcd + pairW;
 
-    loopBounds_  = juce::Rectangle<int> (metroBounds_.getX() - transportW - 6,
-                                          header.getY() + 4, transportW, transportH);
-    stopBounds_  = juce::Rectangle<int> (loopBounds_.getX()  - transportW - transportGap,
-                                          header.getY() + 4, transportW, transportH);
-    pauseBounds_ = juce::Rectangle<int> (stopBounds_.getX()  - transportW - transportGap,
-                                          header.getY() + 4, transportW, transportH);
-    playBounds_  = juce::Rectangle<int> (pauseBounds_.getX() - transportW - transportGap,
-                                          header.getY() + 4, transportW, transportH);
+    const int minLeft = DawLayout::kTrackHeaderWidth + 12;  // clear of the title
+    int groupX = juce::jmax (minLeft, (getWidth() - groupW) / 2);
+    groupX     = juce::jmin (groupX, masterAutoBounds_.getX() - groupW - 16);
 
-    // PRD-0093: master tempo automation disclosure ("M.AUTO"), left of PLAY.
-    const int masterAutoW = 60;
-    masterAutoBounds_ = juce::Rectangle<int> (playBounds_.getX() - masterAutoW - 6,
-                                              header.getY() + 4, masterAutoW, transportH);
+    playBounds_         = { groupX + 0 * step, y, btn, btn };
+    pauseBounds_        = { groupX + 1 * step, y, btn, btn };
+    stopBounds_         = { groupX + 2 * step, y, btn, btn };
+    recordButtonBounds_ = { groupX + 3 * step, y, btn, btn };
 
-    // PRD-0102: grid-snap toggle + granularity selector, left of M.AUTO.
-    const int snapW = 52;
-    const int granW = 52;
-    snapToggleBounds_ = juce::Rectangle<int> (masterAutoBounds_.getX() - snapW - 6,
-                                              header.getY() + 4, snapW, transportH);
-    snapGranBounds_   = juce::Rectangle<int> (snapToggleBounds_.getX() - granW - transportGap,
-                                              header.getY() + 4, granW, transportH);
+    lcdBounds_   = { groupX + transportW + gapLcd, y, lcdW, btn };
+
+    const int pairX = lcdBounds_.getRight() + gapLcd;
+    loopBounds_  = { pairX,        y, btn, btn };
+    metroBounds_ = { pairX + step, y, btn, btn };
 
     const int gutter = contentLeftGutter();
 
@@ -621,99 +752,134 @@ void DawPanel::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
 
+    // Whole-panel canvas fill first: in full-size view the body can be taller
+    // than the channel-group stack, and that spare area must read as DAW canvas
+    // (surface-container-low), never as an unpainted hole.
+    g.setColour (kCanvasBg);
+    g.fillRect (bounds);
+
     // Header strip.
     auto header = bounds.removeFromTop (kHeaderHeight);
     g.setColour (kHeaderBg);
     g.fillRect (header);
 
-    // Title, left-aligned (Space Mono, ink on the light header). PRD-0096: when
-    // a session is active the indicator (file name + trailing dirty dot) is
-    // shown after the "ARRANGEMENT" label so the DJ always knows which file
-    // they are editing and whether it has unsaved changes.
+    // The control bar's 2-px ink base line — one continuous edge under the whole
+    // bar makes it read as a single engineered band (Logic's control bar edge).
     g.setColour (kInk);
-    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-    auto titleArea = header.withTrimmedLeft (8).withTrimmedRight (kHeaderHeight + 8);
-    g.drawText ("ARRANGEMENT", titleArea, juce::Justification::centredLeft, false);
+    g.fillRect (header.getX(), header.getBottom() - 2, header.getWidth(), 2);
 
+    // Title block over the track-header gutter (Space Mono, ink on the light
+    // header). PRD-0096: the session file name (with its trailing dirty dot)
+    // sits beneath the "ARRANGEMENT" label.
+    g.setColour (kInk);
+    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::bold));
+    auto titleArea = header.withTrimmedLeft (12)
+                           .withWidth (DawLayout::kTrackHeaderWidth - 12);
     if (sessionTitle_.isNotEmpty())
     {
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
-        g.drawText (sessionTitle_,
-                    titleArea.withTrimmedLeft (104),
-                    juce::Justification::centredLeft, true);
+        g.drawText ("ARRANGEMENT", titleArea.withTrimmedBottom (kHeaderHeight / 2 - 1),
+                    juce::Justification::bottomLeft, false);
+        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::plain));
+        g.drawText (sessionTitle_, titleArea.withTrimmedTop (kHeaderHeight / 2 + 1),
+                    juce::Justification::topLeft, true);
+    }
+    else
+    {
+        g.drawText ("ARRANGEMENT", titleArea, juce::Justification::centredLeft, false);
     }
 
-    // Collapse/expand toggle: 2-px ink border, surface fill, glyph centred.
-    g.setColour (kSurface);
-    g.fillRect (toggleBounds_);
-    g.setColour (kInk);
-    g.drawRect (toggleBounds_, 2);
-    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 15.0f, juce::Font::bold));
-    g.drawText (expanded_ ? juce::String ("-") : juce::String ("+"),
-                toggleBounds_, juce::Justification::centred, false);
-
-    // Follow-playhead toggle: inverted active/inactive fill (DESIGN.md).
-    const bool following = followController_.isEnabled();
-    g.setColour (following ? kInk : kSurface);
-    g.fillRect (followToggleBounds_);
-    g.setColour (kInk);
-    g.drawRect (followToggleBounds_, 2);
-    g.setColour (following ? kSurface : kInk);
-    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::plain));
-    g.drawText ("FOLLOW", followToggleBounds_, juce::Justification::centred, false);
-
-    // Global Record button
+    // Shared DESIGN.md button frame: 2-px ink border, instant active/inactive
+    // fill inversion, pixel-art glyph in the state's contrast colour.
+    auto drawIconBtn = [&] (const juce::Rectangle<int>& r, bool active, auto&& icon)
     {
-        const RecordUiState rec = recordStateProvider_ ? recordStateProvider_()
-                                                        : RecordUiState::Idle;
-        const bool active = (rec != RecordUiState::Idle);
-
         g.setColour (active ? kInk : kSurface);
-        g.fillRect (recordButtonBounds_);
-
+        g.fillRect (r);
         g.setColour (kInk);
-        g.drawRect (recordButtonBounds_, 2);
+        g.drawRect (r, 2);
         g.setColour (active ? kSurface : kInk);
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 11.0f, juce::Font::bold));
-        g.drawText ("REC", recordButtonBounds_, juce::Justification::centred, false);
-    }
+        icon (g, r);
+    };
 
-    // PRD-0082: Transport buttons — PLAY, PAUSE, STOP, LOOP.
+    // Segmented transport cluster — PLAY / PAUSE / STOP / REC share borders.
     {
-        const bool playing    = isTransportPlaying    ? isTransportPlaying()    : false;
-        const bool paused     = isTransportPaused     ? isTransportPaused()     : false;
-        const bool loopArmed  = isTransportLoopEnabled ? isTransportLoopEnabled() : false;
+        const bool playing   = isTransportPlaying     ? isTransportPlaying()     : false;
+        const bool paused    = isTransportPaused      ? isTransportPaused()      : false;
+        const bool loopArmed = isTransportLoopEnabled ? isTransportLoopEnabled() : false;
+        const RecordUiState rec = recordStateProvider_ ? recordStateProvider_()
+                                                       : RecordUiState::Idle;
 
-        auto drawTransportBtn = [&] (const juce::Rectangle<int>& r,
-                                     const juce::String& label, bool active)
-        {
-            g.setColour (active ? kInk : kSurface);
-            g.fillRect (r);
-            g.setColour (kInk);
-            g.drawRect (r, 2);
-            g.setColour (active ? kSurface : kInk);
-            g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::bold));
-            g.drawText (label, r, juce::Justification::centred, false);
-        };
+        drawIconBtn (playBounds_,  playing && ! paused,   PixelIcons::drawPlay);
+        drawIconBtn (pauseBounds_, paused,                PixelIcons::drawPause);
+        drawIconBtn (stopBounds_,  ! playing && ! paused, PixelIcons::drawStop);
+        drawIconBtn (recordButtonBounds_, rec != RecordUiState::Idle, PixelIcons::drawRecord);
 
-        drawTransportBtn (playBounds_,  "PLAY",  playing && !paused);
-        drawTransportBtn (pauseBounds_, "PAUS",  paused);
-        drawTransportBtn (stopBounds_,  "STOP",  !playing && !paused);
-        drawTransportBtn (loopBounds_,  "LOOP",  loopArmed);
-
-        // Metronome (testing aid) toggle: active/inactive fill inversion.
-        drawTransportBtn (metroBounds_, "METRO", metronomeOn_);
-
-        // PRD-0093: master tempo automation disclosure (fill inversion).
-        drawTransportBtn (masterAutoBounds_, "M.AUTO", masterAutoRevealed_);
-
-        // PRD-0102: grid-snap toggle (active/inactive fill inversion) + the
-        // granularity selector (a plain button showing the current subdivision).
-        drawTransportBtn (snapToggleBounds_, "SNAP", snap_.enabled);
-        drawTransportBtn (snapGranBounds_, labelForGranularity (snap_.granularity), false);
+        drawIconBtn (loopBounds_,  loopArmed,    PixelIcons::drawLoop);
+        drawIconBtn (metroBounds_, metronomeOn_, PixelIcons::drawMetronome);
     }
 
-    // Blank gutter corner above the lane headers, beside the ruler (when expanded).
+    // Central LCD — Logic's signature element, 1-bit style: an ink inset with
+    // surface text, split into POSITION and TEMPO cells.
+    {
+        g.setColour (kInk);
+        g.fillRect (lcdBounds_);
+
+        const auto posCell   = lcdBounds_.withWidth (lcdBounds_.getWidth() / 2);
+        const auto tempoCell = lcdBounds_.withTrimmedLeft (lcdBounds_.getWidth() / 2);
+
+        g.setColour (kSurface);
+        // Cell divider (1 px, surface) — an instrument-panel separation.
+        g.fillRect (posCell.getRight(), lcdBounds_.getY() + 5, 1, lcdBounds_.getHeight() - 10);
+
+        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::bold));
+        g.drawText (lcdPosition_, posCell.withTrimmedBottom (10),
+                    juce::Justification::centredBottom, false);
+        g.drawText (lcdTempo_, tempoCell.withTrimmedBottom (10),
+                    juce::Justification::centredBottom, false);
+
+        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 7.0f, juce::Font::plain));
+        g.drawText ("POSITION", posCell.withTrimmedTop (lcdBounds_.getHeight() - 11),
+                    juce::Justification::centredTop, false);
+        g.drawText ("TEMPO", tempoCell.withTrimmedTop (lcdBounds_.getHeight() - 11),
+                    juce::Justification::centredTop, false);
+    }
+
+    // Right cluster — tempo-lane disclosure, snap dropdown, view toggles.
+    {
+        // PRD-0093: master tempo automation disclosure (fill inversion).
+        g.setColour (masterAutoRevealed_ ? kInk : kSurface);
+        g.fillRect (masterAutoBounds_);
+        g.setColour (kInk);
+        g.drawRect (masterAutoBounds_, 2);
+        g.setColour (masterAutoRevealed_ ? kSurface : kInk);
+        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold));
+        g.drawText ("TEMPO", masterAutoBounds_, juce::Justification::centred, false);
+
+        // Consolidated snap dropdown: one control showing the live snap state
+        // ("SNAP:BEAT" / "SNAP:OFF") with a caret; the menu holds Off + all
+        // granularities (PRD-0102 toggle + selector merged).
+        const juce::String snapLabel = snap_.enabled
+            ? "SNAP " + labelForGranularity (snap_.granularity)
+            : juce::String ("SNAP OFF");
+        g.setColour (snap_.enabled ? kInk : kSurface);
+        g.fillRect (snapBounds_);
+        g.setColour (kInk);
+        g.drawRect (snapBounds_, 2);
+        g.setColour (snap_.enabled ? kSurface : kInk);
+        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold));
+        g.drawText (snapLabel, snapBounds_.withTrimmedLeft (8).withTrimmedRight (16),
+                    juce::Justification::centredLeft, false);
+        PixelIcons::drawDropdownCaret (g, snapBounds_.withTrimmedLeft (snapBounds_.getWidth() - 18));
+
+        // Full-size toggle + collapse fold (segmented pair).
+        drawIconBtn (fullScreenBounds_, fullSize_,
+                     fullSize_ ? PixelIcons::drawShrink : PixelIcons::drawExpand);
+        drawIconBtn (toggleBounds_, false,
+                     expanded_ ? PixelIcons::drawChevronUp : PixelIcons::drawChevronDown);
+    }
+
+    // Gutter corner above the track headers, beside the ruler: flat header tone
+    // with a single 2-px ink edge on its right (the track-header column
+    // separator) and along the ruler's bottom — no boxed cell.
     if (expanded_)
     {
         auto rulerRow = bounds.removeFromTop (TimeRuler::kRulerHeight);
@@ -721,7 +887,8 @@ void DawPanel::paint (juce::Graphics& g)
         g.setColour (kHeaderBg);
         g.fillRect (corner);
         g.setColour (kInk);
-        g.drawRect (corner, 2);
+        g.fillRect (corner.getRight() - 2, corner.getY(), 2, corner.getHeight());
+        g.fillRect (corner.getX(), corner.getBottom() - 2, corner.getWidth(), 2);
     }
 }
 
@@ -877,17 +1044,16 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
 
     if (toggleBounds_.contains (event.getPosition()))
     {
+        // Folding away a full-size panel returns to the integrated layout first.
+        if (fullSize_)
+            setFullSize (false);
         setExpanded (! expanded_);
         return;
     }
 
-    if (followToggleBounds_.contains (event.getPosition()))
+    if (fullScreenBounds_.contains (event.getPosition()))
     {
-        followController_.toggle();
-        // Re-engaging follow snaps the now-line back into view immediately.
-        if (followController_.isEnabled())
-            applyFollowIfNeeded();
-        repaint();
+        setFullSize (! fullSize_);
         return;
     }
 
@@ -896,6 +1062,7 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
         if (onRecordToggle)
             onRecordToggle();
         repaint();
+        return;
     }
 
     // PRD-0082: DAW transport controls.
@@ -940,24 +1107,47 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
         return;
     }
 
-    // PRD-0102: grid-snap toggle + granularity cycle. Both only repaint the
-    // header; the new state is read at the start of the next edit/scrub gesture.
-    if (snapToggleBounds_.contains (event.getPosition()))
+    // PRD-0102 (consolidated): the snap dropdown. One menu owns both the on/off
+    // toggle and the granularity; the new state is read at the start of the next
+    // edit/scrub gesture.
+    if (snapBounds_.contains (event.getPosition()))
     {
-        snap_.enabled = ! snap_.enabled;
-        repaint();
-        return;
-    }
-    if (snapGranBounds_.contains (event.getPosition()))
-    {
-        snap_.granularity = nextGranularity (snap_.granularity);
-        repaint();
+        juce::PopupMenu menu;
+        menu.addItem (1, "Snap Off", true, ! snap_.enabled);
+        menu.addSeparator();
+        menu.addItem (2, "Bar",      true, snap_.enabled && snap_.granularity == SnapGranularity::Bar);
+        menu.addItem (3, "Beat",     true, snap_.enabled && snap_.granularity == SnapGranularity::Beat);
+        menu.addItem (4, "1/2 Beat", true, snap_.enabled && snap_.granularity == SnapGranularity::Half);
+        menu.addItem (5, "1/4 Beat", true, snap_.enabled && snap_.granularity == SnapGranularity::Quarter);
+
+        juce::Component::SafePointer<DawPanel> safe (this);
+        menu.showMenuAsync (
+            juce::PopupMenu::Options()
+                .withTargetComponent (this)
+                .withTargetScreenArea (localAreaToGlobal (snapBounds_)),
+            [safe] (int result)
+            {
+                if (safe == nullptr || result == 0)
+                    return;
+                if (result == 1)
+                    safe->snap_.enabled = false;
+                else
+                {
+                    safe->snap_.enabled = true;
+                    safe->snap_.granularity = static_cast<SnapGranularity> (result - 2);
+                }
+                safe->repaint();
+            });
         return;
     }
 }
 
 void DawPanel::mouseDown (const juce::MouseEvent& event)
 {
+    // Any press inside the panel claims keyboard focus so the contextual DAW
+    // shortcuts (Space / Return / R / M) target the arrangement, not the decks.
+    grabKeyboardFocus();
+
     // Start a horizontal pan only inside the content area (right of the gutter,
     // below the header). Header clicks are handled in mouseUp (toggles).
     if (! expanded_)

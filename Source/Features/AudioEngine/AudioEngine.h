@@ -193,6 +193,14 @@ private:
     void timerCallback() override;
     void updateDeviceState();
     void attemptReconnection();
+
+    /// Re-point the engine at the current system default output device after a
+    /// device-topology change (e.g. headphones plugged into the jack, a USB
+    /// interface connected). JUCE binds the AudioDeviceManager to a *specific*
+    /// device at start() and does not follow the system default on its own, so
+    /// we follow it explicitly here. Message thread only.
+    void followDefaultOutputDevice();
+
     static int deckIdToSlot (const juce::String& deckId);
 
     /// PRD-0081/0082: (re)build + prepare the DAW timeline renderer if the

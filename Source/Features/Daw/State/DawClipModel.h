@@ -25,6 +25,19 @@ namespace DawClipIDs
     DECLARE_CLIP_ID (timelineStartSample) // int64, project-rate index
     DECLARE_CLIP_ID (sourceLengthSamples) // int64, total length of the source
     DECLARE_CLIP_ID (gainDb)              // float dB, default 0.0 (unity)
+    DECLARE_CLIP_ID (sourceBpm)           // EPIC elastic: clip's original (native)
+                                          // beatgrid BPM at capture. The DAW
+                                          // time-stretches the clip from this to the
+                                          // master/project BPM so a SYNC'd deck both
+                                          // reproduces the live tempo and locks to the
+                                          // grid. 0.0 => unknown => no stretch (1:1).
+    DECLARE_CLIP_ID (keyLock)             // EPIC elastic (key lock): true if the deck's
+                                          // key lock was engaged while this clip was
+                                          // captured. When stretched, a key-locked clip
+                                          // is reproduced PITCH-PRESERVED (Rubberband);
+                                          // otherwise varispeed (pitch follows tempo).
+                                          // The deck is split at each key-lock toggle so
+                                          // every clip has one constant mode.
     DECLARE_CLIP_ID (alignmentMode)       // PRD-0074: "GridAligned"/"FirstBeatAnchored"
     DECLARE_CLIP_ID (missingSource)       // PRD-0097: bool, true while this clip's
                                           // sourceFileId is unresolved (Missing). The

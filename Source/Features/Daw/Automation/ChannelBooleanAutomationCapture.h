@@ -107,6 +107,14 @@ public:
     // measured against the seed.
     void captureInitialValues (std::int64_t timelineSample)
     {
+        // Re-bind to the CURRENT deck nodes before seeding. The deck a channel
+        // resolves to can change after construction (decks created/restored later,
+        // a node swapped on load, or a different A..D layout), which would leave
+        // the listener attached to a stale node and silently drop every keyLock /
+        // keyShift gesture. Rebinding here — once per take, on the message thread —
+        // guarantees the capture observes the live deck before the take begins.
+        refreshDeckListeners();
+
         for (auto& lane : channels_)
         {
             const bool kl = readKeyLock (lane.deckTree);
@@ -135,6 +143,38 @@ public:
     }
 
 private:
+    //--------------------------------------------------------------------------
+    // Re-resolve each channel's deck node and move the listener if it changed.
+    // Idempotent: a channel whose deck is unchanged keeps its existing listener.
+    void refreshDeckListeners()
+    {
+        if (! resolveDeckTree_)
+            return;
+
+        for (int ch = 0; ch < kNumChannels; ++ch)
+        {
+            auto& lane    = channels_[(size_t) ch];
+            auto  current = resolveDeckTree_ (ch);
+            if (current == lane.deckTree)
+                continue; // already bound to the live node
+
+            if (lane.deckTree.isValid())
+                lane.deckTree.removeListener (this);
+
+            lane.deckTree = current;
+
+            if (lane.deckTree.isValid())
+            {
+                lane.deckTree.addListener (this);
+                // Re-prime the running derived state from the new node so the seed
+                // (and the first real transition) are measured against truth.
+                lane.params[Param::keyLock].state      = readKeyLock (lane.deckTree);
+                lane.params[Param::keyStepper].state   = readKeyStepper (lane.deckTree);
+                lane.params[Param::pitchStretch].state = readPitchStretch (lane.deckTree);
+            }
+        }
+    }
+
     //--------------------------------------------------------------------------
     enum Param { keyLock = 0, pitchStretch = 1, keyStepper = 2, numParams = 3 };
 

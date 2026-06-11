@@ -2506,7 +2506,15 @@ void AudioEngine::audioDeviceStopped()
 void AudioEngine::changeListenerCallback (juce::ChangeBroadcaster* source)
 {
     if (source == &deviceManager)
+    {
+        // A device-topology change just occurred (headphones plugged into the
+        // jack, a USB interface connected, AirPods linked, etc.). JUCE binds us
+        // to a *specific* device at start() and does NOT follow the system
+        // default afterwards, so re-point the engine at the new default output
+        // before refreshing the displayed device metadata.
+        followDefaultOutputDevice();
         updateDeviceState();
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2608,6 +2616,59 @@ void AudioEngine::updateDeviceState()
         audioDeviceNode.setProperty (IDs::outputLatencyMs, latencyMs, nullptr);
         audioDeviceNode.setProperty (IDs::deviceError, "", nullptr);
     }
+}
+
+void AudioEngine::followDefaultOutputDevice()
+{
+    // Don't fight the shutdown or the disconnect/reconnect path — those own the
+    // device lifecycle while they're active.
+    if (shuttingDown || deviceDisconnected)
+        return;
+
+    auto* deviceType = deviceManager.getCurrentDeviceTypeObject();
+    if (deviceType == nullptr)
+        return;
+
+    // JUCE has already refreshed this device type's list by the time the change
+    // message reaches us, so getDefaultDeviceIndex reflects the *new* topology.
+    const int defaultOutIndex = deviceType->getDefaultDeviceIndex (false /* isInput */);
+    if (defaultOutIndex < 0)
+        return;
+
+    const auto outputNames = deviceType->getDeviceNames (false /* isInput */);
+    if (! juce::isPositiveAndBelow (defaultOutIndex, outputNames.size()))
+        return;
+
+    const juce::String defaultOutName = outputNames[defaultOutIndex];
+    if (defaultOutName.isEmpty())
+        return;
+
+    juce::String currentOutName;
+    if (auto* current = deviceManager.getCurrentAudioDevice())
+        currentOutName = current->getName();
+
+    // Already on the system default — nothing to do. This is also the case when
+    // the headphones share a single CoreAudio device with the speakers and only
+    // the internal data source switched (CoreAudio reroutes that transparently),
+    // so we correctly leave the working setup untouched.
+    if (defaultOutName == currentOutName)
+        return;
+
+    // The system default output changed out from under us (e.g. headphones
+    // plugged into the jack appeared as a new device). Re-point the engine at
+    // it. setAudioDeviceSetup() re-broadcasts a change message, but on the next
+    // pass defaultOutName == currentOutName, so this does not loop.
+    auto setup = deviceManager.getAudioDeviceSetup();
+    setup.outputDeviceName = defaultOutName;
+    setup.useDefaultOutputChannels = true;
+    // Re-assert our preferred rate/buffer; JUCE falls back to the device's
+    // nearest supported values when these aren't available.
+    setup.sampleRate = 44100.0;
+    setup.bufferSize = 128;
+
+    const auto error = deviceManager.setAudioDeviceSetup (setup, true /* treatAsChosenDevice */);
+    if (error.isNotEmpty())
+        audioDeviceNode.setProperty (IDs::deviceError, error, nullptr);
 }
 
 void AudioEngine::attemptReconnection()

@@ -122,6 +122,15 @@ public:
 
         dawPanel.onPreferredHeightChanged = [this]() { resized(); };
 
+        // Track-header volume faders write the authoritative mixer channel fader
+        // (identity deck N -> channel N), the same property the mixer strip and
+        // MIDI faders drive. mixerSchema outlives this component (app-owned).
+        dawPanel.setMixerChannelResolver (
+            [&schema = mixerSchema] (int channelIndex) -> juce::ValueTree
+            {
+                return schema.getChannelTree (channelIndex);
+            });
+
         addAndMakeVisible (toolbar);
         addAndMakeVisible (dawPanel);
         addAndMakeVisible (layoutManager);
@@ -223,6 +232,11 @@ public:
         playbackController = std::make_unique<Daw::DawPlaybackController> (
             trackDatabase, dawPanel.getDawTransport());
         playbackController->setRuntimeSampleRate (audioEngine.getSampleRate());
+
+        // EPIC elastic: feed the live grid tempo so every clip compiles with the
+        // time-stretch from its original BPM to the current master/project BPM.
+        playbackController->setMasterBpmProvider (
+            [this]() -> double { return gridService_.snapshotGrid().bpm; });
 
         if (auto* trigger = dawPanel.getRecompileTrigger())
         {
@@ -409,10 +423,26 @@ public:
         if (playbackController != nullptr)
         {
             const double liveRate = audioEngine.getSampleRate();
-            if (liveRate > 0.0 && std::abs (liveRate - lastRuntimeRate_) > 0.5)
+            const double liveBpm  = gridService_.snapshotGrid().bpm;
+
+            // Recompile when the device rate OR the master tempo changes: the
+            // compiler bakes both into each clip (sample positions reconciled to
+            // the runtime rate; elastic time-stretch reconciled to the current
+            // master BPM). The first valid BPM after construction also lands here.
+            const bool rateChanged = (liveRate > 0.0
+                                      && std::abs (liveRate - lastRuntimeRate_) > 0.5);
+            const bool bpmChanged  = (liveBpm > 0.0
+                                      && std::abs (liveBpm - lastMasterBpm_) > 0.01);
+            if (rateChanged || bpmChanged)
             {
-                lastRuntimeRate_ = liveRate;
-                playbackController->setRuntimeSampleRate (liveRate);
+                if (rateChanged)
+                {
+                    lastRuntimeRate_ = liveRate;
+                    playbackController->setRuntimeSampleRate (liveRate);
+                }
+                if (bpmChanged)
+                    lastMasterBpm_ = liveBpm;
+
                 if (auto* trigger = dawPanel.getRecompileTrigger())
                 {
                     trigger->setCompiler (playbackController->makeCompiler());
@@ -522,6 +552,19 @@ public:
     {
         auto b = getLocalBounds();
         toolbar.setBounds (b.removeFromTop (toolbarHeight));
+
+        // Full-size DAW view: the arrangement takes the whole content area below
+        // the global toolbar; the deck rack / mixer / library are hidden until
+        // the DJ shrinks the panel back to its integrated size.
+        const bool dawFullSize = dawPanel.isFullSize();
+        layoutManager.setVisible (! dawFullSize);
+        libraryComponent->setVisible (! dawFullSize);
+        if (dawFullSize)
+        {
+            mixerComponent.setVisible (false);
+            dawPanel.setBounds (b);
+            return;
+        }
 
         // PRD-0066: the DAW arrangement panel docks directly beneath the global
         // toolbar, above the deck rack. It owns its height (collapsed/expanded).
@@ -758,6 +801,7 @@ private:
     // ---- EPIC-0010 arrangement playback ----------------------------------
     std::unique_ptr<Daw::DawPlaybackController>       playbackController;
     double                                            lastRuntimeRate_ { 44100.0 };
+    double                                            lastMasterBpm_   { 0.0 };
 
     // ---- EPIC-0011 automation capture + playback -------------------------
     // Declaration order is destruction-safe and respects the dependency chain:

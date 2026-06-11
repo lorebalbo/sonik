@@ -9,7 +9,9 @@
 #include <set>
 
 /// Manages the on-disk stem cache and stems_data table in SQLite.
-/// Cache location: ~/Library/Caches/Sonik/Stems/<content_hash>/
+/// Cache location: ~/Library/Application Support/Sonik/Stems/<content_hash>/
+/// (PERSISTENT — next to the database. Previously ~/Library/Caches, which macOS
+///  treats as purgeable, so stems vanished when the OS reclaimed that cache.)
 ///
 /// Responsibilities:
 ///  - Check cache for existing stem separations (fast DB query on message thread)
@@ -29,8 +31,12 @@ public:
     StemCache (const StemCache&) = delete;
     StemCache& operator= (const StemCache&) = delete;
 
-    /// Returns the stem cache root directory.
+    /// Returns the stem cache root directory (persistent, in Application Support).
     static juce::File getCacheDirectory();
+
+    /// The pre-2026 cache root (~/Library/Caches/Sonik/Stems). Retained only so
+    /// existing stems can be migrated to the persistent location on startup.
+    static juce::File legacyCacheDirectory();
 
     /// Check if stems are cached for the given content hash.
     /// Verifies both the DB record and the presence of all 4 WAV files on disk.
@@ -75,6 +81,18 @@ public:
 
 private:
     juce::File getStemDirectory (const juce::String& contentHash) const;
+
+    /// One-time move of any stems still in the legacy Caches location into the
+    /// persistent cache. Same-volume rename; skips entries already migrated.
+    void migrateLegacyStems();
+
+    /// True when `dir` holds all 4 non-empty stem WAVs (a complete set on disk).
+    static bool dirHasCompleteStems (const juce::File& dir);
+
+    /// Re-index an on-disk complete stem set whose DB record was lost (e.g. the
+    /// database was reset): inserts a fresh "complete" record instead of deleting
+    /// the files, so persistent stems survive a database loss.
+    void reregisterStems (const juce::String& contentHash, const juce::File& dir);
 
     bool writeWavFile (const juce::File& file,
                         const juce::AudioBuffer<float>& buffer,

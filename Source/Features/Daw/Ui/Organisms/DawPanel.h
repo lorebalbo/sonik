@@ -53,7 +53,7 @@ public:
     // channel-group body sized to show one full channel group plus a peek of
     // the next (the body scrolls vertically when groups overflow, PRD-0067).
     //--------------------------------------------------------------------------
-    static constexpr int kHeaderHeight = 28;
+    static constexpr int kHeaderHeight = 44;
     static constexpr int kBodyHeight   = DawLayout::kExpandedGroupHeight + 20;
 
     static constexpr int kCollapsedHeight = kHeaderHeight;
@@ -78,6 +78,15 @@ public:
     //--------------------------------------------------------------------------
     bool isExpanded() const noexcept { return expanded_; }
     void setExpanded (bool shouldBeExpanded);
+
+    //--------------------------------------------------------------------------
+    // Full-size view toggle (Logic-style): when full-size the HOST gives the
+    // panel the whole content area below the global toolbar (and hides the deck
+    // rack / mixer / library); the panel itself only owns the flag + button.
+    // Entering full-size forces the expanded state so the timeline is visible.
+    //--------------------------------------------------------------------------
+    bool isFullSize() const noexcept { return fullSize_; }
+    void setFullSize (bool shouldBeFullSize);
 
     // PRD-0093: master tempo automation lane disclosure (hidden by default, so
     // the panel's default expanded height is unchanged).
@@ -105,6 +114,13 @@ public:
     // PRD-0070: source of the live now-line sample (the bridge's now-line).
     // When unset the now-line is hidden.
     void setNowLineProvider (std::function<std::int64_t()> provider);
+
+    // Track-header volume faders: maps a deck/channel index to its mixer channel
+    // ValueTree (the host injects the MixerStateSchema accessor).
+    void setMixerChannelResolver (ChannelGroupStack::ChannelResolver resolver)
+    {
+        stack_.setMixerChannelResolver (std::move (resolver));
+    }
 
     //--------------------------------------------------------------------------
     // PRD-0082: DAW transport control callbacks.
@@ -286,6 +302,11 @@ private:
     void applyFollowIfNeeded();                     // auto-scroll when following
     void layoutPlayhead();
 
+    // LCD helpers: bar.beat for the current playhead + the live tempo string.
+    juce::String computeLcdPosition() const;
+    juce::String computeLcdTempo() const;
+    void         refreshLcd();                 // repaint the LCD cell on change
+
     // PRD-0102 ruler scrubbing helpers.
     bool         isInRulerBand (juce::Point<int> panelPoint) const noexcept;
     std::int64_t timelineSampleAtPanelX (int panelX, bool bypass) const; // snapped
@@ -360,21 +381,26 @@ private:
     bool metronomeOn_ { false };
 
     bool expanded_ { true };
+    bool fullSize_ { false };
 
     // PRD-0096: current session indicator drawn in the header (already carries
     // the trailing dirty dot when applicable). Empty => show "ARRANGEMENT".
     juce::String sessionTitle_;
 
-    juce::Rectangle<int> toggleBounds_;        // collapse / expand
-    juce::Rectangle<int> followToggleBounds_;  // follow-playhead
+    juce::Rectangle<int> toggleBounds_;        // collapse / expand fold
+    juce::Rectangle<int> fullScreenBounds_;    // full-size view toggle
     juce::Rectangle<int> recordButtonBounds_;  // global record arm/stop
     juce::Rectangle<int> playBounds_;          // PRD-0082: DAW play
     juce::Rectangle<int> pauseBounds_;         // PRD-0082: DAW pause
-    juce::Rectangle<int> stopBounds_;          // PRD-0082: DAW stop
+    juce::Rectangle<int> stopBounds_;          // PRD-0082: DAW stop (to start)
     juce::Rectangle<int> loopBounds_;          // PRD-0082: loop-arm toggle
-    juce::Rectangle<int> metroBounds_;         // metronome (testing aid) toggle
-    juce::Rectangle<int> snapToggleBounds_;    // PRD-0102: grid-snap on/off
-    juce::Rectangle<int> snapGranBounds_;      // PRD-0102: snap granularity cycle
+    juce::Rectangle<int> metroBounds_;         // metronome icon toggle
+    juce::Rectangle<int> snapBounds_;          // consolidated snap dropdown
+    juce::Rectangle<int> lcdBounds_;           // central LCD (position + tempo)
+
+    // Last LCD strings, so the 30 Hz timer repaints the LCD only on change.
+    juce::String lcdPosition_ { "1.1" };
+    juce::String lcdTempo_    { "---" };
 
     // PRD-0082: DawTransport owned here so the buttons work without external wiring.
     std::unique_ptr<Daw::DawTransport>            transport_;

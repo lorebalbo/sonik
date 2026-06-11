@@ -39,6 +39,14 @@ public:
         int64_t      sourceEndSample   = 0; // project-rate
         int64_t      sourceLengthSamples = 0;
         int64_t      timelineStartSample = 0; // project-rate
+        double       sourceBpm         = 0.0; // clip's original BPM (0 => no stretch)
+        // Source samples consumed per timeline sample to time-stretch the clip to
+        // the master tempo (= masterBpm/sourceBpm). 1.0 => no stretch. The streamer
+        // resamples by this so the clip plays at the project tempo and locks to grid.
+        double       playbackConsumeRate = 1.0;
+        // Key lock at capture: when stretched, reproduce PITCH-PRESERVED (true) or
+        // varispeed (false). The streamer routes through Rubberband when true.
+        bool         keyLock           = false;
     };
 
     /// Legacy resolver: maps a sourceFileId string to a streamer-pool slot.
@@ -61,12 +69,17 @@ public:
     /// @param sampleRateScale  Multiplier applied to every project-rate sample
     ///                         position to convert it to the runtime/device rate.
     ///                         Defaults to 1.0 (no conversion — device == project).
-    ArrangementCompiler (ClipHandleResolver resolver, double sampleRateScale)
+    ArrangementCompiler (ClipHandleResolver resolver, double sampleRateScale,
+                         double masterBpm = 0.0)
         : resolver_ (std::move (resolver))
         , sampleRateScale_ (sampleRateScale)
+        , masterBpm_ (masterBpm)
     {}
 
     void setSampleRateScale (double scale) noexcept { sampleRateScale_ = scale; }
+
+    /// The master/project BPM clips are time-stretched to. 0 => no stretch (1:1).
+    void setMasterBpm (double bpm) noexcept { masterBpm_ = bpm; }
 
 
     //--------------------------------------------------------------------------
@@ -184,6 +197,19 @@ public:
                         static_cast<int64_t> (static_cast<double> (clipNode.getProperty (DawClipIDs::sourceLengthSamples)));
                     const float gainDb =
                         static_cast<float> (static_cast<double> (clipNode.getProperty (DawClipIDs::gainDb)));
+                    const double sourceBpm =
+                        static_cast<double> (clipNode.getProperty (DawClipIDs::sourceBpm, 0.0));
+                    const bool keyLock =
+                        static_cast<bool> (clipNode.getProperty (DawClipIDs::keyLock, false));
+
+                    // Elastic time-stretch: the clip is stretched from its original
+                    // BPM to the master BPM so a SYNC'd deck reproduces the live tempo
+                    // AND locks to the grid. stretchRatio (timeline per source sample)
+                    // = sourceBpm/masterBpm; the streamer consumes source at the
+                    // reciprocal. 1.0 (no source BPM / no master) keeps the legacy 1:1.
+                    const double stretchRatio =
+                        (sourceBpm > 0.0 && masterBpm_ > 0.0) ? (sourceBpm / masterBpm_) : 1.0;
+                    const double consumeRate = (stretchRatio > 0.0) ? (1.0 / stretchRatio) : 1.0;
 
                     // Resolve streamer-pool handle (and prime the streamer).
                     int32_t handle = -1;
@@ -197,6 +223,9 @@ public:
                         req.sourceEndSample     = sourceEnd;
                         req.sourceLengthSamples = sourceLength;
                         req.timelineStartSample = timelineStart;
+                        req.sourceBpm           = sourceBpm;
+                        req.playbackConsumeRate = consumeRate;
+                        req.keyLock             = keyLock;
                         handle = resolver_ (req);
                     }
 
@@ -213,15 +242,19 @@ public:
                     const int64_t scaledTimelineStart = scale (timelineStart);
 
                     // Compute timelineEndSample by scaling the PROJECT-rate
-                    // timeline end (start + crop length) as a single position,
-                    // rather than summing independently-rounded source deltas.
-                    // This guarantees a continuation clip's scaledTimelineStart
-                    // equals the prior clip's scaledTimelineEnd EXACTLY at any
-                    // device rate (both are scale() of the same project value),
-                    // so contiguous recording clips never develop a sub-sample
-                    // timeline gap and the butt-join detection below is exact.
+                    // timeline end (start + STRETCHED crop length) as a single
+                    // position, rather than summing independently-rounded source
+                    // deltas. The stretched length = source span * sourceBpm/master
+                    // (the time the clip occupies once retimed to the grid). Scaling
+                    // one combined project position guarantees a continuation clip's
+                    // scaledTimelineStart equals the prior clip's scaledTimelineEnd
+                    // EXACTLY at any device rate, so contiguous recording clips never
+                    // develop a sub-sample timeline gap and butt-join detection stays
+                    // exact.
+                    const int64_t stretchedSpan = (int64_t) std::llround (
+                        (double) (sourceEnd - sourceStart) * stretchRatio);
                     const int64_t scaledTimelineEnd =
-                        scale (timelineStart + (sourceEnd - sourceStart));
+                        scale (timelineStart + stretchedSpan);
 
                     // Encode sourceFileId as a 64-bit hash for the ClipEvent
                     // (diagnostic use only; audio path uses handle).
@@ -286,6 +319,7 @@ public:
 private:
     ClipHandleResolver resolver_;
     double             sampleRateScale_ { 1.0 };
+    double             masterBpm_       { 0.0 }; // clips stretch to this; 0 => no stretch
 };
 
 } // namespace Daw

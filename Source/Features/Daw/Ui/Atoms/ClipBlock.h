@@ -203,6 +203,7 @@ private:
     static inline const juce::Colour kInk       { 0xFF2D2D2D }; // primary
     static inline const juce::Colour kSurface   { 0xFFFDFDFD }; // surface
     static inline const juce::Colour kClipFill  { 0xFFF7F7F8 }; // tonal layer over lane
+    static inline const juce::Colour kBandFill  { 0xFFE2E2E2 }; // clip header band
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ClipBlock)
 };

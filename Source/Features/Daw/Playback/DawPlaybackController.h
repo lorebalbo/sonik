@@ -23,6 +23,8 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_core/juce_core.h>
 
+#include <functional>
+
 #include "ClipStreamer.h"
 #include "ClipSourceResolver.h"
 #include "ArrangementCompiler.h"
@@ -61,16 +63,31 @@ public:
             runtimeSampleRate_ = runtimeRate;
     }
 
+    /// Inject the master/project BPM source (the grid tempo). Read at compile time
+    /// so every clip is time-stretched from its original BPM to the current tempo.
+    /// Message thread.
+    void setMasterBpmProvider (std::function<double()> provider) noexcept
+    {
+        masterBpmProvider_ = std::move (provider);
+    }
+
+    /// The current master BPM (0 when no provider / unknown => clips play 1:1).
+    double currentMasterBpm() const
+    {
+        return masterBpmProvider_ ? masterBpmProvider_() : 0.0;
+    }
+
     /// Multiplier converting project-rate sample positions to runtime rate.
     double sampleRateScale() const noexcept
     {
         return runtimeSampleRate_ / DawState::kProjectSampleRate;
     }
 
-    /// Build a compiler wired to this controller's resolver + current rate scale.
+    /// Build a compiler wired to this controller's resolver + current rate scale
+    /// + current master BPM (so clips compile with the elastic time-stretch).
     ArrangementCompiler makeCompiler()
     {
-        return ArrangementCompiler (makeResolver(), sampleRateScale());
+        return ArrangementCompiler (makeResolver(), sampleRateScale(), currentMasterBpm());
     }
 
     /// The per-clip resolver: assigns a streamer slot and primes it.
@@ -103,9 +120,16 @@ public:
                     ? 0
                     : (int64_t) std::llround ((double) playheadRuntime / scale);
 
-            const int64_t offsetIntoClip =
+            // A stretched clip consumes `consumeRate` source samples per timeline
+            // sample, so the source offset for a mid-clip play-from-here / seek is
+            // the TIMELINE offset times the consume rate (1.0 => 1:1, no stretch).
+            const double  consumeRate = (req.playbackConsumeRate > 0.0)
+                                            ? req.playbackConsumeRate : 1.0;
+            const int64_t timelineOffset =
                 juce::jmax ((int64_t) 0, playheadProject - req.timelineStartSample);
-            int64_t primeStartProject = req.sourceStartSample + offsetIntoClip;
+            const int64_t sourceOffset =
+                (int64_t) std::llround ((double) timelineOffset * consumeRate);
+            int64_t primeStartProject = req.sourceStartSample + sourceOffset;
             primeStartProject = juce::jmin (primeStartProject, req.sourceEndSample);
 
             // Convert project-rate source positions to the reader's native rate.
@@ -119,13 +143,18 @@ public:
             // primed but never read. Reading past the true source end yields
             // silence (the reader clamps), which is the correct fallback.
             const int64_t tailSourceSamples =
-                (int64_t) std::ceil ((double) kClipFadeSamples * sourceRate / runtimeSampleRate_) + 2;
+                (int64_t) std::ceil ((double) kClipFadeSamples * sourceRate
+                                     / runtimeSampleRate_ * consumeRate) + 2;
             const int64_t readerEnd      = (int64_t) std::llround ((double) req.sourceEndSample * srcPerProject)
                                            + tailSourceSamples;
 
             // Prime the streamer to emit runtime-rate samples (resampling from
-            // the source rate inside the streamer's reader loop).
-            pool_.prime (slot, std::move (reader), runtimeSampleRate_, readerStart, readerEnd);
+            // the source rate inside the streamer's reader loop, additionally
+            // time-stretched by consumeRate to retime the clip to the master tempo).
+            // keyLock => the retime is PITCH-PRESERVED (Rubberband) instead of
+            // varispeed, reproducing a key-locked deck faithfully.
+            pool_.prime (slot, std::move (reader), runtimeSampleRate_,
+                         readerStart, readerEnd, consumeRate, req.keyLock);
             return slot;
         };
     }
@@ -136,6 +165,7 @@ private:
     ClipStreamerPool         pool_;
     ClipSourceResolver       sourceResolver_;
     double                   runtimeSampleRate_ { DawState::kProjectSampleRate };
+    std::function<double()>  masterBpmProvider_; // grid tempo for elastic stretch
 };
 
 } // namespace Daw

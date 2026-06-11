@@ -31,6 +31,7 @@
 #include <juce_core/juce_core.h>
 
 #include "ArrangementSnapshot.h"
+#include "../../TimeStretch/TimeStretcher.h"
 
 namespace Daw
 {
@@ -76,10 +77,18 @@ public:
     /// @param projectSampleRate Project rate (used for resampling + buffer timing).
     /// @param sourceStartSample Crop start in SOURCE sample rate.
     /// @param sourceEndSample   Crop end (exclusive) in SOURCE sample rate.
+    /// @param playbackConsumeRate Source samples consumed per output sample for
+    ///                            tempo time-stretch (= masterBpm/sourceBpm). 1.0 =>
+    ///                            no stretch. Folded into the resampler so the clip
+    ///                            plays at the project tempo (EPIC elastic). NOTE:
+    ///                            this is a varispeed re-time (pitch follows tempo);
+    ///                            pitch-preserving stretch is layered on top later.
     void prime (std::unique_ptr<juce::AudioFormatReader> reader,
                 double   projectSampleRate,
                 int64_t  sourceStartSample,
-                int64_t  sourceEndSample)
+                int64_t  sourceEndSample,
+                double   playbackConsumeRate = 1.0,
+                bool     keyLock             = false)
     {
         // Signal reader thread to stop, then wait.
         stop();
@@ -95,8 +104,25 @@ public:
             sourceStartSample_   = sourceStartSample;
             sourceEndSample_     = sourceEndSample;
             readerPosition_      = sourceStartSample;
+            playbackConsumeRate_ = (playbackConsumeRate > 0.0) ? playbackConsumeRate : 1.0;
             interpL_.reset();
             interpR_.reset();
+
+            // PITCH-PRESERVED (key lock) mode: when the clip is both key-locked AND
+            // actually stretched, route the SR-converted source through Rubberband
+            // (time ratio = 1/consumeRate) so it retimes to the master tempo WITHOUT
+            // changing pitch. Otherwise the plain varispeed resampler is used.
+            const bool stretching = std::abs (playbackConsumeRate_ - 1.0) > 1.0e-6;
+            pitchPreserve_   = keyLock && stretching;
+            stretchTimeRatio_ = (playbackConsumeRate_ > 0.0) ? (1.0 / playbackConsumeRate_) : 1.0;
+            stretcherPrimed_  = false;
+            if (pitchPreserve_)
+            {
+                if (stretcher_ == nullptr)
+                    stretcher_ = std::make_unique<TimeStretcher> (projectSampleRate_, 2, kStretchBlock);
+                else
+                    stretcher_->reset();
+            }
         }
 
         // Reset ring buffer.
@@ -256,6 +282,11 @@ private:
         juce::AudioBuffer<float> inScratch  (2, kInScratchSamples);
         juce::AudioBuffer<float> outScratch (2, kMaxOutChunk);
 
+        // Pitch-preserved path scratch: SR-converted source feeding the stretcher,
+        // and the stretcher's time-stretched output bound for the ring.
+        juce::AudioBuffer<float> stretchIn  (2, kStretchBlock);
+        juce::AudioBuffer<float> stretchOut (2, kStretchBlock);
+
         while (running_.load (std::memory_order_relaxed))
         {
             // Wait until there is room in the ring buffer or we are stopping.
@@ -292,6 +323,104 @@ private:
             if (toWrite <= 0)
                 continue;
 
+            // ----------------------------------------------------------------
+            // PITCH-PRESERVED (key lock) path: SR-convert the source to runtime
+            // rate, time-stretch it with Rubberband (pitch unchanged), and write
+            // the stretched output to the ring. Fed in source order from the clip
+            // start, so output tracks the source start; the algorithm's pipeline
+            // fill is absorbed by the ring pre-roll.
+            // ----------------------------------------------------------------
+            if (pitchPreserve_ && stretcher_ != nullptr)
+            {
+                std::lock_guard<std::mutex> lk (configMutex_);
+
+                if (reader_ == nullptr)
+                {
+                    exhausted_ = true;
+                    continue;
+                }
+
+                const double srRatio = (projectSampleRate_ > 0.0)
+                                           ? (sourceSampleRate_ / projectSampleRate_) : 1.0;
+
+                // SR-convert up to `want` runtime samples from the source into `dst`,
+                // advancing readerPosition_; returns the runtime samples produced.
+                auto srConvert = [&] (int want, juce::AudioBuffer<float>& dst) -> int
+                {
+                    if (want <= 0 || readerPosition_ >= sourceEndSample_)
+                        return 0;
+                    if (std::abs (srRatio - 1.0) < 1.0e-9)
+                    {
+                        const int64_t remaining = sourceEndSample_ - readerPosition_;
+                        const int n = (int) juce::jmin ((int64_t) want, remaining);
+                        if (n <= 0) return 0;
+                        reader_->read (&dst, 0, n, readerPosition_, true, true);
+                        if (reader_->numChannels == 1) dst.copyFrom (1, 0, dst, 0, 0, n);
+                        readerPosition_ += n;
+                        return n;
+                    }
+                    const int64_t remainingIn = sourceEndSample_ - readerPosition_;
+                    int inWanted = (int) std::ceil ((double) want * srRatio) + 2;
+                    inWanted = juce::jmin (inWanted, kInScratchSamples);
+                    const int inAvail = (int) juce::jmin ((int64_t) inWanted, remainingIn);
+                    if (inAvail <= 0) return 0;
+                    reader_->read (&inScratch, 0, inAvail, readerPosition_, true, true);
+                    if (reader_->numChannels == 1) inScratch.copyFrom (1, 0, inScratch, 0, 0, inAvail);
+                    int numOut = (inAvail >= inWanted) ? want
+                                                       : (int) std::floor ((double) inAvail / srRatio);
+                    numOut = juce::jlimit (0, want, numOut);
+                    if (numOut <= 0) return 0;
+                    const int usedL = interpL_.process (srRatio, inScratch.getReadPointer (0),
+                                                        dst.getWritePointer (0), numOut);
+                    interpR_.process (srRatio, inScratch.getReadPointer (1),
+                                      dst.getWritePointer (1), numOut);
+                    readerPosition_ += usedL;
+                    return numOut;
+                };
+
+                stretcherPrimed_ = true; // (reserved; sequential feed needs no priming)
+
+                // Feed a source chunk (or silence once the source ends, to flush the
+                // pipeline tail) and retrieve up to `toWrite` stretched samples.
+                int got = 0;
+                if (readerPosition_ < sourceEndSample_)
+                {
+                    const int inN = srConvert (kStretchBlock, stretchIn);
+                    if (inN > 0)
+                        got = stretcher_->process (stretchIn.getArrayOfReadPointers(), inN,
+                                                   stretchOut.getArrayOfWritePointers(), toWrite,
+                                                   stretchTimeRatio_);
+                }
+                else
+                {
+                    stretchIn.clear();
+                    got = stretcher_->process (stretchIn.getArrayOfReadPointers(),
+                                               juce::jmin (kStretchBlock, toWrite),
+                                               stretchOut.getArrayOfWritePointers(), toWrite,
+                                               stretchTimeRatio_);
+                    if (got <= 0)
+                    {
+                        exhausted_ = true;
+                        continue;
+                    }
+                }
+
+                if (got > 0)
+                {
+                    int w1start, w1size, w2start, w2size;
+                    fifo_.prepareToWrite (got, w1start, w1size, w2start, w2size);
+                    for (int ch = 0; ch < 2; ++ch)
+                    {
+                        const float* src  = stretchOut.getReadPointer (ch);
+                        float*       ring = ringBuffer_.getWritePointer (ch);
+                        if (w1size > 0) std::memcpy (ring + w1start, src,          (size_t) w1size * sizeof (float));
+                        if (w2size > 0) std::memcpy (ring + w2start, src + w1size, (size_t) w2size * sizeof (float));
+                    }
+                    fifo_.finishedWrite (got);
+                }
+                continue;
+            }
+
             {
                 std::lock_guard<std::mutex> lk (configMutex_);
 
@@ -307,9 +436,13 @@ private:
                     }
                 }
 
-                const double ratio = (projectSampleRate_ > 0.0)
+                // Resample ratio = source-rate conversion * tempo time-stretch.
+                // playbackConsumeRate_ > 1 consumes source faster (clip plays
+                // faster, e.g. a 128-BPM clip on a 140 master), < 1 slower.
+                const double ratio = ((projectSampleRate_ > 0.0)
                                          ? (sourceSampleRate_ / projectSampleRate_)
-                                         : 1.0;
+                                         : 1.0)
+                                     * playbackConsumeRate_;
 
                 int producedOut = 0;
 
@@ -410,7 +543,15 @@ private:
     int64_t                                  sourceStartSample_ { 0 };
     int64_t                                  sourceEndSample_   { 0 };
     int64_t                                  readerPosition_    { 0 };
+    double                                   playbackConsumeRate_ { 1.0 }; // tempo stretch
     bool                                     exhausted_         { false };
+
+    // Pitch-preserved (key lock) time-stretch via Rubberband (reader thread only).
+    static constexpr int                     kStretchBlock      { 1024 };
+    std::unique_ptr<TimeStretcher>           stretcher_;
+    bool                                     pitchPreserve_     { false };
+    double                                   stretchTimeRatio_  { 1.0 };  // output/input duration
+    bool                                     stretcherPrimed_   { false };
 
     // Ring buffer (pre-allocated, non-heap after construction).
     const int                    ringCapacity_;
@@ -527,10 +668,13 @@ public:
                 std::unique_ptr<juce::AudioFormatReader> reader,
                 double projectSampleRate,
                 int64_t sourceStartSample,
-                int64_t sourceEndSample)
+                int64_t sourceEndSample,
+                double playbackConsumeRate = 1.0,
+                bool keyLock = false)
     {
         if (auto* s = getStreamer (slotIndex))
-            s->prime (std::move (reader), projectSampleRate, sourceStartSample, sourceEndSample);
+            s->prime (std::move (reader), projectSampleRate,
+                      sourceStartSample, sourceEndSample, playbackConsumeRate, keyLock);
     }
 
     int poolSize() const noexcept { return (int) streamers_.size(); }

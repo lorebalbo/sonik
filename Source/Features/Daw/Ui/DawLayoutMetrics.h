@@ -20,14 +20,18 @@ struct DawLayout
 {
     // Left gutter occupied by group/lane header labels. Both the ruler and the
     // lane content surfaces start at this x, keeping their horizontal origins
-    // identical (PRD-0067 §1.4 alignment criterion).
-    static constexpr int kTrackHeaderWidth = 120;
+    // identical (PRD-0067 §1.4 alignment criterion). Sized like a Logic track
+    // header so the name, volume fader and automation selector breathe.
+    static constexpr int kTrackHeaderWidth = 168;
 
-    // Fixed lane row height (PRD-0067 §1.5.3 — never auto-stretched).
-    static constexpr int kLaneHeight = 36;
+    // Fixed lane row height (PRD-0067 §1.5.3 — never auto-stretched). Tall
+    // enough for the clip header band + waveform body.
+    static constexpr int kLaneHeight = 44;
 
-    // Group header row height (deck label + collapse toggle).
-    static constexpr int kGroupHeaderHeight = 22;
+    // Group header row height. Two stacked rows, Logic-style: the deck label +
+    // collapse toggle on top, the volume fader + automation-parameter dropdown
+    // beneath.
+    static constexpr int kGroupHeaderHeight = 52;
 
     // Number of lanes per channel group (Original / Instrumental / Vocal).
     static constexpr int kLanesPerGroup = 3;

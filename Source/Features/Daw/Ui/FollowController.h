@@ -5,14 +5,15 @@
 // Pure logic (no JUCE component / timer) so it is fully unit-testable. The
 // DawPanel owns one and consults it every refresh tick.
 //
-// Behaviour (PRD-0070 §1.5.2):
-//   * Follow is OFF by default — the arrangement does not move on its own.
-//   * The user explicitly toggles it on; setEnabled(true) (re-)engages it.
+// Behaviour (PRD-0070 §1.5.2, revised — Logic-style "catch" workflow):
+//   * Follow is ON by default — the arrangement tracks the playhead without a
+//     dedicated toggle button cluttering the top bar.
 //   * While enabled, when the now-line crosses kTriggerFraction of the viewport
 //     width, shouldFollow() requests an auto-scroll that re-anchors the now-line
 //     to kReanchorFraction of the viewport.
-//   * Any manual scroll / zoom / pan disengages follow until the user re-enables
-//     it (notifyManualScroll()).
+//   * Any manual scroll / zoom / pan disengages follow for the moment
+//     (notifyManualScroll()); pressing Play or Stop re-engages it, exactly like
+//     Logic's "catch when starting playback".
 //==============================================================================
 
 namespace Daw
@@ -49,7 +50,7 @@ public:
     }
 
 private:
-    bool enabled_ { false };
+    bool enabled_ { true };
 };
 
 } // namespace Daw

@@ -40,12 +40,17 @@ public:
         // Default: 120 BPM at the project sample rate (44100*60/120 = 22050).
         double       samplesPerBeat    = DawState::kProjectSampleRate * 60.0 / 120.0;
         std::int64_t phaseOriginSample = 0;
+        // Master tempo as a rate-independent BPM number. Carried alongside
+        // samplesPerBeat so clip drawing can apply the elastic time-stretch
+        // (sourceBpm/masterBpm) without re-deriving tempo from the sample rate.
+        double       bpm               = 120.0;
 
         static GridSnapshot fromContext (const MasterGridService::GridContext& ctx)
         {
             GridSnapshot s;
             s.samplesPerBeat    = ctx.samplesPerBeat > 0.0 ? ctx.samplesPerBeat : 1.0;
             s.phaseOriginSample = ctx.phaseOriginSample;
+            s.bpm               = ctx.bpm > 0.0 ? ctx.bpm : 120.0;
             return s;
         }
 

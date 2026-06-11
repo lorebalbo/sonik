@@ -150,6 +150,11 @@ LibraryComponent::LibraryComponent (juce::ValueTree& rootStateRef,
         dispatchCurrentQuery (true);
     };
 
+    sidebar.onCollectionMenuRequested = [this] (juce::Point<int> screenPos)
+    {
+        showCollectionMenu (screenPos);
+    };
+
     sidebar.onPlaylistHeaderMenuRequested = [this] (juce::Point<int> screenPos)
     {
         showPlaylistHeaderMenu (screenPos);
@@ -1549,6 +1554,112 @@ void LibraryComponent::promptForPlaylistName (const juce::String& title,
             if (auto* editor = safeAlert->getTextEditor ("playlistName"))
                 editor->grabKeyboardFocus();
     });
+}
+
+void LibraryComponent::showCollectionMenu (juce::Point<int> screenPos)
+{
+    juce::PopupMenu menu;
+    menu.addItem (1, "Clear Collection");
+
+    const auto targetArea = juce::Rectangle<int> { screenPos.x, screenPos.y, 1, 1 };
+    juce::Component::SafePointer<LibraryComponent> safeThis (this);
+    menu.showMenuAsync (juce::PopupMenu::Options{}.withTargetScreenArea (targetArea),
+        [safeThis] (int choice)
+        {
+            if (safeThis != nullptr && choice == 1)
+                safeThis->confirmClearCollection();
+        });
+}
+
+void LibraryComponent::confirmClearCollection()
+{
+    // Destructive, irreversible action: show a warning with two opt-in toggles so
+    // the user controls whether watched folders and playlists are wiped too.
+    auto* alert = new juce::AlertWindow (
+        "Clear Collection",
+        "This removes every track from your library and collection. "
+        "Files on disk are NOT deleted. This action cannot be undone.",
+        juce::MessageBoxIconType::WarningIcon, this);
+
+    auto removeFolders   = std::make_unique<juce::ToggleButton> ("Also remove watched folders");
+    auto deletePlaylists = std::make_unique<juce::ToggleButton> ("Also delete playlists");
+    removeFolders->setSize (320, 24);
+    deletePlaylists->setSize (320, 24);
+
+    alert->addCustomComponent (removeFolders.get());
+    alert->addCustomComponent (deletePlaylists.get());
+    alert->addButton ("Clear Collection", 1, juce::KeyPress (juce::KeyPress::returnKey));
+    alert->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+
+    juce::Component::SafePointer<LibraryComponent> safeThis (this);
+
+    // The toggle buttons are owned by this callback so they outlive the modal
+    // window; we read their state when the user confirms. enterModalState's
+    // deleteWhenDismissed flag deletes the AlertWindow before the callback (and
+    // therefore the toggles) is destroyed, so no dangling child references occur.
+    alert->enterModalState (true,
+        juce::ModalCallbackFunction::create (
+            [safeThis,
+             removeFolders   = std::move (removeFolders),
+             deletePlaylists = std::move (deletePlaylists)] (int result) mutable
+            {
+                if (safeThis == nullptr || result != 1)
+                    return;
+
+                safeThis->clearCollection (removeFolders->getToggleState(),
+                                           deletePlaylists->getToggleState());
+            }),
+        true);
+}
+
+void LibraryComponent::clearCollection (bool removeWatchedFolders, bool deletePlaylists)
+{
+    // Stop any in-flight watch-folder scan first so it cannot re-insert rows
+    // while (or right after) we wipe the library.
+    if (scanner != nullptr)
+        scanner->cancelScan();
+
+    auto* handle = db.getDbHandle();
+    bool ok = sqlite3_exec (handle, "BEGIN IMMEDIATE;", nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    // Deleting library_tracks cascades to playlist_tracks (ON DELETE CASCADE) and
+    // fires the per-row FTS delete trigger, keeping the search index consistent.
+    ok = ok && sqlite3_exec (handle, "DELETE FROM library_tracks;",
+                             nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    if (ok && deletePlaylists)
+        ok = sqlite3_exec (handle, "DELETE FROM playlists WHERE type = 'normal';",
+                           nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    if (ok && removeWatchedFolders)
+        ok = sqlite3_exec (handle, "DELETE FROM watched_folders;",
+                           nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    if (ok)
+        ok = sqlite3_exec (handle, "COMMIT;", nullptr, nullptr, nullptr) == SQLITE_OK;
+
+    if (! ok)
+    {
+        sqlite3_exec (handle, "ROLLBACK;", nullptr, nullptr, nullptr);
+        juce::AlertWindow::showMessageBoxAsync (juce::MessageBoxIconType::WarningIcon,
+            "Clear Collection",
+            "Failed to clear the collection. No changes were made.",
+            "OK", this);
+        return;
+    }
+
+    // Reset in-memory state (the Preparation List is not DB-backed) and snap the
+    // sidebar selection back to COLLECTION, then refresh every projection.
+    preparationTrackIds.clear();
+    sidebar.setPreparationCount (0);
+
+    currentSidebarContext = "collection";
+    sidebar.setActiveCollection();
+
+    refreshSidebarFolders();
+    refreshSidebarPlaylists();
+    refreshMissingCount();
+    dispatchCurrentQuery (true);
 }
 
 void LibraryComponent::showPlaylistHeaderMenu (juce::Point<int> screenPos)

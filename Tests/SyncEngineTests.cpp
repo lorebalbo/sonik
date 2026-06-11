@@ -416,7 +416,7 @@ private:
 
     void testSyncButtonReflectsIsSyncedState()
     {
-        beginTest ("SyncButton - isSynced=true → active fill (#000), isSynced=false → inactive fill (#F9F9F9)");
+        beginTest ("SyncButton - isSynced=true → active fill (#2d2d2d), isSynced=false → inactive fill (#F9F9F9)");
 
         juce::ValueTree deckTree (IDs::Deck);
         deckTree.setProperty (IDs::isSynced, false, nullptr);
@@ -431,7 +431,7 @@ private:
             juce::Graphics g (img);
             btn.paintButton (g, false, false);
 
-            const auto px = img.getPixelAt (1, 1);
+            const auto px = img.getPixelAt (4, 4); // inside the 2-px ink border
             expect (px.getRed()   == (juce::uint8) 0xF9);
             expect (px.getGreen() == (juce::uint8) 0xF9);
             expect (px.getBlue()  == (juce::uint8) 0xF9);
@@ -446,10 +446,10 @@ private:
             juce::Graphics g (img);
             btn.paintButton (g, false, false);
 
-            const auto px = img.getPixelAt (1, 1);
-            expect (px.getRed()   == (juce::uint8) 0x00);
-            expect (px.getGreen() == (juce::uint8) 0x00);
-            expect (px.getBlue()  == (juce::uint8) 0x00);
+            const auto px = img.getPixelAt (4, 4); // inside the 2-px ink border
+            expect (px.getRed()   == (juce::uint8) 0x2D);
+            expect (px.getGreen() == (juce::uint8) 0x2D);
+            expect (px.getBlue()  == (juce::uint8) 0x2D);
         }
     }
 
@@ -487,7 +487,7 @@ private:
 
     void testMasterButtonReflectsIsMasterState()
     {
-        beginTest ("MasterButton - isMaster=true → active fill (#000), isMaster=false → inactive fill (#F9F9F9)");
+        beginTest ("MasterButton - isMaster=true → active fill (#2d2d2d), isMaster=false → inactive fill (#F9F9F9)");
 
         auto root = createRootState (1);
         MasterClockPublisher pub;
@@ -503,7 +503,7 @@ private:
             juce::Graphics g (img);
             btn.paintButton (g, false, false);
 
-            const auto px = img.getPixelAt (1, 1);
+            const auto px = img.getPixelAt (4, 4); // inside the 2-px ink border
             expect (px.getRed()   == (juce::uint8) 0xF9);
             expect (px.getGreen() == (juce::uint8) 0xF9);
             expect (px.getBlue()  == (juce::uint8) 0xF9);
@@ -518,10 +518,10 @@ private:
             juce::Graphics g (img);
             btn.paintButton (g, false, false);
 
-            const auto px = img.getPixelAt (1, 1);
-            expect (px.getRed()   == (juce::uint8) 0x00);
-            expect (px.getGreen() == (juce::uint8) 0x00);
-            expect (px.getBlue()  == (juce::uint8) 0x00);
+            const auto px = img.getPixelAt (4, 4); // inside the 2-px ink border
+            expect (px.getRed()   == (juce::uint8) 0x2D);
+            expect (px.getGreen() == (juce::uint8) 0x2D);
+            expect (px.getBlue()  == (juce::uint8) 0x2D);
         }
     }
 };

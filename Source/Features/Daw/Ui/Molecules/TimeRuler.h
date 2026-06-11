@@ -76,6 +76,7 @@ private:
     static inline const juce::Colour kInk         { 0xFF2D2D2D }; // primary
     static inline const juce::Colour kSurface     { 0xFFFDFDFD }; // surface
     static inline const juce::Colour kTickBandBg  { 0xFFE2E2E2 }; // container-highest
+    static inline const juce::Colour kHeaderBandBg{ 0xFFE2E2E2 }; // container-highest
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TimeRuler)
 };

@@ -53,6 +53,15 @@ public:
         const float x = (float) lineX_;
         g.setColour (kInk);
         g.fillRect (juce::Rectangle<float> (x, 0.0f, kLineWidth, (float) getHeight()));
+
+        // Logic-style head marker: a stepped downward triangle sitting at the
+        // top of the line (inside the ruler band), pure pixel rects — no AA.
+        const int cx = lineX_;
+        for (int row = 0; row < 5; ++row)
+        {
+            const int half = 5 - row;
+            g.fillRect (cx - half + 1, row, half * 2, 1);
+        }
     }
 
 private:

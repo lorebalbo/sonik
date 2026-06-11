@@ -105,30 +105,37 @@ void TimeRuler::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds();
 
-    // Header band (bar numbers) — solid ink, per Figma frame 86.
+    // Light ruler, Logic-style: a quiet header band for the bar numbers over the
+    // tick band, separated from the lanes by a single 2-px ink baseline. The
+    // heavy solid-ink band read as a wall; the timeline should recede behind
+    // the clips, not compete with them.
     auto headerBand = bounds.removeFromTop (kHeaderBandHeight);
-    g.setColour (kInk);
+    g.setColour (kHeaderBandBg);
     g.fillRect (headerBand);
 
     // Tick band — light container tone.
     g.setColour (kTickBandBg);
     g.fillRect (bounds);
 
-    // Bar-number labels in the header band (Space Mono, surface on ink).
-    g.setColour (kSurface);
-    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+    // Bar-number labels (Space Mono, ink, small) next to each bar tick.
+    g.setColour (kInk);
+    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
 
     for (const auto& tick : ticks_)
     {
         if (! tick.hasLabel)
             continue;
 
-        const int labelX = juce::roundToInt (TimelineTransform::alignToPixelGrid (tick.x)) + 2;
+        const int labelX = juce::roundToInt (TimelineTransform::alignToPixelGrid (tick.x)) + 4;
         const juce::Rectangle<int> labelArea (labelX, headerBand.getY(),
                                               48, headerBand.getHeight());
         g.drawText (juce::String (tick.barNumber), labelArea,
                     juce::Justification::centredLeft, false);
     }
+
+    // Baseline under the ruler — the timeline's top edge.
+    g.setColour (kInk);
+    g.fillRect (0, getHeight() - 2, getWidth(), 2);
 }
 
 } // namespace Daw

@@ -12,6 +12,7 @@
 #include <juce_data_structures/juce_data_structures.h>
 
 #include <cstdint>
+#include <cmath>
 
 #include "../State/DawClipModel.h"   // field identifiers + node-type id
 
@@ -25,11 +26,25 @@ struct DawClip
     std::int64_t timelineStartSample { 0 };    // project-rate index on the timeline
     std::int64_t sourceLengthSamples { 0 };    // total length of the referenced source
     float        gainDb              { 0.0f }; // per-clip trim in dB, unity default
+    double       sourceBpm           { 0.0 };  // clip's original (native) BPM; 0 => no stretch
+    bool         keyLock             { false }; // deck key lock at capture => pitch-preserved stretch
 
-    /** Timeline length is exactly the cropped source span (1:1, no stretch). */
-    std::int64_t timelineLengthSamples() const noexcept
+    /** Cropped source span in source samples (before any tempo stretch). */
+    std::int64_t sourceSpanSamples() const noexcept
     {
         return sourceEndSample - sourceStartSample;
+    }
+
+    /** Timeline length once the clip is time-stretched from its original BPM to
+        `masterBpm`. With no known source BPM (or no master) the mapping is 1:1.
+        128-BPM clip on a 140 master => span * 128/140 (shorter, plays faster). */
+    std::int64_t timelineLengthSamples (double masterBpm = 0.0) const noexcept
+    {
+        const std::int64_t span = sourceEndSample - sourceStartSample;
+        if (sourceBpm <= 0.0 || masterBpm <= 0.0)
+            return span;
+        return static_cast<std::int64_t> (std::llround (static_cast<double> (span)
+                                                        * (sourceBpm / masterBpm)));
     }
 
     //--------------------------------------------------------------------------
@@ -47,6 +62,8 @@ struct DawClip
         node.setProperty (DawClipIDs::timelineStartSample, (juce::int64) clip.timelineStartSample, nullptr);
         node.setProperty (DawClipIDs::sourceLengthSamples, (juce::int64) clip.sourceLengthSamples, nullptr);
         node.setProperty (DawClipIDs::gainDb,              clip.gainDb,                  nullptr);
+        node.setProperty (DawClipIDs::sourceBpm,           clip.sourceBpm,               nullptr);
+        node.setProperty (DawClipIDs::keyLock,             clip.keyLock,                 nullptr);
         return node;
     }
 
@@ -65,6 +82,8 @@ struct DawClip
         clip.timelineStartSample = static_cast<std::int64_t> (static_cast<juce::int64> (node.getProperty (DawClipIDs::timelineStartSample)));
         clip.sourceLengthSamples = static_cast<std::int64_t> (static_cast<juce::int64> (node.getProperty (DawClipIDs::sourceLengthSamples)));
         clip.gainDb              = static_cast<float> (static_cast<double> (node.getProperty (DawClipIDs::gainDb)));
+        clip.sourceBpm           = static_cast<double> (node.getProperty (DawClipIDs::sourceBpm, 0.0));
+        clip.keyLock             = static_cast<bool> (node.getProperty (DawClipIDs::keyLock, false));
         return clip;
     }
 };

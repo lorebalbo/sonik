@@ -1,4 +1,5 @@
 #include "StemCache.h"
+#include "ModelManager.h"
 #include <sqlite3.h>
 
 // ============================================================================
@@ -6,6 +7,17 @@
 // ============================================================================
 
 juce::File StemCache::getCacheDirectory()
+{
+    // PERSISTENT location, next to sonik.db. macOS does NOT purge Application
+    // Support (unlike Caches), so separated stems survive across launches,
+    // rebuilds, and OS cache reclamation.
+    return juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+               .getChildFile ("Application Support")
+               .getChildFile ("Sonik")
+               .getChildFile ("Stems");
+}
+
+juce::File StemCache::legacyCacheDirectory()
 {
     return juce::File::getSpecialLocation (juce::File::userHomeDirectory)
                .getChildFile ("Library")
@@ -189,12 +201,16 @@ void StemCache::evictIfNeeded (const std::set<juce::String>& activeHashes)
 
 void StemCache::cleanupOnStartup()
 {
-    // 1. Delete "pending" (incomplete) entries
+    // 0. Bring any stems still in the old purgeable Caches location into the
+    //    persistent cache so a user's existing separations are not lost.
+    migrateLegacyStems();
+
+    // 1. Delete "pending" (incomplete) entries — a separation that never finished.
     auto pendingHashes = db.getPendingStemHashes();
     for (const auto& hash : pendingHashes)
         deleteCacheEntry (hash);
 
-    // 2. Scan disk for orphan directories (no DB record)
+    // 2. Reconcile on-disk directories with the DB.
     auto cacheDir = getCacheDirectory();
     if (! cacheDir.isDirectory())
         return;
@@ -202,10 +218,72 @@ void StemCache::cleanupOnStartup()
     auto children = cacheDir.findChildFiles (juce::File::findDirectories, false);
     for (const auto& child : children)
     {
-        auto hash = child.getFileName();
-        if (! db.hasStemRecord (hash))
+        const auto hash = child.getFileName();
+        if (db.hasStemRecord (hash))
+            continue; // already indexed and complete — keep
+
+        // No (complete) DB record. If the directory nonetheless holds a complete
+        // valid stem set, the DB — not the audio — was lost (e.g. it was reset).
+        // RE-INDEX it rather than delete, so persistent stems survive a DB loss.
+        // Only genuinely partial/corrupt directories are removed.
+        if (dirHasCompleteStems (child))
+            reregisterStems (hash, child);
+        else
             child.deleteRecursively();
     }
+}
+
+// ============================================================================
+// Legacy migration + self-healing helpers
+// ============================================================================
+
+void StemCache::migrateLegacyStems()
+{
+    auto legacy = legacyCacheDirectory();
+    if (! legacy.isDirectory())
+        return;
+
+    auto dest = getCacheDirectory();
+    dest.createDirectory();
+
+    for (const auto& child : legacy.findChildFiles (juce::File::findDirectories, false))
+    {
+        auto target = dest.getChildFile (child.getFileName());
+        if (target.exists())
+            child.deleteRecursively();       // already in the persistent cache
+        else
+            child.moveFileTo (target);       // same volume => fast rename; leaves
+                                             // the source in place if it fails (no loss)
+    }
+
+    // Only remove the legacy root once it is empty, so a failed move never deletes
+    // a source that is still the sole copy.
+    if (legacy.getNumberOfChildFiles (juce::File::findFilesAndDirectories) == 0)
+        static_cast<void> (legacy.deleteRecursively()); // best-effort cleanup
+}
+
+bool StemCache::dirHasCompleteStems (const juce::File& dir)
+{
+    if (! dir.isDirectory())
+        return false;
+
+    for (int i = 0; i < StemData::NumStems; ++i)
+    {
+        auto file = dir.getChildFile (StemData::stemFilename (i));
+        if (! file.existsAsFile() || file.getSize() <= 0)
+            return false;
+    }
+    return true;
+}
+
+void StemCache::reregisterStems (const juce::String& contentHash, const juce::File& dir)
+{
+    int64_t totalBytes = 0;
+    for (int i = 0; i < StemData::NumStems; ++i)
+        totalBytes += dir.getChildFile (StemData::stemFilename (i)).getSize();
+
+    insertPendingRecord (contentHash, juce::String (ModelManager::getModelVersion()));
+    markRecordComplete  (contentHash, totalBytes);
 }
 
 // ============================================================================

@@ -93,6 +93,9 @@ private:
                                 std::function<void()> onCancel = {});
     void showPlaylistHeaderMenu (juce::Point<int> screenPos);
     void showPlaylistMenu (int64_t playlistId, const juce::String& type, juce::Point<int> screenPos);
+    void showCollectionMenu (juce::Point<int> screenPos);
+    void confirmClearCollection ();
+    void clearCollection (bool removeWatchedFolders, bool deletePlaylists);
     void handlePlaylistCreate (const juce::String& name);
     void handlePlaylistRename (int64_t playlistId, const juce::String& name);
     void handlePlaylistMutationResult (bool ok, const juce::String& message, int64_t playlistId);

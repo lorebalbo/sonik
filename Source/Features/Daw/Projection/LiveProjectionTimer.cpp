@@ -18,28 +18,34 @@ std::int64_t LiveProjectionTimer::snapStartToGrid (std::int64_t  beatgridAnchor,
                                                    double        beatgridInterval,
                                                    std::int64_t  sourceStart,
                                                    std::int64_t  rawTimelineStart,
+                                                   double        stretchRatio,
                                                    const MasterGridService::GridContext& gridCtx)
 {
     const double gridInterval = gridCtx.samplesPerBeat;
     if (beatgridInterval <= 0.0 || gridInterval <= 0.0)
         return rawTimelineStart; // no usable grid: leave the raw placement
 
+    const double ratio = (stretchRatio > 0.0) ? stretchRatio : 1.0;
+
     // First source downbeat at or after the clip's source start.
     const double beatsAhead = static_cast<double> (sourceStart - beatgridAnchor) / beatgridInterval;
     const std::int64_t firstDownbeatSrc =
         beatgridAnchor
         + static_cast<std::int64_t> (std::llround (std::ceil (beatsAhead) * beatgridInterval));
-    const std::int64_t downbeatOffset = firstDownbeatSrc - sourceStart; // >= 0 source samples
+    const std::int64_t srcDownbeatOffset = firstDownbeatSrc - sourceStart; // >= 0 source samples
 
-    // With the live 1:1 source->timeline mapping the downbeat would land here;
-    // snap it to the nearest master-grid line and back the start out so every
-    // captured beat aligns to the grid.
+    // The deck plays time-stretched to the master tempo, so the source-domain
+    // distance to the downbeat occupies srcOffset * (sourceBpm/masterBpm) on the
+    // timeline. Snap that timeline downbeat to the nearest grid line, then back
+    // the (stretched) start out so every captured beat aligns to the grid.
+    const std::int64_t tlDownbeatOffset =
+        static_cast<std::int64_t> (std::llround (static_cast<double> (srcDownbeatOffset) * ratio));
     const std::int64_t gridOrigin = gridCtx.phaseOriginSample;
-    const double beats = static_cast<double> (rawTimelineStart + downbeatOffset - gridOrigin)
+    const double beats = static_cast<double> (rawTimelineStart + tlDownbeatOffset - gridOrigin)
                        / gridInterval;
     const std::int64_t snappedDownbeat =
         gridOrigin + static_cast<std::int64_t> (std::llround (std::llround (beats) * gridInterval));
-    return snappedDownbeat - downbeatOffset;
+    return snappedDownbeat - tlDownbeatOffset;
 }
 
 const std::int64_t LiveProjectionTimer::kSeekToleranceSamples =
@@ -102,7 +108,9 @@ void LiveProjectionTimer::startLane (DeckProjection&     dp,
                                      std::int64_t        srcPos,
                                      std::int64_t        timelineStart,
                                      const juce::String& sourceFileId,
-                                     std::int64_t        sourceLength)
+                                     std::int64_t        sourceLength,
+                                     double              sourceBpm,
+                                     bool                keyLock)
 {
     // Lazily materialise the deck's channel group + its three lanes.
     auto track    = DawState::ensureTrackForDeck (dawBranch_, deckIndex);
@@ -123,6 +131,8 @@ void LiveProjectionTimer::startLane (DeckProjection&     dp,
     clip.timelineStartSample = timelineStart;           // now-line, or split seam
     clip.sourceLengthSamples = sourceLength;
     clip.gainDb              = 0.0f;
+    clip.sourceBpm           = sourceBpm; // native BPM; DAW stretches it to master BPM
+    clip.keyLock             = keyLock;   // pitch-preserved stretch when the deck was key-locked
 
     auto node = DawClip::toValueTree (clip);
     clips.addChild (node, -1, nullptr);
@@ -131,14 +141,16 @@ void LiveProjectionTimer::startLane (DeckProjection&     dp,
     dp.lanes[lane].active   = true;
 }
 
-std::int64_t LiveProjectionTimer::laneTimelineEnd (const LaneProjection& lp)
+std::int64_t LiveProjectionTimer::laneTimelineEnd (const LaneProjection& lp, double stretchRatio)
 {
     if (! lp.clipNode.isValid())
         return 0;
     const auto tlStart  = static_cast<std::int64_t> (lp.clipNode.getProperty (DawClipIDs::timelineStartSample));
     const auto srcStart = static_cast<std::int64_t> (lp.clipNode.getProperty (DawClipIDs::sourceStartSample));
     const auto srcEnd   = static_cast<std::int64_t> (lp.clipNode.getProperty (DawClipIDs::sourceEndSample));
-    return tlStart + (srcEnd - srcStart);
+    const double ratio  = (stretchRatio > 0.0) ? stretchRatio : 1.0;
+    return tlStart + static_cast<std::int64_t> (
+        std::llround (static_cast<double> (srcEnd - srcStart) * ratio));
 }
 
 void LiveProjectionTimer::growLane (LaneProjection& lp, std::int64_t srcPos)
@@ -220,6 +232,21 @@ void LiveProjectionTimer::processTick()
         const juce::String sourceFileId = readContentHash (deckTree);
         const std::int64_t sourceLength = readSourceLength (deckTree);
 
+        // Elastic timing: the deck's native (source) BPM is stamped on every clip
+        // so the DAW can stretch it to the master BPM. stretchRatio (timeline per
+        // source sample = sourceBpm/masterBpm) converts this deck's SOURCE motion
+        // into MUSICAL timeline motion, so the now-line and grid-snap track musical
+        // time even when the deck plays time-stretched by SYNC. 1.0 => no stretch.
+        const double deckNativeBpm = audio->deckBPM.load (std::memory_order_acquire);
+        const double masterBpm     = gridCtx.bpm;
+        const double stretchRatio  = (deckNativeBpm > 0.0 && masterBpm > 0.0)
+                                         ? (deckNativeBpm / masterBpm) : 1.0;
+
+        // Key lock at capture is baked per clip so the DAW reproduces a stretched
+        // clip PITCH-PRESERVED (lock on) or varispeed (off). A toggle splits the
+        // clip contiguously below so each clip carries one constant stretch mode.
+        const bool deckKeyLock = audio->keyLockEnabled.load (std::memory_order_acquire);
+
         // A genuine split only when we were already recording this deck's
         // playback (there is an open clip to close at the exact out-point and
         // reopen at the exact in-point).
@@ -249,7 +276,7 @@ void LiveProjectionTimer::processTick()
                 if (lp.active)
                 {
                     growLane (lp, seekFrom);
-                    seam[static_cast<size_t> (li)] = laneTimelineEnd (lp);
+                    seam[static_cast<size_t> (li)] = laneTimelineEnd (lp, stretchRatio);
                     finaliseLane (lp);
                 }
                 else
@@ -277,27 +304,47 @@ void LiveProjectionTimer::processTick()
                     const std::int64_t rawStart = seam[static_cast<size_t> (li)];
                     const std::int64_t start    = looping
                         ? rawStart
-                        : snapStartToGrid (jumpAnchor, jumpInterval, seekTo, rawStart, gridCtx);
+                        : snapStartToGrid (jumpAnchor, jumpInterval, seekTo, rawStart,
+                                           stretchRatio, gridCtx);
 
                     startLane (dp, deckIndex, static_cast<Lane> (li),
-                               seekTo, start, sourceFileId, sourceLength);
+                               seekTo, start, sourceFileId, sourceLength,
+                               deckNativeBpm, deckKeyLock);
                     growLane (dp.lanes[li], srcPos);
                 }
             }
 
-            // The deck's real progress this tick is the pre-jump + post-jump
-            // spans; feed it to the shared now-line (max across decks).
+            // The deck's real progress this tick is the pre-jump + post-jump SOURCE
+            // spans; convert to MUSICAL time before feeding the shared now-line.
             const std::int64_t post = juce::jmax<std::int64_t> (0, srcPos - seekTo);
-            maxAdvance = juce::jmax (maxAdvance, pre + post);
+            const std::int64_t musical = static_cast<std::int64_t> (
+                std::llround (static_cast<double> (pre + post) * stretchRatio));
+            maxAdvance = juce::jmax (maxAdvance, musical);
         }
         else
         {
+            // A key-lock toggle (no source discontinuity): the audio is continuous
+            // but its stretch MODE flips, so close the open clips at the live source
+            // position and reopen CONTIGUOUSLY (butt-join, no grid re-snap) with the
+            // new mode — exactly like a loop seam, but driven by the key-lock change.
+            const bool keyLockChanged = dp.wasPlaying && playing && ! heuristicSeek
+                                        && (deckKeyLock != dp.lastKeyLock);
+
             for (int li = 0; li < kLaneCount; ++li)
             {
                 auto& lp = dp.lanes[li];
                 if (want[li])
                 {
-                    if (! lp.active || heuristicSeek)
+                    if (keyLockChanged && lp.active)
+                    {
+                        growLane (lp, srcPos);                    // close at the toggle
+                        const std::int64_t seam = laneTimelineEnd (lp, stretchRatio);
+                        finaliseLane (lp);
+                        startLane (dp, deckIndex, static_cast<Lane> (li),
+                                   srcPos, seam, sourceFileId, sourceLength,
+                                   deckNativeBpm, deckKeyLock);
+                    }
+                    else if (! lp.active || heuristicSeek)
                     {
                         if (lp.active)
                             finaliseLane (lp);     // close the pre-seek span
@@ -316,10 +363,11 @@ void LiveProjectionTimer::processTick()
                         const std::int64_t start = snapStartToGrid (
                             audio->beatgridAnchor.load (std::memory_order_acquire),
                             audio->beatgridInterval.load (std::memory_order_acquire),
-                            srcPos, nowLineSample_, gridCtx);
+                            srcPos, nowLineSample_, stretchRatio, gridCtx);
 
                         startLane (dp, deckIndex, static_cast<Lane> (li),
-                                   srcPos, start, sourceFileId, sourceLength);
+                                   srcPos, start, sourceFileId, sourceLength,
+                                   deckNativeBpm, deckKeyLock);
                     }
                     else
                     {
@@ -332,13 +380,20 @@ void LiveProjectionTimer::processTick()
                 }
             }
 
-            // Steady-state forward progress advances the now-line (PRD-0070).
+            // Steady-state forward progress advances the now-line in MUSICAL time:
+            // a SYNC'd deck's SOURCE delta is scaled by sourceBpm/masterBpm so the
+            // record cursor and clip spans share the grid's tempo (PRD-0070).
             if (dp.wasPlaying && playing && ! heuristicSeek && srcPos > dp.lastSourcePos)
-                maxAdvance = juce::jmax (maxAdvance, srcPos - dp.lastSourcePos);
+            {
+                const std::int64_t musical = static_cast<std::int64_t> (
+                    std::llround (static_cast<double> (srcPos - dp.lastSourcePos) * stretchRatio));
+                maxAdvance = juce::jmax (maxAdvance, musical);
+            }
         }
 
         dp.wasPlaying    = playing;
         dp.lastSourcePos = srcPos;
+        dp.lastKeyLock   = deckKeyLock;
     }
 
     // The now-line advances ONLY by real deck progress: the record cursor parks

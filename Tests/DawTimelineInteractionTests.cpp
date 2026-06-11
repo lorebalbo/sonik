@@ -34,13 +34,16 @@ public:
         }
 
         //----------------------------------------------------------------------
-        beginTest ("FollowController defaults to OFF and never auto-scrolls");
+        beginTest ("FollowController defaults to ON (Logic-style catch workflow)");
         {
             Daw::FollowController fc;
-            expect (! fc.isEnabled());
-            // Even with the now-line well past the trigger fraction, disabled =>
-            // no follow.
-            expect (! fc.shouldFollow (/*nowLineX*/ 999.0, /*width*/ 1000.0));
+            expect (fc.isEnabled());
+            // Default-on follow scrolls once the now-line passes the trigger.
+            expect (fc.shouldFollow (/*nowLineX*/ 999.0, /*width*/ 1000.0));
+
+            // Disabled => never auto-scrolls, regardless of the now-line.
+            fc.setEnabled (false);
+            expect (! fc.shouldFollow (999.0, 1000.0));
         }
 
         //----------------------------------------------------------------------

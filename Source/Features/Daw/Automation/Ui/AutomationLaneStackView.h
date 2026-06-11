@@ -15,6 +15,7 @@
 // the model via the lane views' own listeners; no audio-thread code.
 //==============================================================================
 
+#include <array>
 #include <memory>
 #include <vector>
 
@@ -50,9 +51,48 @@ public:
 
     int getNumLaneViews() const noexcept { return static_cast<int> (laneViews_.size()); }
 
+    //--------------------------------------------------------------------------
+    // Logic-style single-parameter display: when a parameterId is set, only that
+    // lane is shown (the track header dropdown drives this); an empty id shows
+    // every lane (the original PRD-0093 stack behaviour, kept for the master
+    // lane / tests).
+    //--------------------------------------------------------------------------
+    void setVisibleParameter (const juce::String& parameterId)
+    {
+        if (visibleParam_ == parameterId)
+            return;
+        visibleParam_ = parameterId;
+        for (size_t i = 0; i < laneViews_.size(); ++i)
+            laneViews_[i]->setVisible (isLaneShown ((int) i));
+        resized();
+    }
+
+    const juce::String& getVisibleParameter() const noexcept { return visibleParam_; }
+
+    int getNumVisibleLaneViews() const noexcept
+    {
+        int n = 0;
+        for (size_t i = 0; i < laneViews_.size(); ++i)
+            if (isLaneShown ((int) i))
+                ++n;
+        return n;
+    }
+
+    // The canonical (parameterId, isBoolean) list this stack builds, in display
+    // order — the track header dropdown menu is built from this.
+    struct ParameterInfo { juce::String parameterId; bool isBoolean; };
+
+    static std::vector<ParameterInfo> getAvailableParameters()
+    {
+        std::vector<ParameterInfo> out;
+        for (const auto& spec : parameterSpecs())
+            out.push_back ({ juce::String (spec.parameterId), spec.isBoolean });
+        return out;
+    }
+
     int getPreferredHeight() const noexcept
     {
-        return getNumLaneViews() * AutomationLaneMetrics::kAutomationLaneHeight;
+        return getNumVisibleLaneViews() * AutomationLaneMetrics::kAutomationLaneHeight;
     }
 
     // Inject the shared playhead-sample provider into every lane view.
@@ -90,8 +130,10 @@ public:
     void resized() override
     {
         auto bounds = getLocalBounds();
-        for (auto& v : laneViews_)
-            v->setBounds (bounds.removeFromTop (AutomationLaneMetrics::kAutomationLaneHeight));
+        for (size_t i = 0; i < laneViews_.size(); ++i)
+            if (isLaneShown ((int) i))
+                laneViews_[i]->setBounds (
+                    bounds.removeFromTop (AutomationLaneMetrics::kAutomationLaneHeight));
     }
 
     // Test access.
@@ -103,26 +145,39 @@ public:
 private:
     struct LaneSpec { const char* parameterId; bool isBoolean; };
 
-    void buildLaneViews()
+    // Canonical relative order (§1.5.4). One definition shared by the stack
+    // builder and the public getAvailableParameters() menu source.
+    static const std::array<LaneSpec, 8>& parameterSpecs()
     {
-        // Canonical relative order (§1.5.4).
-        static const LaneSpec kSpecs[] = {
+        static const std::array<LaneSpec, 8> kSpecs { {
+            { "gain",         false },
             { "filter",       false },
             { "eq.high",      false },
             { "eq.mid",       false },
             { "eq.low",       false },
-            { "gain",         false },
             { "keyLock",      true  },
             { "pitchStretch", true  },
             { "keyStepper",   true  },
-        };
+        } };
+        return kSpecs;
+    }
 
+    bool isLaneShown (int index) const noexcept
+    {
+        if (visibleParam_.isEmpty())
+            return true;
+        return index >= 0 && index < (int) laneParams_.size()
+            && laneParams_[(size_t) index] == visibleParam_;
+    }
+
+    void buildLaneViews()
+    {
         // Two passes: populated lanes first, then empty ones (§1.5.4). A lane is
         // "populated" if its node exists AND has at least one point.
         for (int pass = 0; pass < 2; ++pass)
         {
             const bool wantPopulated = (pass == 0);
-            for (const auto& spec : kSpecs)
+            for (const auto& spec : parameterSpecs())
             {
                 const juce::String pid (spec.parameterId);
                 const bool populated = laneHasData (pid, spec.isBoolean);
@@ -166,11 +221,17 @@ private:
 
         addAndMakeVisible (*view);
         laneViews_.push_back (std::move (view));
+        laneParams_.push_back (parameterId);
+
+        // Honour an already-active single-parameter filter.
+        laneViews_.back()->setVisible (isLaneShown (static_cast<int> (laneViews_.size()) - 1));
     }
 
     juce::String              owner_;
     AutomationModel&          model_;
     const TimelineTransform&  transform_;
+    juce::String              visibleParam_;   // empty = show all lanes
+    std::vector<juce::String> laneParams_;     // parameterId per lane view
     std::vector<std::unique_ptr<AutomationLaneViewBase>> laneViews_;
     EditCommandDispatcher*    dispatcher_ { nullptr };
     AutomationLaneViewBase::SnapEnabledProvider snapProvider_;

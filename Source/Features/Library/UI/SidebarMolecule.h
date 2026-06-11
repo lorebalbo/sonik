@@ -16,6 +16,7 @@ class SidebarMolecule final : public juce::Component,
 {
 public:
     std::function<void()>                    onCollectionSelected;
+    std::function<void (juce::Point<int>)>   onCollectionMenuRequested;
     std::function<void (const juce::String&)> onFolderSelected;
     std::function<void (int64_t, juce::String)> onPlaylistSelected;
     std::function<void (juce::Point<int>)>   onPlaylistHeaderMenuRequested;

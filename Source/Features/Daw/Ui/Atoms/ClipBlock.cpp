@@ -92,7 +92,11 @@ int ClipBlock::getTimelineX() const
 
 int ClipBlock::getTimelineWidth() const
 {
-    const std::int64_t endSample = clip_.timelineStartSample + clip_.timelineLengthSamples();
+    // Draw the STRETCHED span so the block matches the elastic playback length:
+    // the clip is time-stretched from its original BPM to the master BPM (carried
+    // on the transform's grid). With no source BPM this is the 1:1 source span.
+    const std::int64_t endSample =
+        clip_.timelineStartSample + clip_.timelineLengthSamples (transform_.grid().bpm);
     const double x0 = transform_.sampleToX (clip_.timelineStartSample);
     const double x1 = transform_.sampleToX (endSample);
     return juce::jmax (1, juce::roundToInt (x1 - x0));
@@ -157,6 +161,41 @@ void ClipBlock::paint (juce::Graphics& g)
 
     // Interior (inside the 2-px border).
     auto inner = bounds.reduced (2);
+
+    // Logic-style clip header band: a tonal strip across the clip top carrying
+    // the clip's musical length ("8 BARS"). Inverted when selected so the
+    // selected clip reads instantly. Only when the clip has room for it.
+    const bool selected = selection_ != nullptr
+                       && selection_->isSelected (clip_.clipId.toString());
+    if (inner.getHeight() >= 30)
+    {
+        auto band = inner.removeFromTop (11);
+        g.setColour (selected ? kInk : kBandFill);
+        g.fillRect (band);
+        g.setColour (kInk);
+        g.fillRect (band.getX(), band.getBottom(), band.getWidth(), 1);
+
+        if (band.getWidth() >= 44)
+        {
+            const double spb = transform_.grid().samplesPerBeat;
+            if (spb > 0.0)
+            {
+                const double beats = static_cast<double> (
+                    clip_.timelineLengthSamples (transform_.grid().bpm)) / spb;
+                const double bars = beats / DawState::kBeatsPerBar;
+                const juce::String label =
+                    (bars >= 0.95 ? juce::String (juce::roundToInt (bars))
+                                  : juce::String (bars, 1))
+                    + (bars >= 1.95 ? " BARS" : " BAR");
+
+                g.setColour (selected ? kSurface : kInk);
+                g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(),
+                                       7.0f, juce::Font::bold));
+                g.drawText (label, band.withTrimmedLeft (5),
+                            juce::Justification::centredLeft, false);
+            }
+        }
+    }
 
     // Resolve the shared waveform ONCE per paint. The accessor is backed by an
     // in-memory cache (WaveformCache), so this is an O(1) lookup rather than the
@@ -253,8 +292,14 @@ void ClipBlock::paintWaveform (juce::Graphics& g, juce::Rectangle<int> inner, co
         const float peak = juce::jmax (std::abs (pt.peakL), std::abs (pt.peakR));
         const float h = juce::jlimit (0.0f, halfH, peak * halfH);
 
-        const float x = static_cast<float> (inner.getX() + px);
-        g.drawLine (x, midY - h, x, midY + h, 1.0f);
+        // Pixel-aligned column fill. The previous drawLine() centred a 1-px
+        // stroke ON the integer x, which anti-aliasing smeared across two
+        // half-alpha columns — the whole waveform rendered grey and blurry
+        // (DESIGN.md: "If a waveform appears blurry, it is a system failure").
+        // An integer fillRect lands the full-ink column on exactly one pixel.
+        const int colH = juce::jmax (1, juce::roundToInt (h * 2.0f));
+        const int colY = juce::roundToInt (midY) - colH / 2;
+        g.fillRect (inner.getX() + px, colY, 1, colH);
     }
 
     // A crop that runs past the analysed prefix: dither the remainder.

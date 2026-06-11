@@ -50,6 +50,12 @@ public:
     /// Returns the algorithmic latency in samples.
     int getLatency() const;
 
+    /// Preferred number of start-pad samples to feed before real audio so the
+    /// pipeline is primed (RubberBand getPreferredStartPad). Combined with
+    /// getLatency() this is the read-ahead a streaming caller feeds + discards so
+    /// its first real output aligns to source position 0 (zero phase offset).
+    int getStartPad() const;
+
     /// Returns the currently queued output samples inside RubberBand.
     /// Primarily used by tests/diagnostics.
     int getBufferedOutputSamples() const;
