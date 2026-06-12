@@ -148,13 +148,13 @@ public:
                                *projectionSource,
                                DawState::getOrCreateDawBranch (rootState),
                                gridService);
-        // The now-line (DAW playback cursor) must only appear during arrangement
-        // playback (EPIC-0010). During normal DJing and recording the timeline
-        // cursor role belongs to the record playhead exclusively. Deliberately
-        // not calling dawPanel.setNowLineProvider here; the panel will keep the
-        // now-line hidden (lineX = -1) until playback is wired by EPIC-0010.
-        // The recording clock still consumes liveProjection->getNowLineSample()
-        // internally via recordingClock->setMasterTimelineProvider.
+        // The DAW uses a SINGLE shared playhead: it follows the transport during
+        // arrangement playback (EPIC-0010) and the recording position while a
+        // session is armed/recording (the panel switches sources internally).
+        // Deliberately not calling dawPanel.setNowLineProvider here; the playback
+        // now-line source is wired below once the transport exists. The recording
+        // clock still consumes liveProjection->getNowLineSample() internally via
+        // recordingClock->setMasterTimelineProvider.
         // Gate clip writing: DAW lanes only grow when the Record button is
         // active (Armed or Recording). nowLineSample_ always advances.
         liveProjection->setCapturingProvider ([this]() {

@@ -53,8 +53,8 @@ public:
             fc.setEnabled (true);
             expect (fc.isEnabled());
 
-            // Below the trigger fraction (0.85): no scroll yet.
-            expect (! fc.shouldFollow (800.0, 1000.0));
+            // Below the trigger fraction (0.80): no scroll yet.
+            expect (! fc.shouldFollow (790.0, 1000.0));
             // Past the trigger fraction: scroll.
             expect (  fc.shouldFollow (900.0, 1000.0));
 
@@ -68,10 +68,10 @@ public:
         }
 
         //----------------------------------------------------------------------
-        beginTest ("FollowController re-anchors to the re-anchor fraction");
+        beginTest ("FollowController re-anchors to the re-anchor fraction (4/5)");
         {
             expectWithinAbsoluteError (Daw::FollowController::reanchorTargetX (1000.0),
-                                       500.0, 1.0e-9);
+                                       800.0, 1.0e-9);
         }
 
         //----------------------------------------------------------------------

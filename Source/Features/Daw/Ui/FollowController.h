@@ -10,7 +10,10 @@
 //     dedicated toggle button cluttering the top bar.
 //   * While enabled, when the now-line crosses kTriggerFraction of the viewport
 //     width, shouldFollow() requests an auto-scroll that re-anchors the now-line
-//     to kReanchorFraction of the viewport.
+//     to kReanchorFraction of the viewport. Trigger and re-anchor share the same
+//     4/5 fraction: once the playhead reaches 4/5 of the viewport it is pinned
+//     there, so every refresh tick nudges it back by the small amount playback
+//     advanced — a continuous, smooth follow rather than a jumpy re-centre.
 //   * Any manual scroll / zoom / pan disengages follow for the moment
 //     (notifyManualScroll()); pressing Play or Stop re-engages it, exactly like
 //     Logic's "catch when starting playback".
@@ -22,8 +25,8 @@ namespace Daw
 class FollowController
 {
 public:
-    static constexpr double kTriggerFraction  = 0.85; // now-line crosses this -> scroll
-    static constexpr double kReanchorFraction = 0.50; // re-centre the now-line here
+    static constexpr double kTriggerFraction  = 0.80; // now-line crosses this -> scroll
+    static constexpr double kReanchorFraction = 0.80; // pin the now-line here (4/5)
 
     bool isEnabled() const noexcept { return enabled_; }
 

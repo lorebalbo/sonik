@@ -56,11 +56,9 @@ DawPanel::DawPanel (MasterGridService& gridService,
     };
     addAndMakeVisible (interaction_);
 
-    // The now-line overlay sits above the ruler + body and never eats input.
+    // The single shared playhead overlay sits above the ruler + body and never
+    // eats input. It serves both playback (now-line) and recording.
     addAndMakeVisible (playhead_);
-
-    // The record playhead band sits above the now-line; also input-transparent.
-    addAndMakeVisible (recordPlayhead_);
 
     stack_.onContentHeightChanged = [this]() { layoutBody(); };
 
@@ -226,13 +224,14 @@ void DawPanel::setNowLineProvider (std::function<std::int64_t()> provider)
 void DawPanel::setRecordStateProvider (std::function<RecordUiState()> provider)
 {
     recordStateProvider_ = std::move (provider);
+    updateNowLine();
     repaint();
 }
 
 void DawPanel::setRecordPlayheadProvider (std::function<std::int64_t()> provider)
 {
     recordPlayheadProvider_ = std::move (provider);
-    updateRecordPlayhead();
+    updateNowLine();
 }
 
 int DawPanel::contentLeftGutter() const noexcept
@@ -261,10 +260,10 @@ void DawPanel::rebuildTransform()
     const double ppb      = transform_.getPixelsPerBeat();
     const auto   leftEdge = transform_.getLeftEdgeSample();
 
-    // The arrangement extends a few bars past the live now-line so there is room
-    // to scroll ahead of playback.
-    const std::int64_t nowLine =
-        nowLineProvider_ ? nowLineProvider_() : grid.phaseOriginSample;
+    // The arrangement extends a few bars past the live playhead (playback OR
+    // recording) so there is room to scroll ahead of it.
+    const std::int64_t active = activePlayheadSample();
+    const std::int64_t nowLine = active >= 0 ? active : grid.phaseOriginSample;
     const std::int64_t trailingMargin =
         static_cast<std::int64_t> (grid.samplesPerBeat * DawState::kBeatsPerBar * 4);
     const std::int64_t contentEnd = nowLine + trailingMargin;
@@ -355,11 +354,7 @@ void DawPanel::setSessionTitle (const juce::String& titleWithMarker)
 //==============================================================================
 juce::String DawPanel::computeLcdPosition() const
 {
-    std::int64_t sample = -1;
-    if (scrubbing_)
-        sample = scrubSample_;
-    else if (nowLineProvider_)
-        sample = nowLineProvider_();
+    const std::int64_t sample = activePlayheadSample();
 
     const auto&  grid = transform_.grid();
     double beats = 0.0;
@@ -392,56 +387,63 @@ void DawPanel::refreshLcd()
     repaint (lcdBounds_);
 }
 
-void DawPanel::updateNowLine()
+std::int64_t DawPanel::activePlayheadSample() const
 {
-    // PRD-0102: while the DJ is scrubbing the ruler, the playhead line follows
-    // the cursor live (scrubSample_) regardless of the transport position — the
+    // PRD-0102: while the DJ is scrubbing the ruler, the playhead follows the
+    // cursor live (scrubSample_) regardless of transport/recording — the
     // authoritative seek is committed on mouse-up (§1.5.1).
     if (scrubbing_)
-    {
-        const double x = transform_.sampleToX (scrubSample_);
-        playhead_.setLineX ((int) std::llround (TimelineTransform::alignToPixelGrid (x)));
-        return;
-    }
+        return scrubSample_;
 
-    if (! nowLineProvider_)
+    // Recording owns the single shared playhead while a session is armed or
+    // recording, so the same bar marks where capture is writing.
+    if (recordStateProvider_ && recordStateProvider_() != RecordUiState::Idle
+        && recordPlayheadProvider_)
+        return recordPlayheadProvider_();
+
+    // Otherwise the playhead tracks the DAW transport (the now-line provider
+    // returns -1 when stopped, which hides the playhead).
+    if (nowLineProvider_)
+        return nowLineProvider_();
+
+    return (std::int64_t) -1;
+}
+
+void DawPanel::updateNowLine()
+{
+    const std::int64_t sample = activePlayheadSample();
+    if (sample < 0)
     {
         playhead_.setLineX (-1);
         return;
     }
 
-    const std::int64_t sample = nowLineProvider_();
     const double x = transform_.sampleToX (sample);
     playhead_.setLineX ((int) std::llround (TimelineTransform::alignToPixelGrid (x)));
 }
 
-void DawPanel::updateRecordPlayhead()
-{
-    // Hidden unless a session is armed/recording and a position is available.
-    const bool armed = recordStateProvider_ && recordStateProvider_() != RecordUiState::Idle;
-    if (! armed || ! recordPlayheadProvider_)
-    {
-        recordPlayhead_.setLineX (-1);
-        return;
-    }
-
-    const std::int64_t sample = recordPlayheadProvider_();
-    const double x = transform_.sampleToX (sample);
-    recordPlayhead_.setLineX ((int) std::llround (TimelineTransform::alignToPixelGrid (x)));
-}
-
 void DawPanel::applyFollowIfNeeded()
 {
-    if (! nowLineProvider_ || ! followController_.isEnabled())
+    // A ruler scrub is a manual gesture: the DJ drives the cursor, so the view
+    // must not auto-chase it (clicking near the right edge would yank the view).
+    if (scrubbing_ || ! followController_.isEnabled())
+        return;
+
+    // Follow whatever currently drives the shared playhead — playback OR
+    // recording. Without a live position there is nothing to chase.
+    const std::int64_t sample = activePlayheadSample();
+    if (sample < 0)
         return;
 
     const double viewportWidth = transform_.getViewportWidth();
-    const double nowLineX = transform_.sampleToX (nowLineProvider_());
+    const double nowLineX = transform_.sampleToX (sample);
 
     if (! followController_.shouldFollow (nowLineX, viewportWidth))
         return;
 
-    // Re-anchor the now-line to the re-anchor fraction of the viewport.
+    // Pin the playhead to the re-anchor (4/5) fraction of the viewport. Because
+    // trigger == re-anchor, each tick only corrects the small distance playback
+    // advanced, giving a smooth, continuous follow.
     const double target = FollowController::reanchorTargetX (viewportWidth);
     transform_.scrollByX (nowLineX - target);
     afterTransformChanged();
@@ -567,17 +569,18 @@ void DawPanel::timerCallback()
 {
     const auto ctx = gridService_.snapshotGrid();
     if (gridChanged (ctx))
-    {
         rebuildTransform();
-        lastNowLineSample_ = nowLineProvider_ ? nowLineProvider_() : 0;
-    }
-    else if (nowLineProvider_)
-    {
-        const std::int64_t nowLine = nowLineProvider_();
 
+    // The single shared playhead sample (recording position while recording,
+    // else the transport now-line; -1 when there is no live position).
+    const std::int64_t active = activePlayheadSample();
+
+    if (active >= 0)
+    {
         // Keep the content-end at least one full viewport ahead of the live
-        // now-line so the follow re-anchor always has room and long clips have
-        // somewhere to grow into.
+        // playhead so the follow re-anchor always has room and long clips have
+        // somewhere to grow into. This also keeps the position reachable by a
+        // manual scroll/drag while recording.
         const auto grid = transform_.grid();
         const std::int64_t barMargin =
             static_cast<std::int64_t> (grid.samplesPerBeat * DawState::kBeatsPerBar * 4);
@@ -585,26 +588,21 @@ void DawPanel::timerCallback()
             static_cast<std::int64_t> (transform_.getViewportWidth()
                                        * grid.samplesPerBeat
                                        / juce::jmax (1.0, transform_.getPixelsPerBeat()));
-        transform_.setContentEndSample (nowLine + juce::jmax (barMargin, viewportSamples));
+        transform_.setContentEndSample (active + juce::jmax (barMargin, viewportSamples));
+    }
 
-        // The clip blocks resize themselves as their crop end grows (ClipBlock
-        // listens to its own ValueTree), so here we only need to keep the
-        // now-line in step with playback — no full relayout/repaint per tick.
-        lastNowLineSample_ = nowLine;
-        updateNowLine();
-    }
-    else
-    {
-        updateNowLine();
-    }
+    // The clip blocks resize themselves as their crop end grows (ClipBlock
+    // listens to its own ValueTree), so here we only need to keep the playhead
+    // in step — no full relayout/repaint per tick.
+    lastNowLineSample_ = active;
+    updateNowLine();
 
     // Keep the LCD's bar.beat position + tempo readout live (repaints only the
     // LCD cell, and only when the displayed strings actually change).
     refreshLcd();
 
-    // Keep the record playhead in step and repaint the header when its state
-    // changes so the Record button reflects idle / armed / recording.
-    updateRecordPlayhead();
+    // Repaint the header when the record lifecycle changes so the Record button
+    // reflects idle / armed / recording.
     if (recordStateProvider_)
     {
         const auto recState = recordStateProvider_();
@@ -709,7 +707,6 @@ void DawPanel::resized()
                                 juce::jmax (0, getHeight() - contentTop));
 
         playhead_.setVisible (true);
-        recordPlayhead_.setVisible (true);
         layoutPlayhead();
     }
     else
@@ -718,7 +715,6 @@ void DawPanel::resized()
         bodyViewport_.setVisible (false);
         interaction_.setVisible (false);
         playhead_.setVisible (false);
-        recordPlayhead_.setVisible (false);
         if (masterTempoLane_ != nullptr)
             masterTempoLane_->setVisible (false);
     }
@@ -734,13 +730,7 @@ void DawPanel::layoutPlayhead()
                          juce::jmax (0, bottom - top));
     playhead_.toFront (false);
 
-    recordPlayhead_.setBounds (gutter, top,
-                               juce::jmax (0, getWidth() - gutter),
-                               juce::jmax (0, bottom - top));
-    recordPlayhead_.toFront (false);
-
     updateNowLine();
-    updateRecordPlayhead();
 }
 
 void DawPanel::layoutBody()
