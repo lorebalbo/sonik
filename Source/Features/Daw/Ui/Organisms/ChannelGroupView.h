@@ -21,6 +21,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "../Molecules/ChannelGroupHeader.h"
+#include "../Molecules/GroupOverviewStrip.h"
 #include "../Molecules/LaneView.h"
 #include "../DawLayoutMetrics.h"
 #include "../../Model/ChannelGroup.h"
@@ -72,12 +73,23 @@ public:
     // The mixer channel node backing the header volume fader (deck N -> channel N).
     void setMixerChannelTree (juce::ValueTree channelTree);
 
+    // Fader level meter: maps a channel index to its current linear peak level.
+    using ChannelLevelProvider = std::function<float (int channelIndex)>;
+    void setChannelLevelProvider (const ChannelLevelProvider& provider)
+    {
+        if (provider)
+            header_.setLevelProvider ([provider, idx = deckIndex_]() { return provider (idx); });
+        else
+            header_.setLevelProvider ({});
+    }
+
     int getPreferredHeight() const noexcept
     {
-        if (collapsed_)
-            return DawLayout::kCollapsedGroupHeight;
-
-        int h = DawLayout::kExpandedGroupHeight;
+        // The revealed automation lane survives a group collapse (it sits
+        // directly below the DECK header in both states), so its height is
+        // added regardless of collapse.
+        int h = collapsed_ ? DawLayout::kCollapsedGroupHeight
+                           : DawLayout::kExpandedGroupHeight;
         if (automationRevealed_ && automationStack_ != nullptr)
             h += automationStack_->getPreferredHeight();
         return h;
@@ -92,13 +104,38 @@ public:
     // Re-reads the deck source mode and updates each lane's active state.
     void refreshLaneActiveness();
 
+    // Grouped-tracks mute/solo: re-reads the group/lane mute-solo flags (global
+    // solo scope via the tracks container) and updates lane dimming plus the
+    // collapsed overview strip. Called by the owning stack on any flag flip.
+    void refreshAudibility();
+
+    // Test access to the collapsed-group ghost overview.
+    GroupOverviewStrip& getOverviewStrip() noexcept { return *overviewStrip_; }
+
+    // Test access to the automation stack (null when no model was injected).
+    AutomationLaneStackView* getAutomationStack() noexcept { return automationStack_.get(); }
+
     // PRD-0070: re-place clips in every lane after a transform change.
     void refreshClipLayout();
 
     void resized() override;
 
+    // Grouped-tracks: the vertical ink bracket descending from the DECK header
+    // along the indented child rows (drawn above the lanes so it stays visible
+    // over their header fills).
+    void paintOverChildren (juce::Graphics& g) override;
+
     // Exposed for tests: which lanes are currently active.
     bool isLaneActive (ChannelGroup::LaneKind kind) const;
+
+    // Exposed for tests: which lanes currently sound under mute/solo.
+    bool isLaneAudibleForTests (ChannelGroup::LaneKind kind) const
+    {
+        return lanes_[static_cast<size_t> (kind)]->isAudible();
+    }
+
+    // Test access to the header (fader meter state).
+    ChannelGroupHeader& getHeaderForTests() noexcept { return header_; }
 
     // PRD-0098: the lane ValueTree whose content row contains `pointInGroup`
     // (group-local coordinates), or an invalid tree when the point is over the
@@ -135,6 +172,10 @@ private:
 
     ChannelGroupHeader header_;
     std::array<std::unique_ptr<LaneView>, ChannelGroup::kLaneCount> lanes_;
+
+    // Grouped-tracks collapsed overview: the "ghost clip" lines shown over the
+    // header's timeline area while the group is folded.
+    std::unique_ptr<GroupOverviewStrip> overviewStrip_;
 
     // PRD-0093: automation lanes (created lazily on first reveal; hidden by
     // default so the group's default footprint is unchanged from PRD-0067).

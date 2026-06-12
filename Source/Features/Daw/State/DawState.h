@@ -46,6 +46,13 @@ namespace DawIDs
     DECLARE_DAW_ID (laneId)     // juce::Uuid canonical string, minted once
     DECLARE_DAW_ID (laneKind)   // string enum: "Original"/"Instrumental"/"Vocal"
 
+    // ---- Mute / Solo (carried by BOTH track and lane nodes) ----------------
+    // bool, default false. Solo scope is global across the arrangement: when any
+    // track or lane is soloed, only soloed tracks/lanes remain audible (see
+    // MuteSolo.h for the audibility rules the compiler and UI share).
+    DECLARE_DAW_ID (muted)
+    DECLARE_DAW_ID (solo)
+
     #undef DECLARE_DAW_ID
 }
 
