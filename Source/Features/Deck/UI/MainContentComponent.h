@@ -392,6 +392,21 @@ public:
                 // note that the sink routes to production-appropriate targets only
                 // where one exists, these are an intentional HARMLESS NO-OP here.
                 juce::ignoreUnused (paramId, state);
+            },
+            // Playhead domain map: the transport playhead advances in runtime/
+            // device-rate samples (EPIC-0010), but automation breakpoints are
+            // recorded at the now-line in project-rate samples. Convert back so
+            // lanes evaluate at the correct musical position at any device rate;
+            // the recorded values then drive the mixer (audio) AND the live UI
+            // controls (knobs/faders) in sync.
+            [this](std::int64_t runtimePlayhead) -> std::int64_t
+            {
+                const double scale = (playbackController != nullptr)
+                                         ? playbackController->sampleRateScale() : 1.0;
+                if (scale <= 0.0)
+                    return runtimePlayhead;
+                return static_cast<std::int64_t> (
+                    std::llround (static_cast<double> (runtimePlayhead) / scale));
             });
 
         // PRD-0092 re-entrancy guard: bind the applier's "applying" predicate to

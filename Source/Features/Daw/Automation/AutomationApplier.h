@@ -91,17 +91,30 @@ public:
     using TempoSink   = std::function<void (double bpm)>;
     using BooleanSink = std::function<void (int channel, const juce::String& paramId, bool state)>;
 
+    // Maps the transport playhead into the TIMELINE-SAMPLE domain the recorded
+    // breakpoints live in. Breakpoints are captured at the DAW now-line in
+    // PROJECT-rate samples (44.1 kHz), but the DawTransport playhead advances in
+    // RUNTIME/DEVICE-rate samples (EPIC-0010 scales clip positions to the device
+    // rate). Without this conversion the applier evaluates lanes at the wrong
+    // position whenever device rate != project rate, so automation plays back out
+    // of sync (audio AND the UI controls that mirror it). Production binds this to
+    // (runtime ÷ sampleRateScale); the default (empty) is identity for tests and
+    // for paths that already work in the project-rate domain (offline export).
+    using PlayheadDomainMap = std::function<std::int64_t (std::int64_t runtimePlayhead)>;
+
     //--------------------------------------------------------------------------
     AutomationApplier (AutomationModel&  model,
                        MixerStateSchema& mixer,
                        DawTransport&     transport,
                        TempoSink         tempoSink,
-                       BooleanSink       booleanSink)
-        : model_       (model),
-          mixer_       (mixer),
-          transport_   (transport),
-          tempoSink_   (std::move (tempoSink)),
-          booleanSink_ (std::move (booleanSink))
+                       BooleanSink       booleanSink,
+                       PlayheadDomainMap playheadDomainMap = {})
+        : model_             (model),
+          mixer_             (mixer),
+          transport_         (transport),
+          tempoSink_         (std::move (tempoSink)),
+          booleanSink_       (std::move (booleanSink)),
+          playheadDomainMap_ (std::move (playheadDomainMap))
     {
     }
 
@@ -131,9 +144,15 @@ public:
         if (! transport_.isPlaying())
             return;
 
-        const std::int64_t playhead = transport_.getPlayheadSample();
+        std::int64_t playhead = transport_.getPlayheadSample();
         if (playhead < 0)
             return; // defensive: stopped sentinel
+
+        // Convert the runtime-rate transport playhead into the project-rate
+        // timeline domain the breakpoints were recorded in, so lanes evaluate at
+        // the correct musical position regardless of the device sample rate.
+        if (playheadDomainMap_)
+            playhead = playheadDomainMap_ (playhead);
 
         // Raise the guard for the whole write batch so capture ignores our writes.
         applying_ = true;
@@ -278,6 +297,7 @@ private:
     DawTransport&     transport_;
     TempoSink         tempoSink_;
     BooleanSink       booleanSink_;
+    PlayheadDomainMap playheadDomainMap_;
 
     // The re-entrancy bool the capture guards read (message thread, non-atomic).
     bool applying_ { false };

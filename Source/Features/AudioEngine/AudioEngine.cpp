@@ -2355,7 +2355,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             // Build a two-channel AudioBuffer pointing at our pre-allocated scratch.
             float* chPtrs[2] = { dawMasterFeedL_.data(), dawMasterFeedR_.data() };
             juce::AudioBuffer<float> dawFeed (chPtrs, 2, numSamples);
-            dRenderer->renderBlock (dawFeed, numSamples);
+
+            // EPIC-0011: hand the renderer the per-channel mixer atomics so each
+            // channel group's playback is processed by its gain/EQ/filter DSP —
+            // the path recorded automation (PRD-0092) is replayed through. mxSnapshot
+            // was loaded once above; may be null (test harness) → renderer falls
+            // back to a straight master sum (legacy behaviour).
+            dRenderer->renderBlock (dawFeed, numSamples, mxSnapshot);
 
             // Accumulate into the already-written output bus.
             for (int i = 0; i < numSamples; ++i)

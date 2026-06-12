@@ -117,6 +117,15 @@ struct LaneSnapshot
     /// Number of valid ClipEvents in events[].
     int32_t  count { 0 };
 
+    /// EPIC-0011: the mixer channel (deck) this lane belongs to, 0=A … 3=D.
+    /// Every lane of a channel group (Original / Instrumental / Vocal) carries
+    /// the SAME channelIndex (the owning track's deckIndex), so the renderer can
+    /// sum a group's three lanes and apply that one channel's mixer DSP (gain /
+    /// EQ / filter) — the path recorded automation is replayed through. -1 means
+    /// "unassigned"; such a lane is summed straight to master with no per-channel
+    /// processing (legacy / test fallback).
+    int32_t  channelIndex { -1 };
+
     /// Fixed-capacity array of clip events for this lane.
     std::array<ClipEvent, kMaxClipsPerLane> events {};
 };

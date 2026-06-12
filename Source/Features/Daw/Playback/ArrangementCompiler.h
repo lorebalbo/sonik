@@ -143,6 +143,13 @@ public:
             if (!lanesNode.isValid())
                 continue;
 
+            // EPIC-0011: the deck this track (channel group) belongs to. Stamped
+            // onto every lane of the group so the renderer can replay the group's
+            // recorded mixer automation (gain / EQ / filter) through the matching
+            // mixer channel (deckIndex == mixer channel index, identity A→0 … D→3).
+            const int trackDeckIndex =
+                static_cast<int> (trackNode.getProperty (DawIDs::deckIndex, -1));
+
             for (int l = 0; l < lanesNode.getNumChildren(); ++l)
             {
                 auto laneNode = lanesNode.getChild (l);
@@ -158,6 +165,7 @@ public:
                     continue; // lane cap exceeded
 
                 auto& laneSnap = out.lanes[laneIdx];
+                laneSnap.channelIndex = trackDeckIndex;
 
                 auto clipsNode = laneNode.getChildWithName (DawIDs::clips);
                 if (!clipsNode.isValid())
