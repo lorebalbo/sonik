@@ -130,6 +130,7 @@ namespace AutomationParams
         return parameterId == "tempo"
             || parameterId == "filter"
             || parameterId == "gain"
+            || parameterId == "volume"
             || parameterId == "high"   || parameterId == "eq.high"
             || parameterId == "mid"    || parameterId == "eq.mid"
             || parameterId == "low"    || parameterId == "eq.low";

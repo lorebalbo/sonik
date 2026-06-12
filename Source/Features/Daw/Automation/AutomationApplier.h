@@ -9,8 +9,8 @@
 // THROUGH THE SAME SINGLE-SOURCE-OF-TRUTH PATH the live UI / MIDI controls use —
 // never a parallel back door:
 //
-//   - Continuous mixer params (filter / gain / eq.high|mid|low) → the mixer
-//     ValueTree property (EPIC-0007 smoothing downstream delivers them
+//   - Continuous mixer params (volume / filter / gain / eq.high|mid|low) → the
+//     mixer ValueTree property (EPIC-0007 smoothing downstream delivers them
 //     click-free; the applier adds NO second smoother).
 //   - Master tempo (owner "master", param "tempo") → an injected tempo sink,
 //     bound in production to MasterClockManager::setAutomationTempoOverride so
@@ -231,6 +231,7 @@ private:
 
         if (param == "filter")       { tree = mixer_.getChannelTree (ch);   prop = MixerIDs::filter; }
         else if (param == "gain")    { tree = mixer_.getChannelTree (ch);   prop = MixerIDs::gain;   }
+        else if (param == "volume")  { tree = mixer_.getChannelTree (ch);   prop = MixerIDs::fader;  }
         else if (param == "eq.high" || param == "high")
                                      { tree = mixer_.getChannelEqTree (ch); prop = MixerIDs::high;   }
         else if (param == "eq.mid"  || param == "mid")
@@ -250,7 +251,8 @@ private:
         if (std::abs (current - value) <= kContinuousEpsilon)
             return;
 
-        // Stored verbatim in native units (filter bipolar [-1,1]; eq/gain dB).
+        // Stored verbatim in native units (filter bipolar [-1,1]; eq/gain dB;
+        // volume linear [0,1]).
         tree.setProperty (prop, value, nullptr);
     }
 

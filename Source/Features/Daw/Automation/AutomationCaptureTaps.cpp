@@ -187,6 +187,15 @@ void AutomationCaptureTaps::handleContinuous (Tap& tap, double value, std::int64
     if (std::abs (value - tap.lastValue) <= tap.thinning.valueDeadband)
         return;
 
+    // Rest-gap discontinuity: the control sat untouched since the last appended
+    // breakpoint (gesture appends arrive far more often than the rest gap), so
+    // this change is a NEW touch — a drag start or an instant reset (double-
+    // click / MIDI jump). Mark the previous breakpoint's outgoing segment as
+    // step/hold so playback keeps the resting value until this instant and then
+    // jumps, instead of ramping linearly across the whole idle span.
+    if (playhead - tap.lastSample >= restGapSamples_ && tap.lastBreakpoint.isValid())
+        sink_.setBreakpointInterpolation (tap.lastBreakpoint, Interpolation::Step);
+
     tap.lastBreakpoint = sink_.appendBreakpoint (tap.owner, tap.parameterId,
                                                  playhead, value, tap.interpolation);
     tap.lastSample = playhead;

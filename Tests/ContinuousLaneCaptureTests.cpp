@@ -49,28 +49,29 @@ public:
 
     void runTest() override
     {
-        twentyLanesWithCorrectKeys();
+        twentyFourLanesWithCorrectKeys();
         initialBreakpointPerLaneAtRecordStart();
         armedFilterSweepIsDecimatedIntoChannelALane();
         disarmedSweepAppendsNothing();
         eqRideCapturedInCorrectBandInDecibels();
         filterDetentValueCapturedVerbatim();
+        volumeFaderRideCapturedIntoVolumeLane();
     }
 
 private:
     //==========================================================================
-    void twentyLanesWithCorrectKeys()
+    void twentyFourLanesWithCorrectKeys()
     {
-        beginTest ("Twenty continuous lanes exist with the correct (channel, parameter) keys");
+        beginTest ("Twenty-four continuous lanes exist with the correct (channel, parameter) keys");
 
         Harness h;
-        h.taps.captureInitialValues (0); // lazily creates all twenty lanes
+        h.taps.captureInitialValues (0); // lazily creates all twenty-four lanes
 
-        expectEquals (h.taps.getNumTaps(), 20);
-        expectEquals (h.model.getNumLanes(), 20);
+        expectEquals (h.taps.getNumTaps(), 24);
+        expectEquals (h.model.getNumLanes(), 24);
 
         const char* owners[4] = { "A", "B", "C", "D" };
-        const char* params[5] = { "filter", "gain", "eq.high", "eq.mid", "eq.low" };
+        const char* params[6] = { "filter", "gain", "volume", "eq.high", "eq.mid", "eq.low" };
         for (auto* o : owners)
             for (auto* p : params)
                 expect (h.model.hasLane (o, p), juce::String ("missing lane ") + o + "." + p);
@@ -218,6 +219,44 @@ private:
         const double resting = ContinuousLane::valueOfNode (
             filterLane.getBreakpoint (filterLane.getNumBreakpoints() - 1));
         expectWithinAbsoluteError (resting, 0.0, 1.0e-9);
+    }
+
+    //==========================================================================
+    void volumeFaderRideCapturedIntoVolumeLane()
+    {
+        beginTest ("Deck volume fader ride is captured into the channel's volume lane");
+
+        Harness h;
+        h.taps.captureInitialValues (0);
+        h.armed = true;
+
+        auto channelA = h.mixer.getChannelTree (0);
+
+        // The seed records the schema default (full open).
+        auto volumeLane = h.lane ("A", "volume");
+        expectEquals (volumeLane.getNumBreakpoints(), 1);
+        expectWithinAbsoluteError (ContinuousLane::valueOfNode (volumeLane.getBreakpoint (0)),
+                                   (double) MixerStateSchema::kDefaultFader, 1.0e-9);
+
+        // Pull the fader down 1.0 -> 0.0 in 50 steps of 0.02 — finer-grained
+        // appends than the 0.01 deadband drops, coarse enough to keep shape.
+        for (int i = 1; i <= 50; ++i)
+        {
+            h.playhead = i * 100;
+            channelA.setProperty (MixerIDs::fader, 1.0 - 0.02 * (double) i, nullptr);
+        }
+
+        const int n = h.lane ("A", "volume").getNumBreakpoints();
+        expect (n > 10, "expected enough breakpoints to preserve the fade shape");
+
+        auto mid = h.lane ("A", "volume").evaluateAt (2500);
+        expect (mid.has_value());
+        expectWithinAbsoluteError (*mid, 0.5, 0.05);
+
+        // Only channel A's volume lane moved; gain stays seed-only (volume and
+        // gain are separate lanes on the same channel node).
+        expectEquals (h.lane ("A", "gain").getNumBreakpoints(), 1);
+        expectEquals (h.lane ("B", "volume").getNumBreakpoints(), 1);
     }
 };
 

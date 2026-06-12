@@ -364,8 +364,9 @@ public:
                 return {};
             };
 
-        // PRD-0090: the twenty continuous per-channel mixer lanes (filter / gain /
-        // eq.high|mid|low for channels A..D), observed on the mixer ValueTrees.
+        // PRD-0090: the twenty-four continuous per-channel mixer lanes (volume /
+        // filter / gain / eq.high|mid|low for channels A..D), observed on the
+        // mixer ValueTrees.
         automationCaptureTaps = std::make_unique<Daw::AutomationCaptureTaps> (
                                     isRecordingArmed, recordPlayhead, *automationSink);
         Daw::ChannelContinuousAutomationCapture::registerTaps (*automationCaptureTaps, mixerSchema);

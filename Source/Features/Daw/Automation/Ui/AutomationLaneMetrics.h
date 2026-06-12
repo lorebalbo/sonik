@@ -51,6 +51,7 @@ struct AutomationLaneMetrics
 //                                          mixer's full [-60,+12] capture range;
 //                                          values are clamped into the window for
 //                                          display only — the model is untouched)
+//   volume           linear   [0, 1]     (the channel fader's full native range)
 //   tempo            BPM      [60, 200]  (a sensible default window; the screenshot
 //                                          tool / callers may pass data-derived
 //                                          min/max instead)
@@ -102,6 +103,12 @@ struct AutomationValueRange
             r.minValue = -1.0; r.maxValue = 1.0;
             r.minLabel = "-1";  r.maxLabel = "+1";
             r.paramLabel = "FILTER";
+        }
+        else if (parameterId == "volume")
+        {
+            r.minValue = 0.0; r.maxValue = 1.0;
+            r.minLabel = "0"; r.maxLabel = "1";
+            r.paramLabel = "VOLUME";
         }
         else if (parameterId == "gain")
         {

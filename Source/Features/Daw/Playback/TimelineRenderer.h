@@ -247,11 +247,14 @@ public:
         }
 
         // 5. Run each active channel group through its mixer DSP and sum into
-        //    masterFeed. Gain / EQ / filter come from the SAME mixer atomics the
-        //    live signal reads — recorded automation drives them via PRD-0092 →
-        //    MixerStateBridge. The fader is forced to unity: the automatable group
-        //    parameters are gain / EQ / filter, and the live volume fader must not
-        //    silence recorded-arrangement playback.
+        //    masterFeed. Volume / gain / EQ / filter come from the SAME mixer
+        //    atomics the live signal reads — recorded automation drives them via
+        //    PRD-0092 → MixerStateBridge. The fader is included since the volume
+        //    fader is now an automatable group parameter: during playback the
+        //    applier writes the recorded fader value through the authoritative
+        //    mixer tree, so the group honours recorded volume rides (a recording
+        //    seeds every lane at record start, so playback always restores the
+        //    fader the performance began with).
         if (mixer != nullptr)
         {
             for (int g = 0; g < kNumGroups; ++g)
@@ -277,7 +280,7 @@ public:
                 s.killHigh = a.killHigh.load (std::memory_order_relaxed);
                 s.killMid  = a.killMid.load  (std::memory_order_relaxed);
                 s.killLow  = a.killLow.load  (std::memory_order_relaxed);
-                s.fader    = 1.0f;
+                s.fader    = a.fader.load    (std::memory_order_relaxed);
 
                 float* gl = groupBuffer_[g].getWritePointer (0);
                 float* gr = groupBuffer_[g].getWritePointer (1);

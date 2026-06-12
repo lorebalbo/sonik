@@ -80,6 +80,7 @@ public:
     {
         interpolationPureFunctionLinearAndStep();
         continuousMixerLaneWritesInterpolatedValue();
+        volumeLaneWritesChannelFader();
         continuousMixerStepHoldWrites();
         tempoLaneDrivesSink();
         tempoLaneDrivesMasterClockOverride();
@@ -159,6 +160,32 @@ private:
         // No tempo / boolean writes happened for continuous mixer lanes.
         expectEquals ((int) h.tempoWrites.size(), 0);
         expectEquals ((int) h.boolWrites.size(),  0);
+    }
+
+    //==========================================================================
+    void volumeLaneWritesChannelFader()
+    {
+        beginTest ("Volume lane writes the channel's authoritative fader property");
+
+        Harness h;
+
+        // A recorded fade-out on channel A: full open -> closed over 2000 samples.
+        auto volume = h.continuous ("A", "volume");
+        volume.addBreakpoint (0,    1.0, Interpolation::Linear);
+        volume.addBreakpoint (2000, 0.0, Interpolation::Linear);
+
+        h.transport.play();
+        h.transport.seek (500);      // 1/4 of the way through the fade
+        h.applier.tick();
+
+        auto chA = h.mixer.getChannelTree (0);
+        expectWithinAbsoluteError ((double) chA.getProperty (MixerIDs::fader), 0.75, 1.0e-6);
+
+        // The fader of an untouched channel stays at its default.
+        auto chB = h.mixer.getChannelTree (1);
+        expectWithinAbsoluteError ((double) chB.getProperty (MixerIDs::fader,
+                                                             MixerStateSchema::kDefaultFader),
+                                   (double) MixerStateSchema::kDefaultFader, 1.0e-6);
     }
 
     //==========================================================================

@@ -1,10 +1,10 @@
 #pragma once
 //==============================================================================
-// PRD-0090: Per-Channel Continuous Automation Lanes — Filter / High / Mid / Low
-// / Gain.
+// PRD-0090: Per-Channel Continuous Automation Lanes — Volume / Filter / High /
+// Mid / Low / Gain.
 //
-// Wires the five authoritative per-channel mixer parameters of all four channels
-// (twenty continuous lanes) into the generic PRD-0088 capture taps. This is pure
+// Wires the six authoritative per-channel mixer parameters of all four channels
+// (twenty-four continuous lanes) into the generic PRD-0088 capture taps. This is pure
 // registration glue: it binds each lane key (channel letter, parameter id) to
 // its authoritative mixer ValueTree node + property and applies the per-parameter
 // capture-time decimation threshold (§1.5.1). Seeding the initial breakpoint at
@@ -33,8 +33,9 @@ struct ChannelContinuousAutomationCapture
     static constexpr double kFilterDeadband = 0.01;  // bipolar [-1,+1]
     static constexpr double kEqDeadbandDb   = 0.25;  // dB per band
     static constexpr double kGainDeadbandDb = 0.25;  // dB
+    static constexpr double kVolumeDeadband = 0.01;  // linear fader [0,1]
 
-    // Registers the twenty continuous taps into `taps`, bound to the
+    // Registers the twenty-four continuous taps into `taps`, bound to the
     // authoritative mixer ValueTree nodes owned by `mixer`. Channel-id → channel
     // group is the identity mapping A→A … D→D (§1.5.4).
     static void registerTaps (AutomationCaptureTaps& taps, MixerStateSchema& mixer)
@@ -47,11 +48,14 @@ struct ChannelContinuousAutomationCapture
             auto channelTree = mixer.getChannelTree (ch);
             auto eqTree      = mixer.getChannelEqTree (ch);
 
-            // Filter (bipolar) and gain (dB) live directly on the channel node.
+            // Filter (bipolar), gain (dB) and the volume fader (linear [0,1])
+            // live directly on the channel node.
             taps.registerContinuousTap (channelTree, MixerIDs::filter, owner, "filter",
                                         Interpolation::Linear, { kFilterDeadband });
             taps.registerContinuousTap (channelTree, MixerIDs::gain, owner, "gain",
                                         Interpolation::Linear, { kGainDeadbandDb });
+            taps.registerContinuousTap (channelTree, MixerIDs::fader, owner, "volume",
+                                        Interpolation::Linear, { kVolumeDeadband });
 
             // The three EQ bands live on the channel's nested "eq" node, each as
             // its own separate lane (§1.5.3).

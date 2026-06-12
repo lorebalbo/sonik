@@ -61,7 +61,7 @@ public:
     // PRD-0093 (revised): automation-lane disclosure, Logic-style. The track
     // header dropdown selects ONE automatable parameter; only that lane is shown
     // beneath the source lanes. Revealing without an explicit selection shows
-    // the default parameter (gain/volume).
+    // the default parameter (volume).
     bool isAutomationRevealed() const noexcept { return automationRevealed_; }
     void setAutomationRevealed (bool shouldBeRevealed);
 
@@ -186,9 +186,10 @@ private:
     bool collapsed_ { false };
     bool automationRevealed_ { false };
 
-    // The parameter the header dropdown currently targets ("gain" by default so
-    // a bare reveal shows the volume lane, like Logic's default Volume display).
-    juce::String selectedAutoParam_ { "gain" };
+    // The parameter the header dropdown currently targets ("volume" by default
+    // so a bare reveal shows the channel-fader lane, like Logic's default
+    // Volume display — and it matches the volume fader sitting in the header).
+    juce::String selectedAutoParam_ { "volume" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChannelGroupView)
 };

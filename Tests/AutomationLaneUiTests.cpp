@@ -240,20 +240,20 @@ public:
         }
 
         //----------------------------------------------------------------------
-        beginTest ("automation stack lists 8 lanes with populated lanes first");
+        beginTest ("automation stack lists 9 lanes with populated lanes first");
         {
             auto daw = DawState::createDawBranch();
             Daw::AutomationModel model (daw);
             auto transform = makeTransform();
 
-            // Seed a populated gain lane (4th continuous spec) so it should be
+            // Seed a populated gain lane (2nd continuous spec) so it should be
             // pulled to the FRONT of the ordering.
             auto gain = model.getOrCreateContinuousLane ("A", "gain");
             gain.addBreakpoint (0, 0.0, Daw::Interpolation::Linear);
 
             Daw::AutomationLaneStackView stackView ("A", model, transform);
-            // 5 continuous + 3 boolean.
-            expectEquals (stackView.getNumLaneViews(), 8);
+            // 6 continuous + 3 boolean.
+            expectEquals (stackView.getNumLaneViews(), 9);
 
             // The first lane view is the populated GAIN lane (a continuous view
             // whose node has a breakpoint).

@@ -22,6 +22,10 @@
 //                                  / the EQ band clamp enforce before the audio
 //                                  thread sees a value, and the range the per-
 //                                  channel capture taps record in native dB).
+//   volume            [0, 1]      linear channel fader (EPIC-0007:
+//                                  MixerParam::clampFader — the authoritative
+//                                  mixer `fader` property the deck volume faders
+//                                  write).
 //   tempo             [20, 300]   BPM (EPIC-0003 / the app-wide BPM acceptance
 //                                  range enforced by DeckShellComponent /
 //                                  ControllerWidget / TrackInfoComponent edit
@@ -71,6 +75,11 @@ struct AutomationParamRange
         {
             // EPIC-0007 dB range: MixerParam::kMinDb (-60) .. kMaxGainDb / kMaxEqDb (+12).
             r.minValue = -60.0; r.maxValue = 12.0;
+        }
+        else if (parameterId == "volume")
+        {
+            // EPIC-0007 linear channel fader range (MixerParam::clampFader).
+            r.minValue = 0.0;   r.maxValue = 1.0;
         }
         else if (parameterId == "tempo")
         {

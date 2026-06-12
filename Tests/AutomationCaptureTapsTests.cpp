@@ -83,6 +83,8 @@ public:
         testArmedBooleanStep();
         testSameSampleCoalescing();
         testRapidSweepThinning();
+        testRestGapHoldThenJump();
+        testActiveSweepStaysLinear();
     }
 
 private:
@@ -218,6 +220,74 @@ private:
         expect (appended < 100, "thinned below the raw change count");
         expect (appended <= 30, "bounded breakpoint count for a smooth sweep");
         expect (appended >= 10, "still a faithful number of points");
+    }
+
+    void testRestGapHoldThenJump()
+    {
+        beginTest ("reset after rest: previous segment becomes step/hold (jump, not ramp)");
+
+        auto daw = DawState::createDawBranch();
+        AutomationModel model (daw);
+        SpySink sink (model);
+
+        bool armed = true;
+        std::int64_t playhead = 1000;
+        AutomationCaptureTaps taps ([&] { return armed; }, [&] { return playhead; }, sink);
+        taps.registerContinuousTap (makeSourceMember(), "gain", "A", "gain");
+
+        // A gesture ends at +6 dB; the control then rests far beyond the gap.
+        source_.setProperty ("gain", 6.0, nullptr);
+        playhead += AutomationCaptureTaps::kDefaultRestGapSamples * 4;
+
+        // Double-click reset: one instantaneous change back to 0 dB.
+        source_.setProperty ("gain", 0.0, nullptr);
+
+        auto lane = model.getContinuousLane ("A", "gain");
+        expectEquals (lane.getNumBreakpoints(), 2);
+
+        // The resting breakpoint's OUTGOING segment is step/hold, so playback
+        // keeps +6 dB until the reset instant and then jumps to 0 dB.
+        expect (ContinuousLane::interpolationOfNode (lane.getBreakpoint (0))
+                    == Interpolation::Step,
+                "segment across the idle span holds the resting value");
+        expect (ContinuousLane::interpolationOfNode (lane.getBreakpoint (1))
+                    == Interpolation::Linear,
+                "capture resumes linear after the jump");
+
+        const auto justBeforeReset = lane.evaluateAt (playhead - 1);
+        expect (justBeforeReset.has_value());
+        expectWithinAbsoluteError (*justBeforeReset, 6.0, 1.0e-9);
+
+        const auto atReset = lane.evaluateAt (playhead);
+        expect (atReset.has_value());
+        expectWithinAbsoluteError (*atReset, 0.0, 1.0e-9);
+    }
+
+    void testActiveSweepStaysLinear()
+    {
+        beginTest ("an active sweep (gaps below the rest threshold) stays linear");
+
+        auto daw = DawState::createDawBranch();
+        AutomationModel model (daw);
+        SpySink sink (model);
+
+        bool armed = true;
+        std::int64_t playhead = 0;
+        AutomationCaptureTaps taps ([&] { return armed; }, [&] { return playhead; }, sink);
+        taps.registerContinuousTap (makeSourceMember(), "gain", "A", "gain");
+
+        // Drag events ~16 ms apart (705 samples at 44.1 kHz), far below the gap.
+        for (int i = 1; i <= 20; ++i)
+        {
+            playhead = i * 705;
+            source_.setProperty ("gain", 0.05 * i, nullptr);
+        }
+
+        auto lane = model.getContinuousLane ("A", "gain");
+        for (int i = 0; i < lane.getNumBreakpoints(); ++i)
+            expect (ContinuousLane::interpolationOfNode (lane.getBreakpoint (i))
+                        == Interpolation::Linear,
+                    "no step segments inside a continuous gesture");
     }
 
     // Helper: each test uses a fresh source_ member kept alive for the test body.

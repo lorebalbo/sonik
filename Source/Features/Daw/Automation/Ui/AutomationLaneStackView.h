@@ -3,8 +3,8 @@
 // PRD-0093: AutomationLaneStackView — the vertical list of one owner's automation
 // lanes, revealed beneath a channel group's three source lanes (§1.5.1).
 //
-// Lane order (§1.5.4): continuous filter / high / mid / low / gain, then boolean
-// keyLock / pitchStretch / keyStepper. Populated lanes (lane node present in the
+// Lane order (§1.5.4): continuous volume / gain / filter / high / mid / low,
+// then boolean keyLock / pitchStretch / keyStepper. Populated lanes (lane node present in the
 // model) are listed FIRST in that relative order, then empty ones — so the DJ
 // sees recorded lanes without scrolling. Lane nodes are resolved-or-created from
 // the AutomationModel for the owner (channel letter from deckIndex via the
@@ -164,9 +164,10 @@ private:
 
     // Canonical relative order (§1.5.4). One definition shared by the stack
     // builder and the public getAvailableParameters() menu source.
-    static const std::array<LaneSpec, 8>& parameterSpecs()
+    static const std::array<LaneSpec, 9>& parameterSpecs()
     {
-        static const std::array<LaneSpec, 8> kSpecs { {
+        static const std::array<LaneSpec, 9> kSpecs { {
+            { "volume",       false },
             { "gain",         false },
             { "filter",       false },
             { "eq.high",      false },

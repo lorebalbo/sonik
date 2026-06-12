@@ -138,6 +138,20 @@ public:
 
     int getNumTaps() const noexcept { return (int) taps_.size(); }
 
+    //--------------------------------------------------------------------------
+    // Rest-gap discontinuity threshold. When a continuous change arrives after
+    // the control sat untouched for at least this many timeline samples, the
+    // control was AT REST: the previous breakpoint's outgoing segment is marked
+    // step/hold so playback holds the resting value until the change instant and
+    // then jumps — instead of drawing a slow linear ramp across the whole idle
+    // span (the double-click-reset / re-touch artifact). Within an active
+    // gesture appends arrive far more often than this, so sweeps stay linear.
+    // Default: 0.5 s at the 44.1 kHz project rate breakpoints are stamped in.
+    static constexpr std::int64_t kDefaultRestGapSamples = 22050;
+
+    void setRestGapSamples (std::int64_t samples) noexcept { restGapSamples_ = samples; }
+    std::int64_t getRestGapSamples() const noexcept        { return restGapSamples_; }
+
 private:
     //--------------------------------------------------------------------------
     void valueTreePropertyChanged (juce::ValueTree& tree, const juce::Identifier& property) override;
@@ -171,6 +185,8 @@ private:
     std::function<std::int64_t()> recordPlayhead_;
     AutomationAppendSink&         sink_;
     std::function<bool()>         applyingAutomationGuard_; // PRD-0092, optional
+
+    std::int64_t                 restGapSamples_ { kDefaultRestGapSamples };
 
     std::vector<Tap>             taps_;
     std::list<juce::ValueTree>   listenedTrees_; // stable addresses: a moved
