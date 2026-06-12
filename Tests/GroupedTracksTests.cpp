@@ -15,6 +15,10 @@
 #include "Features/Daw/Model/DawClip.h"
 #include "Features/Daw/Model/MuteSolo.h"
 #include "Features/Daw/Playback/ArrangementCompiler.h"
+#include "Features/Daw/Playback/ArrangementPublisher.h"
+#include "Features/Daw/Playback/ClipStreamer.h"
+#include "Features/Daw/Playback/TimelineRenderer.h"
+#include "Features/Daw/Import/ImportSourcePublisher.h"
 #include "Features/Daw/Transform/TimelineTransform.h"
 #include "Features/Daw/Ui/DawLayoutMetrics.h"
 #include "Features/Daw/Automation/AutomationModel.h"
@@ -257,6 +261,68 @@ public:
             // Turning the parameter OFF removes the row in either state.
             group->setAutomationParameter ({});
             expectEquals (group->getPreferredHeight(), Daw::DawLayout::kCollapsedGroupHeight);
+        }
+
+        //----------------------------------------------------------------------
+        beginTest ("deck-group fader meter: renderer publishes playback levels");
+        {
+            Daw::ArrangementPublisher publisher;
+            Daw::ClipStreamerPool     pool (4);
+            std::atomic<int64_t>      playhead { 0 };
+
+            Daw::TimelineRenderer renderer (publisher, pool, playhead);
+            renderer.prepare (44100.0, 512, Daw::kMaxLanes, Daw::kMaxClipsPerLane);
+
+            MixerMeterSnapshot meters;
+            renderer.setMeterSnapshot (&meters);
+
+            // Prime slot 0 with a constant 0.5-amplitude stereo source.
+            {
+                juce::AudioBuffer<float> buf (2, 44100);
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 44100; ++i)
+                        buf.setSample (ch, i, 0.5f);
+                AudioBufferHolder::Ptr holder = new AudioBufferHolder (std::move (buf), 44100.0, 44100);
+                pool.prime (0, std::make_unique<Daw::Import::BufferAudioFormatReader> (holder),
+                            44100.0, 0, 44100);
+                if (auto* s = pool.getStreamer (0))
+                    s->waitUntilReady (512);
+            }
+
+            // One clip on channel group 0 (deck A).
+            Daw::ArrangementSnapshot snap;
+            snap.laneCount = 1;
+            snap.lanes[0].channelIndex = 0;
+            snap.lanes[0].count = 1;
+            auto& ev = snap.lanes[0].events[0];
+            ev.timelineStartSample = 0;
+            ev.timelineEndSample   = 44100;
+            ev.sourceStartSample   = 0;
+            ev.sourceEndSample     = 44100;
+            ev.sourceReadHandle    = 0;
+            ev.gain                = 1.0f;
+            publisher.publish (snap);
+
+            MixerAtomicSnapshot mixer; // defaults: unity gain / EQ, no filter
+
+            juce::AudioBuffer<float> feed (2, 512);
+            feed.clear();
+            renderer.renderBlock (feed, 512, &mixer);
+
+            const float peakPlaying =
+                meters.channels[0].levelPeakL.load (std::memory_order_relaxed);
+            expect (peakPlaying > 0.1f,
+                    "group meter rises while the arrangement plays through channel 0");
+            expectEquals (meters.channels[1].levelPeakL.load (std::memory_order_relaxed),
+                          0.0f); // other groups untouched
+
+            // Move past the clip: the idle group's meter DECAYS (no freeze).
+            playhead.store (88200);
+            feed.clear();
+            renderer.renderBlock (feed, 512, &mixer);
+            const float peakIdle =
+                meters.channels[0].levelPeakL.load (std::memory_order_relaxed);
+            expect (peakIdle < peakPlaying, "idle group meter decays toward silence");
         }
     }
 };

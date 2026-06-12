@@ -86,6 +86,8 @@ void ChannelGroupStack::rebuildGroups()
         // Track-header volume fader: bind the mixer channel for this deck.
         if (channelResolver_)
             group->setMixerChannelTree (channelResolver_ (deckIndex));
+        if (levelProvider_)
+            group->setChannelLevelProvider (levelProvider_);
 
         addAndMakeVisible (*group);
         groups_.push_back (std::move (group));
@@ -157,6 +159,14 @@ void ChannelGroupStack::setMixerChannelResolver (ChannelResolver resolver)
     for (const auto& g : groups_)
         if (g != nullptr && channelResolver_)
             g->setMixerChannelTree (channelResolver_ (g->getDeckIndex()));
+}
+
+void ChannelGroupStack::setChannelLevelProvider (ChannelGroupView::ChannelLevelProvider provider)
+{
+    levelProvider_ = std::move (provider); // retained so rebuilt groups inherit it
+    for (const auto& g : groups_)
+        if (g != nullptr)
+            g->setChannelLevelProvider (levelProvider_);
 }
 
 void ChannelGroupStack::refreshAutomationTransform()

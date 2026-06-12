@@ -356,6 +356,23 @@ void ChannelGroupView::resized()
         lane->setBounds (bounds.removeFromTop (DawLayout::kLaneHeight));
 }
 
+void ChannelGroupView::paintOverChildren (juce::Graphics& g)
+{
+    // The embrace bracket: a 2-px ink line descending from the left of the
+    // DECK header along every child row (automation + source lanes), closed by
+    // a short horizontal foot — visually grouping the indented children under
+    // their deck. Nothing to embrace when only the header row is shown.
+    const int top    = DawLayout::kGroupHeaderHeight;
+    const int bottom = getHeight() - 4;
+    if (bottom <= top)
+        return;
+
+    const int x = DawLayout::kGroupChildIndent / 2 - 1;
+    g.setColour (juce::Colour (0xFF2D2D2D));
+    g.fillRect (x, top, 2, bottom - top);
+    g.fillRect (x, bottom - 2, 8, 2);
+}
+
 juce::ValueTree ChannelGroupView::laneTreeAt (juce::Point<int> pointInGroup) const
 {
     if (collapsed_)

@@ -73,6 +73,16 @@ public:
     // The mixer channel node backing the header volume fader (deck N -> channel N).
     void setMixerChannelTree (juce::ValueTree channelTree);
 
+    // Fader level meter: maps a channel index to its current linear peak level.
+    using ChannelLevelProvider = std::function<float (int channelIndex)>;
+    void setChannelLevelProvider (const ChannelLevelProvider& provider)
+    {
+        if (provider)
+            header_.setLevelProvider ([provider, idx = deckIndex_]() { return provider (idx); });
+        else
+            header_.setLevelProvider ({});
+    }
+
     int getPreferredHeight() const noexcept
     {
         // The revealed automation lane survives a group collapse (it sits
@@ -110,6 +120,11 @@ public:
 
     void resized() override;
 
+    // Grouped-tracks: the vertical ink bracket descending from the DECK header
+    // along the indented child rows (drawn above the lanes so it stays visible
+    // over their header fills).
+    void paintOverChildren (juce::Graphics& g) override;
+
     // Exposed for tests: which lanes are currently active.
     bool isLaneActive (ChannelGroup::LaneKind kind) const;
 
@@ -118,6 +133,9 @@ public:
     {
         return lanes_[static_cast<size_t> (kind)]->isAudible();
     }
+
+    // Test access to the header (fader meter state).
+    ChannelGroupHeader& getHeaderForTests() noexcept { return header_; }
 
     // PRD-0098: the lane ValueTree whose content row contains `pointInGroup`
     // (group-local coordinates), or an invalid tree when the point is over the

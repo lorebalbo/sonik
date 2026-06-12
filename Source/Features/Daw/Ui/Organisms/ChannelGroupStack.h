@@ -64,6 +64,11 @@ public:
     // authoritative channel fader. Retained for groups rebuilt later.
     void setMixerChannelResolver (ChannelResolver resolver);
 
+    // Fader level meters: maps a channel index to its current linear peak
+    // level (live + arrangement playback, resolved by the host). Retained for
+    // groups rebuilt later.
+    void setChannelLevelProvider (ChannelGroupView::ChannelLevelProvider provider);
+
     // PRD-0093: reposition automation lanes after a transform change.
     void refreshAutomationTransform();
 
@@ -123,6 +128,7 @@ private:
     const TimelineTransform& transform_;
     DeckResolver      deckResolver_;
     ChannelResolver   channelResolver_;
+    ChannelGroupView::ChannelLevelProvider levelProvider_;
     ClipBlock::WaveformSource waveformSource_;
     ClipBlock::NameSource     nameSource_;
     AutomationModel*  automationModel_ { nullptr };

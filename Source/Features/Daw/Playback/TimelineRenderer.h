@@ -27,8 +27,10 @@
 #include "ClipStreamer.h"
 
 #include "../../Mixer/State/MixerAtomicSnapshot.h"        // PRD-0052
+#include "../../Mixer/State/MixerMeterSnapshot.h"         // PRD-0058 (deck-group meters)
 #include "../../Mixer/Routing/ChannelStripProcessor.h"    // PRD-0054
 #include "../../Mixer/Routing/ChannelStripSnapshot.h"     // PRD-0053
+#include "../../Mixer/Routing/ChannelMeter.h"             // PRD-0058 ballistics
 
 namespace Daw
 {
@@ -101,6 +103,25 @@ public:
         // Pre-build per-clip state arrays.
         clipState_.fill (ClipState{});
         prevActiveHandles_.fill (-1);
+
+        // Deck-group level meters: standard PRD-0058 ballistics over each
+        // group's post-DSP output, published into the wired snapshot (if any).
+        for (int g = 0; g < kNumGroups; ++g)
+        {
+            groupMeters_[g].prepare (sampleRate);
+            groupMeters_[g].setSlot (meterSnapshot_ != nullptr
+                                         ? &meterSnapshot_->channels[g] : nullptr);
+        }
+    }
+
+    /// Wire the DAW-side meter snapshot the group meters publish into (one
+    /// ChannelMeterSlots per deck/channel). Message thread, before the audio
+    /// callback consumes this renderer; nullptr disables group metering.
+    void setMeterSnapshot (MixerMeterSnapshot* meters) noexcept
+    {
+        meterSnapshot_ = meters;
+        for (int g = 0; g < kNumGroups; ++g)
+            groupMeters_[g].setSlot (meters != nullptr ? &meters->channels[g] : nullptr);
     }
 
     void releaseResources() noexcept {}
@@ -236,7 +257,15 @@ public:
             for (int g = 0; g < kNumGroups; ++g)
             {
                 if (! groupActive[g])
+                {
+                    // Idle group: run the meter over the cleared accumulator so
+                    // its published level DECAYS to silence instead of freezing
+                    // at the last audible value (no-op when no slot is wired).
+                    groupMeters_[g].processBlock (groupBuffer_[g].getReadPointer (0),
+                                                  groupBuffer_[g].getReadPointer (1),
+                                                  numSamples);
                     continue;
+                }
 
                 const ChannelAtomicParams& a = mixer->channels[g];
                 ChannelStripSnapshot s;
@@ -253,6 +282,10 @@ public:
                 float* gl = groupBuffer_[g].getWritePointer (0);
                 float* gr = groupBuffer_[g].getWritePointer (1);
                 channelStrips_[g].process (gl, gr, gl, gr, numSamples, s);
+
+                // Publish this group's post-DSP level for the deck-group
+                // header meter (relaxed atomic stores; nullptr slot = no-op).
+                groupMeters_[g].processBlock (gl, gr, numSamples);
 
                 for (int c = 0; c < 2; ++c)
                     masterFeed.addFrom (c, 0, groupBuffer_[g].getReadPointer (c), numSamples);
@@ -341,10 +374,16 @@ private:
     juce::AudioBuffer<float>     clipBuffer_;
 
     // EPIC-0011: per-channel group accumulators + their mixer DSP. Each strip
-    // owns persistent smoother / EQ / filter state across blocks (no meter slot,
-    // so metering is a no-op here) and is reset in prepare().
+    // owns persistent smoother / EQ / filter state across blocks and is reset
+    // in prepare(). Group metering runs through groupMeters_ (below) rather
+    // than the strips' internal slot so idle groups can still decay.
     juce::AudioBuffer<float>     groupBuffer_[kNumGroups];
     ChannelStripProcessor        channelStrips_[kNumGroups];
+
+    // Deck-group level meters (PRD-0058 ballistics) publishing into the wired
+    // DAW-side MixerMeterSnapshot — the source for the header fader meters.
+    ChannelMeter                 groupMeters_[kNumGroups];
+    MixerMeterSnapshot*          meterSnapshot_ { nullptr };
 
     // Anti-click ramp table.
     float rampTable_[kRampLengthSamples];

@@ -123,6 +123,13 @@ public:
         stack_.setMixerChannelResolver (std::move (resolver));
     }
 
+    // Fader level meters: maps a channel index to its current linear peak level
+    // (the host resolves live + arrangement-playback meter snapshots).
+    void setChannelLevelProvider (ChannelGroupView::ChannelLevelProvider provider)
+    {
+        stack_.setChannelLevelProvider (std::move (provider));
+    }
+
     //--------------------------------------------------------------------------
     // PRD-0082: DAW transport control callbacks.
     // Wire these to a DawTransport instance (owned by the SonikApplication or AudioEngine).

@@ -36,6 +36,12 @@ struct DawLayout
     // Number of lanes per channel group (Original / Instrumental / Vocal).
     static constexpr int kLanesPerGroup = 3;
 
+    // Grouped-tracks: child rows (source lanes, deck automation) are indented
+    // by this much inside the header gutter, and the group draws a vertical
+    // ink bracket in the freed strip — the Logic "track stack" embrace that
+    // makes the deck's children read as one group. 2-px grid aligned.
+    static constexpr int kGroupChildIndent = 12;
+
     // Fully-expanded height of one channel group.
     static constexpr int kExpandedGroupHeight =
         kGroupHeaderHeight + kLanesPerGroup * kLaneHeight;

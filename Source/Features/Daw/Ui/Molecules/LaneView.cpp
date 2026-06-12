@@ -280,10 +280,14 @@ void LaneView::paint (juce::Graphics& g)
     g.setColour (kInk);
     g.fillRect (gutter - 2, bounds.getY(), 2, bounds.getHeight());
 
+    // The label is indented past the group's embrace bracket (drawn by the
+    // owning ChannelGroupView in the freed left strip) so the three lanes read
+    // as children of the DECK header.
     g.setColour ((active_ && audible_) ? kInk : kInkDim);
     g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::bold)));
     g.drawText (labelForKind (kind_),
-                headerCell.withTrimmedLeft (20).withTrimmedRight (52),
+                headerCell.withTrimmedLeft (20 + DawLayout::kGroupChildIndent)
+                          .withTrimmedRight (52),
                 juce::Justification::centredLeft, false);
 }
 
