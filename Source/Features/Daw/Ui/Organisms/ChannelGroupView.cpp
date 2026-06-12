@@ -6,6 +6,8 @@
 
 #include "Features/Deck/SourceModeReader.h"
 
+#include "../../Model/MuteSolo.h"
+
 namespace Daw
 {
 
@@ -44,8 +46,15 @@ ChannelGroupView::ChannelGroupView (juce::ValueTree trackTree,
         ChannelGroup::findLane (trackTree_, ChannelGroup::LaneKind::Vocal), waveformSource, nameSource);
 
     addAndMakeVisible (header_);
+    header_.setTrackTree (trackTree_); // group-level M / S toggles
     for (auto& lane : lanes_)
         addAndMakeVisible (*lane);
+
+    // Collapsed-group ghost overview: hidden while expanded, shown over the
+    // header's timeline area when the group folds. Added AFTER the header so
+    // it paints above the header's flat band (it never intercepts the mouse).
+    overviewStrip_ = std::make_unique<GroupOverviewStrip> (trackTree_, transform);
+    addChildComponent (*overviewStrip_);
 
     // PRD-0093 (revised): build the automation stack now (so populated/empty
     // ordering and preferred height are correct) but keep it HIDDEN until a
@@ -56,6 +65,9 @@ ChannelGroupView::ChannelGroupView (juce::ValueTree trackTree,
     {
         automationStack_ = std::make_unique<AutomationLaneStackView> (
             ownerForDeckIndex (deckIndex_), *automationModel_, transform);
+        // The deck's automation lane reads at the same height as a source lane
+        // (it is a first-class row of the group, directly below the header).
+        automationStack_->setLaneRowHeight (DawLayout::kLaneHeight);
         automationStack_->setVisibleParameter (selectedAutoParam_);
         automationStack_->setVisible (false);
         addChildComponent (*automationStack_);
@@ -69,6 +81,7 @@ ChannelGroupView::ChannelGroupView (juce::ValueTree trackTree,
         deckTree_.addListener (this);
 
     refreshLaneActiveness();
+    refreshAudibility();
 }
 
 ChannelGroupView::~ChannelGroupView()
@@ -88,9 +101,15 @@ void ChannelGroupView::setCollapsed (bool shouldBeCollapsed)
     for (auto& lane : lanes_)
         lane->setVisible (! collapsed_);
 
-    // Collapsing the whole group also hides any revealed automation lanes.
+    // The ghost overview replaces the lanes while folded.
+    if (overviewStrip_ != nullptr)
+        overviewStrip_->setVisible (collapsed_);
+
+    // A revealed automation lane stays visible across a collapse: it sits
+    // directly below the DECK header in both states, so the recorded gestures
+    // of that deck remain in view even when the stems are folded away.
     if (automationStack_ != nullptr)
-        automationStack_->setVisible (! collapsed_ && automationRevealed_);
+        automationStack_->setVisible (automationRevealed_);
 
     resized();
 
@@ -105,7 +124,7 @@ void ChannelGroupView::setAutomationRevealed (bool shouldBeRevealed)
 
     automationRevealed_ = shouldBeRevealed;
     automationStack_->setVisibleParameter (selectedAutoParam_);
-    automationStack_->setVisible (! collapsed_ && automationRevealed_);
+    automationStack_->setVisible (automationRevealed_);
     updateHeaderAutomationDisplay();
 
     resized();
@@ -228,6 +247,31 @@ void ChannelGroupView::refreshClipLayout()
     for (auto& lane : lanes_)
         if (lane != nullptr)
             lane->refreshClipLayout();
+
+    // The ghost overview maps samples through the same transform.
+    if (overviewStrip_ != nullptr)
+        overviewStrip_->refreshLayout();
+}
+
+void ChannelGroupView::refreshAudibility()
+{
+    // Solo is global: scan the whole tracks container (the track's parent) once,
+    // then apply the shared rule per lane. The overview strip re-derives the
+    // same flags in its paint, so a repaint keeps it in step.
+    const bool soloActive = MuteSolo::anySoloActive (trackTree_.getParent());
+
+    for (int i = 0; i < ChannelGroup::kLaneCount; ++i)
+    {
+        auto laneNode = ChannelGroup::findLane (
+            trackTree_, static_cast<ChannelGroup::LaneKind> (i));
+        lanes_[static_cast<size_t> (i)]->setAudible (
+            laneNode.isValid()
+                ? MuteSolo::isLaneAudible (trackTree_, laneNode, soloActive)
+                : true);
+    }
+
+    if (overviewStrip_ != nullptr)
+        overviewStrip_->refreshLayout();
 }
 
 void ChannelGroupView::setEditDispatcher (Daw::EditCommandDispatcher* dispatcher)
@@ -289,18 +333,44 @@ void ChannelGroupView::valueTreePropertyChanged (juce::ValueTree& tree,
 void ChannelGroupView::resized()
 {
     auto bounds = getLocalBounds();
-    header_.setBounds (bounds.removeFromTop (DawLayout::kGroupHeaderHeight));
+    const auto headerRow = bounds.removeFromTop (DawLayout::kGroupHeaderHeight);
+    header_.setBounds (headerRow);
+
+    // Collapsed ghost overview: the header row's timeline area, inset below the
+    // header's 2-px top ink edge so the track boundary stays visible.
+    if (overviewStrip_ != nullptr)
+        overviewStrip_->setBounds (headerRow.withTrimmedLeft (DawLayout::kTrackHeaderWidth)
+                                            .withTrimmedTop (2));
+
+    // The deck's automation lane is pinned DIRECTLY below its DECK header —
+    // it represents that deck's recorded gestures — and keeps this slot in
+    // both the expanded and the collapsed state.
+    if (automationStack_ != nullptr && automationRevealed_)
+        automationStack_->setBounds (
+            bounds.removeFromTop (automationStack_->getPreferredHeight()));
 
     if (collapsed_)
         return;
 
     for (auto& lane : lanes_)
         lane->setBounds (bounds.removeFromTop (DawLayout::kLaneHeight));
+}
 
-    // PRD-0093: automation lanes occupy the rows BENEATH the three source lanes.
-    if (automationStack_ != nullptr && automationRevealed_)
-        automationStack_->setBounds (
-            bounds.removeFromTop (automationStack_->getPreferredHeight()));
+void ChannelGroupView::paintOverChildren (juce::Graphics& g)
+{
+    // The embrace bracket: a 2-px ink line descending from the left of the
+    // DECK header along every child row (automation + source lanes), closed by
+    // a short horizontal foot — visually grouping the indented children under
+    // their deck. Nothing to embrace when only the header row is shown.
+    const int top    = DawLayout::kGroupHeaderHeight;
+    const int bottom = getHeight() - 4;
+    if (bottom <= top)
+        return;
+
+    const int x = DawLayout::kGroupChildIndent / 2 - 1;
+    g.setColour (juce::Colour (0xFF2D2D2D));
+    g.fillRect (x, top, 2, bottom - top);
+    g.fillRect (x, bottom - 2, 8, 2);
 }
 
 juce::ValueTree ChannelGroupView::laneTreeAt (juce::Point<int> pointInGroup) const

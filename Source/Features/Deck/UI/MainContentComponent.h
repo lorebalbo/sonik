@@ -147,6 +147,25 @@ public:
                 return schema.getChannelTree (channelIndex);
             });
 
+        // Deck-group fader level meters: each header shows the louder of the
+        // LIVE channel meter and the DAW arrangement-playback meter for its
+        // channel, so the bar always reflects what that deck group contributes
+        // to the output. Both snapshots are app-owned PRD-0058 atomics; the
+        // 30 Hz UI poll uses relaxed loads.
+        dawPanel.setChannelLevelProvider (
+            [&meters = mixerMeters, &eng = engine] (int channelIndex) -> float
+            {
+                if (channelIndex < 0 || channelIndex >= 4)
+                    return 0.0f;
+                const auto& live = meters.channels[channelIndex];
+                const auto& daw  = eng.getDawMeterSnapshot().channels[channelIndex];
+                return juce::jmax (
+                    juce::jmax (live.levelPeakL.load (std::memory_order_relaxed),
+                                live.levelPeakR.load (std::memory_order_relaxed)),
+                    juce::jmax (daw.levelPeakL.load (std::memory_order_relaxed),
+                                daw.levelPeakR.load (std::memory_order_relaxed)));
+            });
+
         addAndMakeVisible (toolbar);
         addAndMakeVisible (dawPanel);
         addAndMakeVisible (layoutManager);

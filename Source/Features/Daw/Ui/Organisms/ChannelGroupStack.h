@@ -64,6 +64,11 @@ public:
     // authoritative channel fader. Retained for groups rebuilt later.
     void setMixerChannelResolver (ChannelResolver resolver);
 
+    // Fader level meters: maps a channel index to its current linear peak
+    // level (live + arrangement playback, resolved by the host). Retained for
+    // groups rebuilt later.
+    void setChannelLevelProvider (ChannelGroupView::ChannelLevelProvider provider);
+
     // PRD-0093: reposition automation lanes after a transform change.
     void refreshAutomationTransform();
 
@@ -75,6 +80,11 @@ public:
 
     // PRD-0070: re-place clips in every group after a transform change.
     void refreshClipLayout();
+
+    // Grouped-tracks mute/solo: recompute every group's lane audibility (solo is
+    // global, so one flag flip can dim lanes on every deck). Driven by the
+    // stack's own muted/solo property observation; public for tests/hosts.
+    void refreshAudibility();
 
     // PRD-0083/0084/0085/0086: Wire edit dispatcher into every group/lane.
     void setEditDispatcher (Daw::EditCommandDispatcher* dispatcher);
@@ -104,7 +114,7 @@ public:
     const std::vector<std::unique_ptr<ChannelGroupView>>& getGroups() const { return groups_; }
 
 private:
-    void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override {}
+    void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier&) override;
     void valueTreeChildAdded   (juce::ValueTree& parent, juce::ValueTree& child) override;
     void valueTreeChildRemoved (juce::ValueTree& parent, juce::ValueTree& child, int) override;
     void valueTreeChildOrderChanged (juce::ValueTree&, int, int) override {}
@@ -118,6 +128,7 @@ private:
     const TimelineTransform& transform_;
     DeckResolver      deckResolver_;
     ChannelResolver   channelResolver_;
+    ChannelGroupView::ChannelLevelProvider levelProvider_;
     ClipBlock::WaveformSource waveformSource_;
     ClipBlock::NameSource     nameSource_;
     AutomationModel*  automationModel_ { nullptr };

@@ -52,6 +52,22 @@ public:
     int getNumLaneViews() const noexcept { return static_cast<int> (laneViews_.size()); }
 
     //--------------------------------------------------------------------------
+    // Grouped-tracks: the per-row height of this stack's lanes. Defaults to the
+    // compact automation metric; a channel group sets it to the source-lane
+    // height so its deck automation lane reads as a first-class track row.
+    //--------------------------------------------------------------------------
+    void setLaneRowHeight (int newHeight)
+    {
+        const int clamped = juce::jmax (AutomationLaneMetrics::kAutomationLaneHeight, newHeight);
+        if (laneRowHeight_ == clamped)
+            return;
+        laneRowHeight_ = clamped;
+        resized();
+    }
+
+    int getLaneRowHeight() const noexcept { return laneRowHeight_; }
+
+    //--------------------------------------------------------------------------
     // Logic-style single-parameter display: when a parameterId is set, only that
     // lane is shown (the track header dropdown drives this); an empty id shows
     // every lane (the original PRD-0093 stack behaviour, kept for the master
@@ -92,7 +108,7 @@ public:
 
     int getPreferredHeight() const noexcept
     {
-        return getNumVisibleLaneViews() * AutomationLaneMetrics::kAutomationLaneHeight;
+        return getNumVisibleLaneViews() * laneRowHeight_;
     }
 
     // Inject the shared playhead-sample provider into every lane view.
@@ -132,8 +148,7 @@ public:
         auto bounds = getLocalBounds();
         for (size_t i = 0; i < laneViews_.size(); ++i)
             if (isLaneShown ((int) i))
-                laneViews_[i]->setBounds (
-                    bounds.removeFromTop (AutomationLaneMetrics::kAutomationLaneHeight));
+                laneViews_[i]->setBounds (bounds.removeFromTop (laneRowHeight_));
     }
 
     // Test access.
@@ -232,6 +247,7 @@ private:
     juce::String              owner_;
     AutomationModel&          model_;
     const TimelineTransform&  transform_;
+    int                       laneRowHeight_ { AutomationLaneMetrics::kAutomationLaneHeight };
     juce::String              visibleParam_;   // empty = show all lanes
     std::vector<juce::String> laneParams_;     // parameterId per lane view
     std::vector<std::unique_ptr<AutomationLaneViewBase>> laneViews_;

@@ -151,6 +151,11 @@ public:
                          Daw::ClipStreamerPool*     streamerPool,
                          Daw::DawTransport*         transport) noexcept;
 
+    /// Deck-group fader meters: the engine-owned snapshot the TimelineRenderer
+    /// publishes per-channel-group arrangement-playback levels into. UI meters
+    /// poll it (relaxed atomic loads) exactly like the live MixerMeterSnapshot.
+    MixerMeterSnapshot& getDawMeterSnapshot() noexcept { return dawMeterSnapshot_; }
+
     /// Metronome (testing aid). Toggles an audible click locked to the master
     /// grid. The click is summed into the LIVE output only — it is never part of
     /// the DAW recording (a source-file reconstruction, not an output capture)
@@ -266,6 +271,11 @@ private:
     std::atomic<Daw::TimelineRenderer*>     dawRendererPtr_ { nullptr };
     // Pre-allocated master feed buffer for the timeline renderer (sized in audioDeviceAboutToStart).
     std::vector<float> dawMasterFeedL_, dawMasterFeedR_;
+
+    // Deck-group meter snapshot: written by the timeline renderer's group
+    // meters on the audio thread, polled by the DAW panel headers (PRD-0058
+    // atomics pattern; never part of the ValueTree).
+    MixerMeterSnapshot dawMeterSnapshot_;
 
     // --- Metronome (testing aid) -----------------------------------------
     // Cross-thread controls: message thread writes, audio thread reads.

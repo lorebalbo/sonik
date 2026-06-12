@@ -19,22 +19,30 @@
 // juce::ValueTree::Listener (no polling); no audio-thread code.
 //==============================================================================
 
+#include <cmath>
 #include <functional>
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include "../DawLayoutMetrics.h"
 #include "../Atoms/PixelIcons.h"
+#include "../Atoms/MuteSoloButton.h"
+#include "../../State/DawState.h"
 #include "../../../Mixer/State/MixerIdentifiers.h"
 
 namespace Daw
 {
 
 class ChannelGroupHeader final : public juce::Component,
-                                 private juce::ValueTree::Listener
+                                 private juce::ValueTree::Listener,
+                                 private juce::Timer
 {
 public:
-    explicit ChannelGroupHeader (int deckIndex) : deckIndex_ (deckIndex) {}
+    explicit ChannelGroupHeader (int deckIndex) : deckIndex_ (deckIndex)
+    {
+        addAndMakeVisible (muteButton_);
+        addAndMakeVisible (soloButton_);
+    }
 
     ~ChannelGroupHeader() override
     {
@@ -48,6 +56,36 @@ public:
     // Fired when the automation-parameter dropdown is clicked. The owner (the
     // ChannelGroupView) shows the parameter menu and applies the selection.
     std::function<void()> onAutomationDropdown;
+
+    // Grouped-tracks mute/solo: the M / S toggles write the group-level flags
+    // directly onto the track node (the daw.tracks[i] single source of truth).
+    void setTrackTree (juce::ValueTree trackTree)
+    {
+        muteButton_.setTargetTree (trackTree);
+        soloButton_.setTargetTree (std::move (trackTree));
+    }
+
+    //--------------------------------------------------------------------------
+    // Fader level meter. The provider returns this deck/channel's current
+    // linear peak amplitude (live deck and/or arrangement playback, resolved by
+    // the host); the header polls it at 30 Hz — the PRD-0058 atomics pattern,
+    // never the ValueTree — and draws a dithered bar inside the fader track.
+    //--------------------------------------------------------------------------
+    void setLevelProvider (std::function<float()> provider)
+    {
+        levelProvider_ = std::move (provider);
+        if (levelProvider_)
+            startTimerHz (30);
+        else
+        {
+            stopTimer();
+            levelFraction_ = 0.0f;
+            repaint (faderBounds_.expanded (2, 4));
+        }
+    }
+
+    // Test hook: the currently displayed level fraction [0,1].
+    float getLevelFractionForTests() const noexcept { return levelFraction_; }
 
     //--------------------------------------------------------------------------
     // Mixer channel wiring (volume fader). The header reads/writes the channel
@@ -107,8 +145,11 @@ public:
         const int gutterW = DawLayout::kTrackHeaderWidth;
         const int rowH    = DawLayout::kGroupHeaderHeight / 2;
 
-        // Row 1: collapse toggle flush with the gutter's right padding.
+        // Row 1: collapse toggle flush with the gutter's right padding, with the
+        // group M / S toggles stacked to its left.
         toggleBounds_ = juce::Rectangle<int> (gutterW - 30, 5, 20, 18);
+        soloButton_.setBounds (gutterW - 30 - 22, 5, 18, 18);
+        muteButton_.setBounds (gutterW - 30 - 44, 5, 18, 18);
 
         // Row 2: volume fader left, automation dropdown filling the remainder.
         const int row2Y = rowH;
@@ -133,11 +174,11 @@ public:
         g.fillRect (bounds.getX(), bounds.getY(), bounds.getWidth(), 2);
         g.fillRect (gutterW - 2, bounds.getY(), 2, bounds.getHeight());
 
-        // Row 1 — track name.
+        // Row 1 — track name (trimmed clear of the M / S / collapse cluster).
         g.setColour (kInk);
         g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::bold)));
         g.drawText (labelForDeck (deckIndex_),
-                    juce::Rectangle<int> (12, 2, gutterW - 48,
+                    juce::Rectangle<int> (12, 2, gutterW - 90,
                                           DawLayout::kGroupHeaderHeight / 2 - 2),
                     juce::Justification::centredLeft, false);
 
@@ -229,6 +270,21 @@ private:
         g.setColour (kInk);
         g.drawRect (track, 1);
 
+        // Level meter: a dithered checkerboard fill rising from the left to
+        // the polled channel level (DESIGN.md dithered pattern — no gradient,
+        // no colour), inside the track so the cap still rides on top.
+        const auto inner  = track.reduced (1);
+        const int  levelW = juce::roundToInt (levelFraction_
+                                              * static_cast<float> (inner.getWidth()));
+        if (levelW > 0)
+        {
+            g.setColour (kInk);
+            const auto fill = inner.withWidth (juce::jmin (levelW, inner.getWidth()));
+            for (int y = fill.getY(); y < fill.getBottom(); ++y)
+                for (int x = fill.getX() + (y & 1); x < fill.getRight(); x += 2)
+                    g.fillRect (x, y, 1, 1);
+        }
+
         const int capW = 8;
         const int maxX = faderBounds_.getRight() - capW;
         const int capX = faderBounds_.getX()
@@ -236,6 +292,27 @@ private:
                                            * static_cast<float> (maxX - faderBounds_.getX()));
         g.fillRect (juce::jlimit (faderBounds_.getX(), maxX, capX),
                     faderBounds_.getY() - 3, capW, faderBounds_.getHeight() + 6);
+    }
+
+    // 30 Hz meter poll: linear peak → dB → bar fraction over [-60, 0] dBFS
+    // (the MixLevelMeter window). Repaints only the fader cell, only on change.
+    void timerCallback() override
+    {
+        if (! levelProvider_)
+            return;
+        const float fraction = fractionForLevel (levelProvider_());
+        if (std::abs (fraction - levelFraction_) < 0.004f)
+            return;
+        levelFraction_ = fraction;
+        repaint (faderBounds_.expanded (2, 4));
+    }
+
+    static float fractionForLevel (float linear)
+    {
+        if (linear <= 0.0f)
+            return 0.0f;
+        const float db = 20.0f * std::log10 (linear);
+        return juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f);
     }
 
     // ValueTree::Listener — any channel change may have moved the fader.
@@ -255,6 +332,10 @@ private:
     bool                 automationRevealed_ { false };
     bool                 draggingFader_ { false };
     juce::String         autoLabel_ { "OFF" };
+    MuteSoloButton       muteButton_ { "M", DawIDs::muted };
+    MuteSoloButton       soloButton_ { "S", DawIDs::solo };
+    std::function<float()> levelProvider_;
+    float                levelFraction_ { 0.0f };
     juce::ValueTree      channelTree_;
     juce::Rectangle<int> toggleBounds_;
     juce::Rectangle<int> faderBounds_;

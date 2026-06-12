@@ -244,6 +244,7 @@ add_library(SonikCore STATIC
     Source/Features/Daw/Import/AudioFileImporter.cpp
     Source/Features/Daw/Model/DawClip.h
     Source/Features/Daw/Model/ChannelGroup.h
+    Source/Features/Daw/Model/MuteSolo.h
     Source/Features/Daw/Model/MasterGridService.h
     Source/Features/Daw/Model/MasterGridService.cpp
     Source/Features/Daw/Transform/TimelineTransform.h
@@ -257,6 +258,9 @@ add_library(SonikCore STATIC
     Source/Features/Daw/Ui/Molecules/LaneView.h
     Source/Features/Daw/Ui/Molecules/LaneView.cpp
     Source/Features/Daw/Ui/Molecules/ChannelGroupHeader.h
+    Source/Features/Daw/Ui/Atoms/MuteSoloButton.h
+    Source/Features/Daw/Ui/Molecules/GroupOverviewStrip.h
+    Source/Features/Daw/Ui/Molecules/GroupOverviewStrip.cpp
     Source/Features/Daw/Ui/Organisms/ChannelGroupView.h
     Source/Features/Daw/Ui/Organisms/ChannelGroupView.cpp
     Source/Features/Daw/Ui/Organisms/ChannelGroupStack.h
@@ -667,6 +671,7 @@ add_executable(SonikTests
     Tests/TimelineTransformTests.cpp
     Tests/DawPanelShellTests.cpp
     Tests/ChannelGroupLayoutTests.cpp
+    Tests/GroupedTracksTests.cpp
     Tests/ClipBlockTests.cpp
     Tests/WaveformCacheTests.cpp
     Tests/LiveProjectionBridgeTests.cpp

@@ -236,6 +236,11 @@ void AudioEngine::rebuildDawRenderer()
         *publisher, *streamerPool, transport->playheadAtomic());
     fresh->prepare (sr, blockSize, Daw::kMaxLanes, Daw::kMaxClipsPerLane);
 
+    // Deck-group fader meters: the renderer publishes each channel group's
+    // post-DSP playback level into the engine-owned DAW meter snapshot, which
+    // the DAW panel headers poll (alongside the live channel meters).
+    fresh->setMeterSnapshot (&dawMeterSnapshot_);
+
     dawRendererPtr_.store (fresh.get(), std::memory_order_release);
     dawRenderer_ = std::move (fresh);
 }
@@ -2369,6 +2374,23 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                 const auto fi = static_cast<size_t> (i);
                 outL[i] = juce::jlimit (-1.0f, 1.0f, outL[i] + dawMasterFeedL_[fi]);
                 outR[i] = juce::jlimit (-1.0f, 1.0f, outR[i] + dawMasterFeedR_[fi]);
+            }
+        }
+        else
+        {
+            // DAW transport idle: the renderer (and its group meters) is not
+            // running, so its published levels would freeze at the last audible
+            // value. Zero them so the deck-group header meters fall silent.
+            // Relaxed stores only — audio-thread safe, no allocation. The clip
+            // latch is left alone (it is a user-cleared indicator by contract).
+            for (auto& ch : dawMeterSnapshot_.channels)
+            {
+                ch.levelPeakL    .store (0.0f, std::memory_order_relaxed);
+                ch.levelPeakR    .store (0.0f, std::memory_order_relaxed);
+                ch.levelPeakHoldL.store (0.0f, std::memory_order_relaxed);
+                ch.levelPeakHoldR.store (0.0f, std::memory_order_relaxed);
+                ch.levelRmsL     .store (0.0f, std::memory_order_relaxed);
+                ch.levelRmsR     .store (0.0f, std::memory_order_relaxed);
             }
         }
     }

@@ -21,6 +21,7 @@
 #include "../State/DawState.h"
 #include "../State/DawClipModel.h"
 #include "../Model/DawClip.h"
+#include "../Model/MuteSolo.h"
 
 namespace Daw
 {
@@ -133,6 +134,11 @@ public:
         if (!tracksNode.isValid())
             return;
 
+        // Grouped-tracks mute/solo: one scan up front, then each lane is gated
+        // by the shared audibility rule. An inaudible lane is simply left out of
+        // the snapshot, so the audio thread renders exactly the audible sum.
+        const bool soloActive = MuteSolo::anySoloActive (tracksNode);
+
         for (int t = 0; t < tracksNode.getNumChildren(); ++t)
         {
             auto trackNode = tracksNode.getChild (t);
@@ -154,6 +160,10 @@ public:
             {
                 auto laneNode = lanesNode.getChild (l);
                 if (!laneNode.hasType (DawIDs::lane))
+                    continue;
+
+                // Mute/solo gate (group-level and lane-level flags combined).
+                if (! MuteSolo::isLaneAudible (trackNode, laneNode, soloActive))
                     continue;
 
                 const juce::String laneIdStr =
