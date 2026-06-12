@@ -130,6 +130,32 @@ struct DeckAudioSource
     double stretchInputSampleCarry = 0.0;
     double stemStretchInputSampleCarry = 0.0;
 
+    // Continuous feed cursors (audio thread only).
+    //
+    // The stretcher input must be a CONTINUOUS stream: re-deriving the read
+    // position from the playhead each block splices the stream whenever the
+    // smoothed ratio and the playhead advance disagree (every block at
+    // non-unity speeds, and during every fader gesture) — the phase vocoder
+    // smears each splice into an audible ripple. Instead the feed keeps its
+    // own cursor, advanced by exactly the integer sample count fed.
+    //
+    // A slow servo (below) steers the cursor back onto
+    // playhead + stretcherLatency whenever transient ratio-smoothing lag has
+    // let them drift apart; jumps beyond STRETCH_RESYNC_THRESHOLD (seeks,
+    // loop wraps) snap the cursor instead, exactly like the previous
+    // re-derive-per-block behaviour at discontinuities.
+    // A negative cursor means "uninitialised — derive from playhead".
+    double stretchFeedPos     = -1.0;
+    double stemStretchFeedPos = -1.0;
+    static constexpr double STRETCH_RESYNC_THRESHOLD = 96.0;
+
+    // Drift servo: applied ratio bias = clamp(err * GAIN, ±MAX_BIAS).
+    // MAX_BIAS 5e-4 ≈ 0.9 cents — far below audibility — and corrects
+    // ~22 samples of drift per second at 44.1 kHz / 512.
+    static constexpr double STRETCH_SERVO_GAIN     = 1.0e-5;
+    static constexpr double STRETCH_SERVO_MAX_BIAS = 5.0e-4;
+    static constexpr double STRETCH_SERVO_DEADBAND = 1.0;
+
     // --- Stem buffers (PRD-0021) ---
     static constexpr int NUM_STEMS = 4;
     static constexpr int STEM_CROSSFADE_LENGTH = 64;

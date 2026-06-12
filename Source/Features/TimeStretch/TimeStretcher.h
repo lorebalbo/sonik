@@ -62,20 +62,30 @@ public:
 
     /// Feed silence to prime the stretcher after construction or reset.
     /// Call on the message thread before publishing to the audio thread.
-    void prime();
+    /// When cushionFrames > 0, additionally feeds silence until at least that
+    /// many output samples sit queued (see primeWithAudio for why).
+    /// @return The number of extra frames fed for the cushion — add this to
+    ///         the read-ahead offset, exactly as primeWithAudio does.
+    int prime (int cushionFrames = 0);
 
     /// Prime the stretcher with actual track audio so its output is
     /// immediately valid when playback starts.  Feeds getPreferredStartPad()
-    /// + getLatency() samples from the track buffer, reading from position 0.
+    /// + getLatency() samples from the track buffer, reading from position 0,
+    /// then (when cushionFrames > 0) feeds further audio until at least
+    /// cushionFrames of output sit queued inside the stretcher.  The cushion
+    /// guarantees available() never dips below one callback block at steady
+    /// state, so the audio thread never has to splice unstretched samples
+    /// into the stretched stream.
     /// Call on the message thread before publishing to the audio thread.
     ///
     /// @return Effective pipeline depth: the value to use as stretcherLatency
     ///         in AudioEngine (= getPreferredStartPad() + getLatency() minus
-    ///         the output samples discarded during priming).  Feed the
-    ///         stretcher from playheadAccumulator + this value so its output
-    ///         aligns exactly with the vinyl path.
+    ///         the output samples discarded during priming, plus the extra
+    ///         frames fed for the cushion).  Feed the stretcher from
+    ///         playheadAccumulator + this value so its output aligns exactly
+    ///         with the vinyl path.
     int primeWithAudio (const float* channelL, const float* channelR,
-                        int numFramesAvailable);
+                        int numFramesAvailable, int cushionFrames = 0);
 
 private:
     std::unique_ptr<RubberBand::RubberBandStretcher> stretcher;

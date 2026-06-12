@@ -10,8 +10,19 @@ TimeStretcher::TimeStretcher (double sampleRate, int channels, int maxBlockSize)
     // OptionEngineFiner (R3) provides highest quality with good latency.
     // R3 engine handles transient preservation internally — no need for
     // OptionWindowShort or OptionTransientsCrisp which degrade quality.
+    //
+    // OptionChannelsTogether: R3 then processes stereo as mid/side with
+    // full-spectrum channel phase locking. The default (ChannelsApart) only
+    // locks channel phases below 600 Hz, which audibly widens / "phases" the
+    // stereo image — the key-lock "halo". Together preserves the image.
+    //
+    // OptionPitchHighConsistency: the key stepper changes pitchScale while
+    // running; this option is the documented choice for dynamically varying
+    // pitch (no discontinuity when the scale changes or crosses 1.0).
     auto options = RBS::OptionProcessRealTime
-                 | RBS::OptionEngineFiner;
+                 | RBS::OptionEngineFiner
+                 | RBS::OptionChannelsTogether
+                 | RBS::OptionPitchHighConsistency;
 
     stretcher = std::make_unique<RBS> (
         static_cast<size_t> (sampleRate),
@@ -98,13 +109,13 @@ int TimeStretcher::getBufferedOutputSamples() const
     return std::max (0, static_cast<int> (stretcher->available()));
 }
 
-void TimeStretcher::prime()
+int TimeStretcher::prime (int cushionFrames)
 {
     // Feed silence for the preferred start pad so the stretcher is primed
     // and ready to produce output immediately.
     size_t pad = stretcher->getPreferredStartPad();
     if (pad == 0)
-        return;
+        return 0;
 
     // Use stack-allocated small chunks to avoid heap allocation.
     static constexpr size_t chunkSize = 512;
@@ -135,10 +146,23 @@ void TimeStretcher::prime()
             discardRemaining -= n;
         }
     }
+
+    // Optional silence cushion (see primeWithAudio).
+    int extraFed = 0;
+    if (cushionFrames > 0)
+    {
+        const int maxExtra = cushionFrames * 8 + static_cast<int> (pad);
+        while (stretcher->available() < cushionFrames && extraFed < maxExtra)
+        {
+            stretcher->process (silencePtrs, chunkSize, false);
+            extraFed += static_cast<int> (chunkSize);
+        }
+    }
+    return extraFed;
 }
 
 int TimeStretcher::primeWithAudio (const float* channelL, const float* channelR,
-                                   int numFramesAvailable)
+                                   int numFramesAvailable, int cushionFrames)
 {
     // Feed real track audio for pad + latency samples so the stretcher's
     // internal pipeline is filled with valid data.
@@ -217,6 +241,41 @@ int TimeStretcher::primeWithAudio (const float* channelL, const float* channelR,
         }
     }
 
+    // Output cushion: keep feeding (without retrieving) until at least
+    // cushionFrames of output sit queued inside the stretcher.  R3 emits
+    // output in internal hops, so without a cushion available() regularly
+    // dips below the callback block size, forcing the engine to splice
+    // unstretched samples into the stream (audible as periodic ticks and a
+    // permanently growing stream lag).  Feeding E extra source frames while
+    // keeping the produced output queued extends the read-ahead by exactly E;
+    // the queued output is the content that immediately follows what priming
+    // discarded, so block alignment with the play position is unchanged.
+    int extraFed = 0;
+    if (cushionFrames > 0)
+    {
+        const int maxExtra = cushionFrames * 8 + static_cast<int> (pad);
+        while (stretcher->available() < cushionFrames && extraFed < maxExtra)
+        {
+            size_t n = chunkSize;
+            int64_t srcStart = static_cast<int64_t> (total) + extraFed;
+
+            float bufA[chunkSize] = {};
+            float bufB[chunkSize] = {};
+            for (size_t k = 0; k < n; ++k)
+            {
+                int64_t idx = srcStart + static_cast<int64_t> (k);
+                if (idx >= 0 && idx < static_cast<int64_t> (avail))
+                {
+                    bufA[k] = channelL[idx];
+                    bufB[k] = channelR[idx];
+                }
+            }
+            const float* ptrs[2] = { bufA, bufB };
+            stretcher->process (ptrs, n, false);
+            extraFed += static_cast<int> (n);
+        }
+    }
+
     // The effective read-ahead offset needed for zero phase error.
-    return static_cast<int> (pad + latency) - discarded;
+    return static_cast<int> (pad + latency) - discarded + extraFed;
 }

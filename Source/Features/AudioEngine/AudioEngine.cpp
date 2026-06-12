@@ -324,6 +324,13 @@ void AudioEngine::registerDeck (const juce::String& deckId, DeckAudioState* audi
     src.stemStretcherLatency = 0;
     src.stemStretchDegraded.store(false, std::memory_order_relaxed);
 
+    // Time-stretch feed state
+    src.smoothedTimeRatio = 1.0;
+    src.stretchInputSampleCarry = 0.0;
+    src.stemStretchInputSampleCarry = 0.0;
+    src.stretchFeedPos     = -1.0;
+    src.stemStretchFeedPos = -1.0;
+
     // Publish pointer — use release so the audio thread sees all writes above.
     deckSlots[static_cast<size_t> (slot)].store (&src, std::memory_order_release);
 }
@@ -435,18 +442,27 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
             // inside process() on this very object.
             src.timeStretcherPendingDelete = src.timeStretcherOwned;
 
-            auto* newStretcher = new TimeStretcher (sr, 2, maxBlock * 4);
+            // Max process size must cover the largest feed the audio thread
+            // can make (MAX_STRETCH_BLOCK) — anything smaller would let
+            // RubberBand reallocate on the audio thread.
+            const int maxProc = std::max (maxBlock * 4,
+                                          DeckAudioSource::MAX_STRETCH_BLOCK);
+            auto* newStretcher = new TimeStretcher (sr, 2, maxProc);
 
             // Prime with actual track audio so the stretcher output is
             // immediately valid and latency-aligned with the vinyl path.
             // primeWithAudio() returns the effective pipeline depth — the
             // exact read-ahead offset that makes stretched output align with
             // the vinyl path (zero phase offset at Key Lock toggle).
+            // The cushion (one callback block of pre-queued output) keeps
+            // available() >= numSamples at steady state so the audio thread
+            // never splices unstretched samples into the stretched stream.
             const auto& buf = holder->getBuffer();
             src.stretcherLatency = newStretcher->primeWithAudio (
                 buf.getReadPointer (0),
                 buf.getReadPointer (1),
-                holder->getNumFrames());
+                holder->getNumFrames(),
+                maxBlock);
             src.timeStretcherOwned = newStretcher;
             src.timeStretcher.store (newStretcher, std::memory_order_release);
 
@@ -458,6 +474,8 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
             src.smoothedTimeRatio = 1.0;
             src.stretchInputSampleCarry = 0.0;
             src.stemStretchInputSampleCarry = 0.0;
+            src.stretchFeedPos     = -1.0;
+            src.stemStretchFeedPos = -1.0;
 
             // PRD-0022: Stem stretchers will be created when stems become active + key lock
             destroyStemStretchers(deckId);
@@ -521,6 +539,8 @@ void AudioEngine::clearDeckBuffer (const juce::String& deckId)
     src.smoothedTimeRatio = 1.0;
     src.stretchInputSampleCarry = 0.0;
     src.stemStretchInputSampleCarry = 0.0;
+    src.stretchFeedPos     = -1.0;
+    src.stemStretchFeedPos = -1.0;
 
     // PRD-0022: Tear down stem stretchers on eject
     destroyStemStretchers(deckId);
@@ -613,12 +633,14 @@ void AudioEngine::setDeckSourceMode (const juce::String& deckId, bool useStems)
         if (! haveStemBuffers)
             return;
 
-        // PRD-0062 §1.5.6: if key-lock is engaged, build and publish the stem
-        // stretcher set BEFORE flipping stemsActive, so the audio thread (which
-        // reads the stretcher pointers and stemsActive with acquire semantics)
-        // never observes a half-built set.
+        // PRD-0062 §1.5.6: if key-lock (or a key-stepper shift) is engaged,
+        // build and publish the stem stretcher set BEFORE flipping
+        // stemsActive, so the audio thread (which reads the stretcher
+        // pointers and stemsActive with acquire semantics) never observes a
+        // half-built set.
         if (src.audioState != nullptr
-            && src.audioState->keyLockEnabled.load (std::memory_order_relaxed))
+            && (src.audioState->keyLockEnabled.load (std::memory_order_relaxed)
+                || src.audioState->keyShiftSemitones.load (std::memory_order_relaxed) != 0))
         {
             createStemStretchers (deckId);
         }
@@ -704,6 +726,14 @@ void AudioEngine::createStemStretchers (const juce::String& deckId)
     int maxBlock = currentBufferSize.load (std::memory_order_relaxed);
     if (maxBlock <= 0) maxBlock = 512;
 
+    // Stems are usually enabled mid-track: prime from the current playhead
+    // so the pipeline holds locally-correct audio, not the track intro.
+    // The audio thread's feed cursor resyncs to playhead + latency on first
+    // use, which matches the priming continuation within a few milliseconds.
+    const int64_t primeFrom = src.audioState != nullptr
+        ? std::max<int64_t> (0, src.audioState->playheadPosition.load (std::memory_order_relaxed))
+        : 0;
+
     for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
     {
         // Hide old stretcher from audio thread, defer deletion
@@ -711,31 +741,38 @@ void AudioEngine::createStemStretchers (const juce::String& deckId)
         delete src.stemStretchersPendingDelete[s];
         src.stemStretchersPendingDelete[s] = src.stemTimeStretchersOwned[s];
 
-        auto* stretcher = new TimeStretcher (sr, 2, maxBlock * 4);
+        const int maxProc = std::max (maxBlock * 4,
+                                      DeckAudioSource::MAX_STRETCH_BLOCK);
+        auto* stretcher = new TimeStretcher (sr, 2, maxProc);
 
-        // Prime with stem audio
+        // Prime with stem audio (with one block of output cushion, exactly
+        // like the main stretcher — see setDeckBuffer)
         auto* stemL = src.stemChannelL[s].load (std::memory_order_relaxed);
         auto* stemR = src.stemChannelR[s].load (std::memory_order_relaxed);
         auto  stemLen = src.stemBufferNumFrames[s].load (std::memory_order_relaxed);
 
-        if (stemL != nullptr && stemR != nullptr && stemLen > 0)
+        if (stemL != nullptr && stemR != nullptr && stemLen > primeFrom)
         {
-            int eff = stretcher->primeWithAudio (stemL, stemR, static_cast<int>(stemLen));
+            int eff = stretcher->primeWithAudio (stemL + primeFrom,
+                                                 stemR + primeFrom,
+                                                 static_cast<int> (stemLen - primeFrom),
+                                                 maxBlock);
             // Store latency from first stem (all stems share same stretcher params)
             if (s == 0)
                 src.stemStretcherLatency = eff;
         }
         else
         {
-            stretcher->prime();
+            int extra = stretcher->prime (maxBlock);
             if (s == 0)
-                src.stemStretcherLatency = stretcher->getLatency();
+                src.stemStretcherLatency = stretcher->getLatency() + extra;
         }
 
         src.stemTimeStretchersOwned[s] = stretcher;
     }
 
     src.stemStretchInputSampleCarry = 0.0;
+    src.stemStretchFeedPos = -1.0;
 
     // Publish all 4 atomically via release stores
     for (int s = 0; s < DeckAudioSource::NUM_STEMS; ++s)
@@ -766,6 +803,7 @@ void AudioEngine::destroyStemStretchers (const juce::String& deckId)
 
     src.stemStretcherLatency = 0;
     src.stemStretchInputSampleCarry = 0.0;
+    src.stemStretchFeedPos = -1.0;
     src.stemStretchDegraded.store (false, std::memory_order_relaxed);
 }
 
@@ -1327,11 +1365,19 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             ? 1.0
             : std::pow (2.0, static_cast<double> (keyShiftSemis) / 12.0);
 
-        // The stretcher is "engaged" (its output replaces the vinyl path)
+        // The stretcher is wanted (its output replaces the vinyl path)
         // whenever key lock is on OR a non-zero key shift is requested.
         // The stretcher is always FED below if it exists so that toggling
         // engaged/disengaged is gap-free.
-        const bool stretcherEngaged = keyLockOn || (keyShiftSemis != 0);
+        const bool wantsStretcher = keyLockOn || (keyShiftSemis != 0);
+
+        // Bit-exact transparency at rest: at exactly 1.0 speed with no key
+        // shift there is nothing for the stretcher to correct, so the vinyl
+        // path (raw buffer reads at unity) is selected outright. The
+        // stretcher keeps being fed, so leaving unity re-engages through the
+        // usual short crossfade between two phase-aligned signals.
+        const bool atUnity = (speed == 1.0f) && (keyShiftSemis == 0);
+        const bool stretcherEngaged = wantsStretcher && ! atUnity;
 
         auto* stretcher = source->timeStretcher.load (std::memory_order_acquire);
         bool useStretcher = ! scratchMode && stretcherEngaged
@@ -1360,30 +1406,30 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         }
 
         // --- Time-stretched path ---
-        // Always feed the stretcher when it exists so its internal buffers
-        // stay warm.  This prevents a cold-start click when key lock is
-        // toggled on — the stretched output is already valid for the
-        // crossfade.  At ratio 1.0 the R3 engine is near-passthrough and
-        // adds negligible CPU.
+        // Always feed the stretcher while audible output is being produced
+        // (playing or mid-fade) so its internal buffers stay warm.  This
+        // prevents a cold-start click when key lock is toggled on — the
+        // stretched output is already valid for the crossfade.  While
+        // paused/stopped nothing is fed: the playhead is frozen, and feeding
+        // the same region repeatedly would fill the pipeline with smeared
+        // audio that becomes audible for ~80 ms on resume.
         int stretchedAvail = 0;
-        if (! scratchMode && stretcher != nullptr && speed > 0.01f)
+        const bool produceAudio = (status == PlaybackStatusCode::playing)
+                               || source->fadeRampSamplesRemaining > 0;
+        if (! scratchMode && stretcher != nullptr && speed > 0.01f && produceAudio)
         {
             // Smoothly ramp the time ratio toward the target so that
             // setTimeRatio() never sees an abrupt jump — this prevents the
             // R3 engine's pipeline from destabilising (crackling) when the
             // pitch fader is moved while key lock is active.
+            //
+            // At 0% pitch the target is EXACTLY 1.0: R3 detects sustained
+            // unity ratio and converges to phase-locked passthrough, making
+            // key lock transparent at rest. (A former 1e-4 "active bias"
+            // here defeated that mechanism and, worse, made the feed rate
+            // disagree with the playhead rate, splicing one source sample
+            // out of the feed every ~0.23 s — an audible periodic ripple.)
             double targetTimeRatio = 1.0 / static_cast<double> (speed);
-
-            // PRD-0011: Keep R3 permanently in "active stretching" mode by
-            // never letting the target ratio settle at exactly 1.0.  R3 uses
-            // a different numerical path at ratio == 1.0 than at ratio != 1.0;
-            // the transition between those paths is what produces the
-            // first-movement crackle.  A bias of 1e-4 corresponds to ~0.002
-            // cent — three orders of magnitude below the threshold of human
-            // pitch perception — yet keeps R3 in active mode at all times.
-            constexpr double activeBias = 1.0e-4;
-            if (std::abs (targetTimeRatio - 1.0) < activeBias)
-                targetTimeRatio = 1.0 + activeBias;
 
             double& sRatio = source->smoothedTimeRatio;
             double delta = targetTimeRatio - sRatio;
@@ -1392,11 +1438,42 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             else if (delta < -maxD) sRatio -= maxD;
             else                    sRatio  = targetTimeRatio;
 
+            // Continuous feed cursor (see DeckAudioSource.h). Initialise on
+            // first use and hard-resync on discontinuities (seeks, loop
+            // wraps, scratch exits) — same audible behaviour as before at
+            // those jumps. Between jumps the cursor advances by exactly the
+            // integer count fed, so the input stream is splice-free.
+            const double feedTarget = source->playheadAccumulator
+                                    + static_cast<double> (source->stretcherLatency);
+            double feedErr = source->stretchFeedPos - feedTarget;
+            if (source->stretchFeedPos < 0.0
+                || std::abs (feedErr) > DeckAudioSource::STRETCH_RESYNC_THRESHOLD)
+            {
+                source->stretchFeedPos = feedTarget;
+                feedErr = 0.0;
+            }
+
+            // Drift servo: ratio-smoothing lag during fader gestures lets
+            // the cursor drift a few samples off target; steer it back with
+            // a ratio bias capped at ±0.05 % (≈0.9 cents, inaudible). Inside
+            // the dead band the ratio passes through untouched, so at 0%
+            // pitch it stays exactly 1.0 and R3's unity mode stays engaged.
+            double appliedRatio = sRatio;
+            if (std::abs (feedErr) > DeckAudioSource::STRETCH_SERVO_DEADBAND)
+            {
+                double bias = feedErr * DeckAudioSource::STRETCH_SERVO_GAIN;
+                if (bias >  DeckAudioSource::STRETCH_SERVO_MAX_BIAS)
+                    bias =  DeckAudioSource::STRETCH_SERVO_MAX_BIAS;
+                if (bias < -DeckAudioSource::STRETCH_SERVO_MAX_BIAS)
+                    bias = -DeckAudioSource::STRETCH_SERVO_MAX_BIAS;
+                appliedRatio = sRatio * (1.0 + bias);
+            }
+
             // Convert the desired (fractional) source sample count to an
             // integer block size without long-term bias. This avoids
             // overfeeding the stretcher and building delayed queued output.
             const double exactSourceSamples =
-                (static_cast<double> (numSamples) / sRatio)
+                (static_cast<double> (numSamples) / appliedRatio)
                 + source->stretchInputSampleCarry;
 
             int sourceSamples = 1;
@@ -1417,8 +1494,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                     exactSourceSamples - static_cast<double> (sourceSamples);
             }
 
-            double readPos = source->playheadAccumulator
-                           + static_cast<double> (source->stretcherLatency);
+            const double readPos = source->stretchFeedPos;
             for (int s = 0; s < sourceSamples; ++s)
             {
                 double sPos = readPos + static_cast<double> (s) * 1.0;
@@ -1440,6 +1516,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                     source->stretchInR[s] = 0.0f;
                 }
             }
+            source->stretchFeedPos += static_cast<double> (sourceSamples);
 
             const float* inPtrs[2] = { source->stretchInL, source->stretchInR };
             float* outPtrs[2] = { source->stretchOutL, source->stretchOutR };
@@ -1449,7 +1526,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             stretcher->setPitchScale (pitchScale);
 
             stretchedAvail = stretcher->process (
-                inPtrs, sourceSamples, outPtrs, numSamples, sRatio);
+                inPtrs, sourceSamples, outPtrs, numSamples, appliedRatio);
         }
 
         // --- Stem state (PRD-0021) ---
@@ -1480,21 +1557,47 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
         }
 
         // --- Per-stem time stretching (PRD-0022) ---
+        // Fed whenever the stem stretchers exist and audio is being produced
+        // (kept warm exactly like the main stretcher); their output replaces
+        // the per-stem vinyl reads only while the stretcher is engaged.
         bool useStemStretchers = false;
         int stemStretchedAvail[DeckAudioSource::NUM_STEMS] = {};
 
-        if (! scratchMode && stemActive && stretcherEngaged && speed > 0.01f
+        if (! scratchMode && stemActive && speed > 0.01f && produceAudio
             && ! source->stemStretchDegraded.load (std::memory_order_relaxed))
         {
             auto* stemStr0 = source->stemTimeStretchers[0].load(std::memory_order_acquire);
             if (stemStr0 != nullptr)
             {
-                useStemStretchers = true;
+                useStemStretchers = stretcherEngaged;
 
-                double timeRatio = 1.0 / static_cast<double>(speed);
+                // Same smoothed ratio + continuous cursor + drift servo as
+                // the main stretcher (see above); the stems keep their own
+                // cursor and carry because their stretchers are created at a
+                // different time and have their own latency.
+                const double stemFeedTarget = source->playheadAccumulator
+                                            + static_cast<double> (source->stemStretcherLatency);
+                double stemFeedErr = source->stemStretchFeedPos - stemFeedTarget;
+                if (source->stemStretchFeedPos < 0.0
+                    || std::abs (stemFeedErr) > DeckAudioSource::STRETCH_RESYNC_THRESHOLD)
+                {
+                    source->stemStretchFeedPos = stemFeedTarget;
+                    stemFeedErr = 0.0;
+                }
+
+                double stemAppliedRatio = source->smoothedTimeRatio;
+                if (std::abs (stemFeedErr) > DeckAudioSource::STRETCH_SERVO_DEADBAND)
+                {
+                    double bias = stemFeedErr * DeckAudioSource::STRETCH_SERVO_GAIN;
+                    if (bias >  DeckAudioSource::STRETCH_SERVO_MAX_BIAS)
+                        bias =  DeckAudioSource::STRETCH_SERVO_MAX_BIAS;
+                    if (bias < -DeckAudioSource::STRETCH_SERVO_MAX_BIAS)
+                        bias = -DeckAudioSource::STRETCH_SERVO_MAX_BIAS;
+                    stemAppliedRatio = source->smoothedTimeRatio * (1.0 + bias);
+                }
 
                 const double exactStemSourceSamples =
-                    (static_cast<double> (numSamples) / timeRatio)
+                    (static_cast<double> (numSamples) / stemAppliedRatio)
                     + source->stemStretchInputSampleCarry;
 
                 int sourceSamples = 1;
@@ -1524,9 +1627,8 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                         continue;
                     }
 
-                    // Read stem audio at speed, offset by stem stretcher latency
-                    double readPos = source->playheadAccumulator
-                                   + static_cast<double>(source->stemStretcherLatency);
+                    // Read stem audio from the shared continuous stem cursor
+                    const double readPos = source->stemStretchFeedPos;
                     for (int ss = 0; ss < sourceSamples; ++ss)
                     {
                         double sPos = readPos + static_cast<double>(ss) * 1.0;
@@ -1555,8 +1657,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
                     // PRD-0025: apply key stepper pitch shift to each stem stretcher.
                     stemStretcher->setPitchScale (pitchScale);
 
-                    stemStretchedAvail[s] = stemStretcher->process(inPtrs, sourceSamples, outPtrs, numSamples, timeRatio);
+                    stemStretchedAvail[s] = stemStretcher->process(inPtrs, sourceSamples, outPtrs, numSamples, stemAppliedRatio);
                 }
+                source->stemStretchFeedPos += static_cast<double> (sourceSamples);
             }
         }
 
@@ -2537,10 +2640,13 @@ void AudioEngine::timerCallback()
             continue;
 
         bool keyLock = src.audioState->keyLockEnabled.load(std::memory_order_relaxed);
+        bool keyShifted = src.audioState->keyShiftSemitones.load(std::memory_order_relaxed) != 0;
         bool stemsActive = src.stemsActive.load(std::memory_order_relaxed);
         bool hasStemStretchers = src.stemTimeStretchers[0].load(std::memory_order_relaxed) != nullptr;
 
-        bool needStemStretchers = keyLock && stemsActive;
+        // Stem stretchers are needed whenever the stretched path can engage:
+        // key lock on, or a key-stepper shift requested (PRD-0025).
+        bool needStemStretchers = (keyLock || keyShifted) && stemsActive;
 
         if (needStemStretchers && !hasStemStretchers)
         {
