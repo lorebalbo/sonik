@@ -24,7 +24,6 @@
 
 #include "../Molecules/TimeRuler.h"
 #include "../Atoms/Playhead.h"
-#include "../Atoms/RecordPlayhead.h"
 #include "../FollowController.h"
 #include "../DawLayoutMetrics.h"
 #include "../ClipInteraction.h"
@@ -170,8 +169,9 @@ public:
     // button renders idle / armed / recording. When unset the button stays idle.
     void setRecordStateProvider (std::function<RecordUiState()> provider);
 
-    // Polled for the live record playhead sample; the record playhead band is
-    // drawn at this position while armed/recording and hidden when idle.
+    // Polled for the live record position sample; while armed/recording this
+    // drives the single shared playhead (the same cursor playback uses), so the
+    // view follows the recording and the record position is always reachable.
     void setRecordPlayheadProvider (std::function<std::int64_t()> provider);
 
     // Access to the owned transform (PRD-0067+ interaction lives on the panel).
@@ -298,10 +298,15 @@ private:
     // PRD-0070 helpers.
     int  contentLeftGutter() const noexcept;       // px before the content axis
     void afterTransformChanged();                  // re-layout + repaint
-    void updateNowLine();                          // reposition the now-line
-    void updateRecordPlayhead();                   // reposition the record playhead
+    void updateNowLine();                          // reposition the shared playhead
     void applyFollowIfNeeded();                     // auto-scroll when following
     void layoutPlayhead();
+
+    // The single, shared timeline playhead sample. Recording owns the cursor
+    // while a session is armed/recording; otherwise it follows the DAW transport
+    // (playback). A scrub preview overrides both. Returns -1 when there is no
+    // live position (idle, stopped), which hides the playhead.
+    std::int64_t activePlayheadSample() const;
 
     // LCD helpers: bar.beat for the current playhead + the live tempo string.
     juce::String computeLcdPosition() const;
@@ -369,7 +374,6 @@ private:
     juce::Rectangle<int> masterAutoBounds_;     // header "M.AUTO" disclosure
     InteractionLayer   interaction_;
     Playhead           playhead_;
-    RecordPlayhead     recordPlayhead_;
     FollowController   followController_;
 
     std::function<std::int64_t()> nowLineProvider_;
