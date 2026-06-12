@@ -251,20 +251,23 @@ namespace
                     LibraryMidiHandler lib;
                     CompositeMidiCommandHandler composite (deck, mix, lib);
 
-                    // TransportCue is a recognised per-deck category that
-                    // DeckMidiHandler explicitly returns false for (no manager
-                    // wired yet). The composite must warn exactly once.
-                    expect (! composite.hasWarnedForCategory (MidiTargetCategory::TransportCue));
+                    // DawRecordArm is a recognised global category that no
+                    // message-thread handler (deck/mixer/library) consumes yet
+                    // (PRD-0078 wires only the routing, not a handler). The
+                    // composite must warn exactly once. (TransportCue was used
+                    // here before DeckMidiHandler gained a cue implementation.)
+                    expect (! composite.hasWarnedForCategory (MidiTargetCategory::DawRecordArm));
 
                     const MidiMessageEvent ev {
-                        MidiTargetCategory::TransportCue, 0, 1.0f, 0, 1ULL,
+                        MidiTargetCategory::DawRecordArm,
+                        sonik::midi::GlobalDeckIndex, 1.0f, 0, 1ULL,
                         SoftTakeoverPolicy::Pickup
                     };
                     composite.handle (ev);
-                    expect (composite.hasWarnedForCategory (MidiTargetCategory::TransportCue));
+                    expect (composite.hasWarnedForCategory (MidiTargetCategory::DawRecordArm));
 
                     composite.handle (ev); // Second call: no second warning, no crash.
-                    expect (composite.hasWarnedForCategory (MidiTargetCategory::TransportCue));
+                    expect (composite.hasWarnedForCategory (MidiTargetCategory::DawRecordArm));
 
                     // Different category: independent state.
                     expect (! composite.hasWarnedForCategory (MidiTargetCategory::LoopToggle));

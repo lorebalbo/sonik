@@ -20,6 +20,6 @@
     { "target": "deck.A.gain",           "midi": { "channel": 1, "status": "cc",   "data1":  7 }, "transform": "linear" },
     { "target": "deck.A.transport.play", "midi": { "channel": 1, "status": "note", "data1": 12 }, "transform": "momentary" },
     { "target": "deck.B.transport.play", "midi": { "channel": 1, "status": "note", "data1": 12 }, "transform": "momentary", "modifier": "shift" },
-    { "target": "deck.A.pitch", "midi": { "channel": 1, "status": "cc", "data1": 30 }, "transform": "linear", "softTakeover": "pickup" }
+    { "target": "deck.A.pitchFader", "midi": { "channel": 1, "status": "cc", "data1": 30 }, "transform": "linear", "softTakeover": "pickup" }
   ]
 }

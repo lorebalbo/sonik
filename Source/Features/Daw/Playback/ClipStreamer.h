@@ -182,12 +182,25 @@ public:
     /// the source ended first). BACKGROUND THREAD ONLY — never the audio thread.
     int waitUntilReady (int numSamples) noexcept
     {
-        std::unique_lock<std::mutex> lk (producedMutex_);
-        producedCv_.wait (lk, [this, numSamples] {
+        auto ready = [this, numSamples] {
             return ! running_.load (std::memory_order_relaxed)
                 || fifo_.getNumReady() >= numSamples
                 || exhaustedFlag_.load (std::memory_order_acquire);
-        });
+        };
+
+        std::unique_lock<std::mutex> lk (producedMutex_);
+        while (! ready())
+        {
+            // Kick the reader thread: readInto() notifies cv_ from the audio
+            // thread WITHOUT configMutex_ (RT constraint), so that wakeup can
+            // land between the reader's predicate check and its block and be
+            // lost — leaving producer and consumer both asleep (deadlock seen
+            // in the offline region render). Re-notifying here from the
+            // non-RT driver thread breaks the cycle; the bounded wait_for
+            // covers the symmetric race on producedCv_.
+            cv_.notify_one();
+            producedCv_.wait_for (lk, std::chrono::milliseconds (2), ready);
+        }
         return fifo_.getNumReady();
     }
 
@@ -310,7 +323,14 @@ private:
                 ClipStreamer& s;
                 ~ProducedNotifier()
                 {
-                    s.exhaustedFlag_.store (s.exhausted_, std::memory_order_release);
+                    // Publish under producedMutex_ so a consumer inside
+                    // waitUntilReady either observes the new state in its
+                    // predicate or is already blocked when notify_all fires —
+                    // never the lost-wakeup window in between.
+                    {
+                        std::lock_guard<std::mutex> lk (s.producedMutex_);
+                        s.exhaustedFlag_.store (s.exhausted_, std::memory_order_release);
+                    }
                     s.producedCv_.notify_all();
                 }
             } producedNotifier { *this };
@@ -525,7 +545,12 @@ private:
         }
 
         // Final wake on shutdown so a blocked waitUntilReady() never deadlocks.
-        exhaustedFlag_.store (true, std::memory_order_release);
+        // Store under producedMutex_ (see ProducedNotifier) to close the
+        // lost-wakeup window against a concurrently-entering waiter.
+        {
+            std::lock_guard<std::mutex> lk (producedMutex_);
+            exhaustedFlag_.store (true, std::memory_order_release);
+        }
         producedCv_.notify_all();
     }
 

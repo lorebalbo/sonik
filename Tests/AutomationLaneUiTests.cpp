@@ -282,9 +282,12 @@ public:
             const std::int64_t playSample = 44100;
             view.setPlayheadProvider ([playSample]() { return playSample; });
 
-            // The expected playhead x is the shared transform mapping (pixel-aligned).
+            // The expected playhead x mirrors AutomationLaneViewBase::sampleToBodyX:
+            // the lane body offsets the shared transform by the fixed header gutter.
             const double expectedX =
-                Daw::TimelineTransform::alignToPixelGrid (transform.sampleToX (playSample));
+                Daw::TimelineTransform::alignToPixelGrid (
+                    (double) Daw::DawLayout::kTrackHeaderWidth
+                    + transform.sampleToX (playSample));
             expect (expectedX > (double) Daw::DawLayout::kTrackHeaderWidth,
                     "playhead falls inside the content axis for a mid-lane sample");
 
