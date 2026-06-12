@@ -60,6 +60,12 @@ struct AutomationValueRange
 {
     double      minValue { 0.0 };
     double      maxValue { 1.0 };
+    // The parameter's neutral/default value (native units) — the value the DSP
+    // sits at before any automation exists. An EMPTY lane draws a dimmed
+    // horizontal line at this level so the value axis is always readable.
+    // Sources: MixerStateSchema::kDefaultFader / kDefaultGainDb / kDefaultEqDb /
+    // kDefaultFilter; tempo mirrors MasterGridService::kFallbackBpm.
+    double      defaultValue { 0.0 };
     juce::String minLabel { "0" };
     juce::String maxLabel { "1" };
     juce::String paramLabel { "" };
@@ -101,42 +107,49 @@ struct AutomationValueRange
         if (parameterId == "filter")
         {
             r.minValue = -1.0; r.maxValue = 1.0;
+            r.defaultValue = 0.0;                 // MixerStateSchema::kDefaultFilter (bypass)
             r.minLabel = "-1";  r.maxLabel = "+1";
             r.paramLabel = "FILTER";
         }
         else if (parameterId == "volume")
         {
             r.minValue = 0.0; r.maxValue = 1.0;
+            r.defaultValue = 1.0;                 // MixerStateSchema::kDefaultFader (full open)
             r.minLabel = "0"; r.maxLabel = "1";
             r.paramLabel = "VOLUME";
         }
         else if (parameterId == "gain")
         {
             r.minValue = -26.0; r.maxValue = 6.0;
+            r.defaultValue = 0.0;                 // MixerStateSchema::kDefaultGainDb
             r.minLabel = "-26"; r.maxLabel = "+6";
             r.paramLabel = "GAIN";
         }
         else if (parameterId == "high" || parameterId == "eq.high")
         {
             r.minValue = -26.0; r.maxValue = 6.0;
+            r.defaultValue = 0.0;                 // MixerStateSchema::kDefaultEqDb (flat)
             r.minLabel = "-26"; r.maxLabel = "+6";
             r.paramLabel = "HIGH";
         }
         else if (parameterId == "mid" || parameterId == "eq.mid")
         {
             r.minValue = -26.0; r.maxValue = 6.0;
+            r.defaultValue = 0.0;                 // MixerStateSchema::kDefaultEqDb (flat)
             r.minLabel = "-26"; r.maxLabel = "+6";
             r.paramLabel = "MID";
         }
         else if (parameterId == "low" || parameterId == "eq.low")
         {
             r.minValue = -26.0; r.maxValue = 6.0;
+            r.defaultValue = 0.0;                 // MixerStateSchema::kDefaultEqDb (flat)
             r.minLabel = "-26"; r.maxLabel = "+6";
             r.paramLabel = "LOW";
         }
         else if (parameterId == "tempo")
         {
             r.minValue = 60.0;  r.maxValue = 200.0;
+            r.defaultValue = 120.0;               // MasterGridService::kFallbackBpm
             r.minLabel = "60";  r.maxLabel = "200";
             r.paramLabel = "TEMPO";
         }
@@ -144,6 +157,7 @@ struct AutomationValueRange
         {
             // Unknown / future continuous parameter: normalised [0,1] window.
             r.minValue = 0.0; r.maxValue = 1.0;
+            r.defaultValue = 0.5;                 // window midpoint
             r.minLabel = "0"; r.maxLabel = "1";
             r.paramLabel = parameterId.toUpperCase();
         }

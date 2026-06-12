@@ -174,6 +174,17 @@ protected:
         const int blockBottom = body.getBottom() - 2;
         const int blockH      = juce::jmax (1, blockBottom - blockTop);
 
+        // No toggles yet: a dimmed baseline at the OFF level so the expanded
+        // lane always shows its resting state (mirrors the continuous lane's
+        // default-value line).
+        BooleanLane lane (getLaneNode());
+        if (! lane.isValid() || lane.getNumSteps() == 0)
+        {
+            g.setColour (kInk.withAlpha (0.30f));
+            g.fillRect (body.getX(), blockBottom - 2, body.getWidth(), 2);
+            return;
+        }
+
         g.setColour (kInk);
         for (const auto& b : computeBlocks())
         {

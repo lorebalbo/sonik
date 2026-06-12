@@ -4,15 +4,16 @@
 // (owner + parameterId) from its ContinuousLane ValueTree node.
 //
 // Rendering (§1.5.2):
-//   - A #2d2d2d polyline (1-2px) through the ordered breakpoints.
+//   - A #2d2d2d polyline (1-2px) through the ordered breakpoints, extended to
+//     the lane's left/right edges holding the first/last value (the same hold
+//     semantics ContinuousLane::evaluateAt applies during playback).
+//   - An EMPTY lane draws a dimmed horizontal line at the parameter's DEFAULT
+//     value so the lane always shows where the value sits before any points.
 //   - A small filled #2d2d2d SQUARE dot at each breakpoint.
 //   - A DITHERED #2d2d2d fill beneath the curve of CONSTANT checkerboard density
 //     (a single tonal layer — never value-proportional).
 //   - Per-segment interpolation: linear -> diagonal; step/hold -> horizontal run
 //     to the next x then vertical jump (read from the LEFT breakpoint).
-//   - A read-only HOLLOW playhead marker riding the curve at the playhead x
-//     (visually distinct from the FILLED editable breakpoint squares), suppressed
-//     when bypassed.
 //
 // Editing is PRD-0094; this view is read-only apart from the inherited bypass.
 //==============================================================================
@@ -119,19 +120,20 @@ public:
 protected:
     //--------------------------------------------------------------------------
     // PRD-0094 (revised) — Logic-style editing gestures wired into the seams:
-    //   * click an empty spot   → create a node there and arm it for the same-
-    //                             gesture drag (Logic's pointer-tool behaviour);
+    //   * double-click empty    → create a node there (snapped time, clamped
+    //                             value) and select it, ready to drag — the same
+    //                             gesture the boolean lane uses to add a toggle;
+    //   * double-click a node   → delete it;
     //   * click a node          → select it;
     //   * drag a node           → the node AND its connecting segments follow
     //                             the cursor live (preview); ONE model write
     //                             lands on mouse-up (single undo step);
-    //   * double-click a node   → delete it;
     //   * hover a node          → hollow highlight ring (instant feedback);
     //   * while dragging        → a value readout chip rides the node.
     //--------------------------------------------------------------------------
 
-    // DOUBLE-CLICK on a node → DeleteBreakpoint (Logic). Empty double-clicks are
-    // covered by the click-to-create path of the first click.
+    // DOUBLE-CLICK on a node → DeleteBreakpoint; on an empty spot → CREATE a
+    // node there and select it so the next press-drag moves it (Logic).
     void onBodyMouseDoubleClick (const juce::MouseEvent& event) override
     {
         if (editDispatcher() == nullptr) return;
@@ -143,12 +145,18 @@ protected:
             if (bp == selected_)
                 selected_ = juce::ValueTree();
             hovered_ = juce::ValueTree();
-            repaint();
         }
+        else
+        {
+            const std::int64_t sample = bodyXToSample ((double) event.x, event);
+            const double value = yToValue ((double) event.y);
+            selected_ = editDispatcher()->addBreakpoint (owner(), parameterId(), sample, value);
+        }
+        repaint();
     }
 
-    // PRESS — select the node under the cursor, or CREATE one on an empty spot
-    // (snapped time, clamped value) and arm it for the drag that may follow.
+    // PRESS — select the node under the cursor (creation is the double-click's
+    // job, so a stray single click on the lane never mutates the model).
     void onBodyMouseDown (const juce::MouseEvent& event) override
     {
         dragging_ = false;
@@ -159,13 +167,6 @@ protected:
         }
 
         selected_ = hitTestBreakpoint ((double) event.x, (double) event.y);
-
-        if (! selected_.isValid() && editDispatcher() != nullptr)
-        {
-            const std::int64_t sample = bodyXToSample ((double) event.x, event);
-            const double value = yToValue ((double) event.y);
-            selected_ = editDispatcher()->addBreakpoint (owner(), parameterId(), sample, value);
-        }
         repaint();
     }
 
@@ -238,18 +239,33 @@ protected:
     {
         const auto body = getBodyBounds();
         const auto dps  = computeDisplayBreakpoints();   // preview-substituted
+
+        // No breakpoints yet: a dimmed full-width line at the parameter's
+        // DEFAULT value keeps the lane readable and shows where a double-click
+        // would land relative to the neutral setting.
         if (dps.empty())
+        {
+            paintDefaultValueLine (g, body);
             return;
+        }
 
         // Build the polyline from the DISPLAY breakpoints so a dragged node and
         // both its connecting segments follow the cursor live (Logic feel).
+        // Extend it to the lane's left/right edges holding the first/last value
+        // — the hold semantics ContinuousLane::evaluateAt applies on playback —
+        // so even a single point reads as a line, never a floating dot.
         std::vector<Point> pts;
+        pts.reserve (dps.size() * 2 + 2);
+        if (dps.front().x > (double) body.getX())
+            pts.push_back ({ (double) body.getX(), dps.front().y });
         for (size_t i = 0; i < dps.size(); ++i)
         {
             if (i > 0 && dps[i - 1].step)
                 pts.push_back ({ dps[i].x, dps[i - 1].y }); // step corner
             pts.push_back ({ dps[i].x, dps[i].y });
         }
+        if (dps.back().x < (double) body.getRight())
+            pts.push_back ({ (double) body.getRight(), dps.back().y });
 
         // ---- Dithered fill beneath the curve (constant density) ----------
         paintDitherUnderCurve (g, pts, body);
@@ -276,10 +292,6 @@ protected:
                 g.drawRect ((float) dp.x - r * 0.5f, (float) dp.y - r * 0.5f, r, r, 1.0f);
             }
         }
-
-        // ---- Read-only HOLLOW live marker at the playhead -----------------
-        ContinuousLane lane (getLaneNode());
-        paintLiveMarker (g, lane, body);
 
         // ---- Value readout chip riding the dragged node --------------------
         if (dragging_ && selected_.isValid())
@@ -514,31 +526,13 @@ private:
         return pts.back().y;
     }
 
-    void paintLiveMarker (juce::Graphics& g, const ContinuousLane& lane,
-                          juce::Rectangle<int> body)
+    // The dimmed default-value line an EMPTY lane shows: 2-px (the curve's
+    // weight) at the tonal-layer alpha the lane edges use, full body width.
+    void paintDefaultValueLine (juce::Graphics& g, juce::Rectangle<int> body) const
     {
-        const std::int64_t sample = currentPlayheadSample();
-        if (sample < 0)
-            return;
-
-        const auto applied = lane.evaluateAt (sample);
-        if (! applied.has_value())
-            return;
-
-        const double x = sampleToBodyX (sample);
-        if (x < (double) body.getX() || x > (double) body.getRight())
-            return;
-        const double y = valueToY (*applied, body);
-
-        // HOLLOW square (2-px ink outline, surface centre) — distinct from the
-        // FILLED breakpoint squares so the live cursor is never mistaken for an
-        // editable point (§1.5.7).
-        const float s = 7.0f;
-        juce::Rectangle<float> marker ((float) x - s * 0.5f, (float) y - s * 0.5f, s, s);
-        g.setColour (kSurface);
-        g.fillRect (marker);
-        g.setColour (kInk);
-        g.drawRect (marker, 2.0f);
+        const int y = (int) std::llround (valueToY (range_.defaultValue, body));
+        g.setColour (kInk.withAlpha (0.30f));
+        g.fillRect (body.getX(), y - 1, body.getWidth(), 2);
     }
 
     AutomationValueRange range_;

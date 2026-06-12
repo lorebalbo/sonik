@@ -105,7 +105,14 @@ int main()
     const std::int64_t playhead = (std::int64_t) (spb * 7);
     auto playProvider = [playhead]() { return playhead; };
 
-    // ---- Build the four lane views -------------------------------------------
+    // ---- Empty lanes: the dimmed default-value line / OFF baseline -----------
+    // No breakpoints/steps on purpose — these demonstrate the empty-lane
+    // rendering (continuous: dimmed line at the parameter default; boolean:
+    // dimmed OFF baseline).
+    model.getOrCreateContinuousLane ("B", "volume");
+    model.getOrCreateBooleanLane ("B", "pitchStretch");
+
+    // ---- Build the lane views -------------------------------------------------
     ContinuousAutomationLaneView filterView (
         model.getLaneNode ("A", "filter"), transform, &model, "filter");
     ContinuousAutomationLaneView gainView (
@@ -114,11 +121,17 @@ int main()
         model.getLaneNode ("A", "keyLock"), transform, &model, "keyLock");
     ContinuousAutomationLaneView tempoView (
         model.getLaneNode ("master", "tempo"), transform, &model, "tempo");
+    ContinuousAutomationLaneView emptyVolumeView (
+        model.getLaneNode ("B", "volume"), transform, &model, "volume");
+    BooleanAutomationLaneView emptyStretchView (
+        model.getLaneNode ("B", "pitchStretch"), transform, &model, "pitchStretch");
 
     filterView.setPlayheadProvider (playProvider);
     gainView.setPlayheadProvider (playProvider);
     keyLockView.setPlayheadProvider (playProvider);
     tempoView.setPlayheadProvider (playProvider);
+    emptyVolumeView.setPlayheadProvider (playProvider);
+    emptyStretchView.setPlayheadProvider (playProvider);
 
     // Demonstrate the bypassed (inactive wash) state on the gain lane.
     model.setLaneEnabled (model.getLaneNode ("A", "gain"), false);
@@ -128,22 +141,28 @@ int main()
     savePng (gainView,    width, laneH, juce::File ("/tmp/automation_ui_gain.png"));
     savePng (keyLockView, width, laneH, juce::File ("/tmp/automation_ui_keylock.png"));
     savePng (tempoView,   width, laneH, juce::File ("/tmp/automation_ui_tempo.png"));
+    savePng (emptyVolumeView,  width, laneH, juce::File ("/tmp/automation_ui_empty_volume.png"));
+    savePng (emptyStretchView, width, laneH, juce::File ("/tmp/automation_ui_empty_stretch.png"));
 
-    // ---- Composite: a vertical stack of all four lanes -----------------------
+    // ---- Composite: a vertical stack of all six lanes ------------------------
     juce::Component composite;
     const int gap = 2;
-    const int totalH = 4 * laneH + 3 * gap;
+    const int totalH = 6 * laneH + 5 * gap;
     composite.addAndMakeVisible (filterView);
     composite.addAndMakeVisible (gainView);
     composite.addAndMakeVisible (keyLockView);
     composite.addAndMakeVisible (tempoView);
+    composite.addAndMakeVisible (emptyVolumeView);
+    composite.addAndMakeVisible (emptyStretchView);
     composite.setBounds (0, 0, width, totalH);
 
     int y = 0;
     filterView.setBounds  (0, y, width, laneH); y += laneH + gap;
     gainView.setBounds    (0, y, width, laneH); y += laneH + gap;
     keyLockView.setBounds (0, y, width, laneH); y += laneH + gap;
-    tempoView.setBounds   (0, y, width, laneH);
+    tempoView.setBounds   (0, y, width, laneH); y += laneH + gap;
+    emptyVolumeView.setBounds  (0, y, width, laneH); y += laneH + gap;
+    emptyStretchView.setBounds (0, y, width, laneH);
 
     const juce::File compositeOut ("/tmp/automation_ui_composite.png");
     savePng (composite, width, totalH, compositeOut);
