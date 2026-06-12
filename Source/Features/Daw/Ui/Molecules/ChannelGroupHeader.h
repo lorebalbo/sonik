@@ -135,6 +135,10 @@ public:
 
     bool isAutomationRevealed() const noexcept { return automationRevealed_; }
 
+    // Local bounds of the automation dropdown — the anchor for the parameter
+    // menu, so it opens under the control instead of the header's left edge.
+    juce::Rectangle<int> automationDropdownBounds() const noexcept { return autoBounds_; }
+
     static juce::String labelForDeck (int deckIndex)
     {
         return "DECK " + juce::String (deckIndex + 1);

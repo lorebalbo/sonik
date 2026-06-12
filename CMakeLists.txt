@@ -212,6 +212,8 @@ target_include_directories(SonikJuce
 # a second time and AutomationUiScreenshot a third time for a handful of them.
 #==============================================================================
 add_library(SonikCore STATIC
+    Source/Features/Shared/Ui/SonikLookAndFeel.h
+    Source/Features/Shared/Ui/SonikLookAndFeel.cpp
     Source/Features/Deck/DeckIdentifiers.h
     Source/Features/Deck/DeckStateManager.h
     Source/Features/Deck/DeckStateManager.cpp

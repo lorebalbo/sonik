@@ -34,74 +34,6 @@ int canonicalKeyToCamelotIndex (int canonicalKey)
     return isMajor ? number + 11 : number - 1;
 }
 
-class LibraryPopupLookAndFeel final : public juce::LookAndFeel_V4
-{
-public:
-    void drawPopupMenuBackground (juce::Graphics& g, int width, int height) override
-    {
-        g.fillAll (LibraryPalette::surface());
-
-        // JUCE owns the popup window chrome, so painting outside the menu bounds
-        // is not reliable. The dithered 2px offset shadow is drawn as an
-        // internal right/bottom band, preserving the 1-bit checker pattern.
-        g.setColour (LibraryPalette::primary());
-        for (int y = 2; y < height; ++y)
-            for (int x = juce::jmax (0, width - 2); x < width; ++x)
-                if (((x + y) & 1) == 0)
-                    g.fillRect (x, y, 1, 1);
-
-        for (int y = juce::jmax (0, height - 2); y < height; ++y)
-            for (int x = 2; x < width; ++x)
-                if (((x + y) & 1) == 0)
-                    g.fillRect (x, y, 1, 1);
-    }
-
-    void drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
-                            bool isSeparator, bool isActive, bool isHighlighted,
-                            bool isTicked, bool hasSubMenu, const juce::String& text,
-                            const juce::String& shortcutKeyText,
-                            const juce::Drawable* icon, const juce::Colour* textColour) override
-    {
-        juce::ignoreUnused (shortcutKeyText, icon, textColour);
-
-        if (isSeparator)
-        {
-            g.setColour (LibraryPalette::primary());
-            const auto y = area.getCentreY();
-            for (int x = area.getX() + 8; x < area.getRight() - 8; x += 2)
-                g.fillRect (x, y, 1, 1);
-            return;
-        }
-
-        const auto itemArea = area.reduced (2, 0);
-        const bool inverted = isActive && isHighlighted;
-        g.setColour (inverted ? LibraryPalette::primary() : LibraryPalette::surface());
-        g.fillRect (itemArea);
-
-        auto textColourToUse = inverted ? LibraryPalette::surface() : LibraryPalette::primary();
-        if (! isActive)
-            textColourToUse = LibraryPalette::containerHighest();
-
-        g.setColour (textColourToUse);
-        g.setFont (juce::Font (LibraryPalette::bodyFont (12.0f)));
-
-        auto textArea = itemArea.reduced (10, 0);
-        if (isTicked)
-            g.drawText ("*", textArea.removeFromLeft (12), juce::Justification::centred);
-        else
-            textArea.removeFromLeft (12);
-
-        if (hasSubMenu)
-        {
-            auto arrowArea = textArea.removeFromRight (14);
-            g.drawText (">", arrowArea, juce::Justification::centred);
-        }
-
-        g.drawText (text, textArea, juce::Justification::centredLeft, true);
-    }
-};
-
-LibraryPopupLookAndFeel libraryPopupLnf;
 }
 
 // =============================================================================
@@ -1048,14 +980,14 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
     constexpr int kRatingBase = 3000;
     constexpr int kDeckBase = 4000;
 
+    // The menus take the DESIGN.md styling from the app-wide default
+    // LookAndFeel (SonikLookAndFeel) — no per-menu override needed.
     auto menu = std::make_shared<juce::PopupMenu>();
-    menu->setLookAndFeel (&libraryPopupLnf);
 
     std::vector<int64_t> playlistIds;
     auto addPlaylistSubMenu = [&]
     {
         juce::PopupMenu playlistMenu;
-        playlistMenu.setLookAndFeel (&libraryPopupLnf);
         playlistMenu.addItem (kPlaylistPreparation, "Preparation List");
 
         playlistIds.clear();
@@ -1077,7 +1009,6 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
     auto addRatingSubMenu = [&]
     {
         juce::PopupMenu ratingMenu;
-        ratingMenu.setLookAndFeel (&libraryPopupLnf);
         for (int rating = 1; rating <= 5; ++rating)
             ratingMenu.addItem (kRatingBase + rating,
                                 juce::String (rating) + (rating == 1 ? " Star" : " Stars"));
@@ -1156,7 +1087,6 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
         [safeThis, menu, ctxRows = std::move (rows), rowIndex, ctxDeckIds = std::move (deckIds),
          ctxPlaylistIds = std::move (playlistIds)] (int choice) mutable
         {
-            menu->setLookAndFeel (nullptr);
             if (safeThis == nullptr || choice == 0)
                 return;
 

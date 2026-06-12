@@ -1123,7 +1123,8 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
         menu.showMenuAsync (
             juce::PopupMenu::Options()
                 .withTargetComponent (this)
-                .withTargetScreenArea (localAreaToGlobal (snapBounds_)),
+                .withTargetScreenArea (localAreaToGlobal (snapBounds_))
+                .withMinimumWidth (snapBounds_.getWidth()),
             [safe] (int result)
             {
                 if (safe == nullptr || result == 0)
@@ -1187,7 +1188,10 @@ void DawPanel::mouseDown (const juce::MouseEvent& event)
             juce::PopupMenu menu;
             menu.addItem (1, "Import Audio File...");
             menu.showMenuAsync (
-                juce::PopupMenu::Options().withTargetComponent (this),
+                juce::PopupMenu::Options()
+                    .withTargetComponent (this)
+                    .withTargetScreenArea (juce::Rectangle<int> (
+                        event.getScreenX(), event.getScreenY(), 1, 1)),
                 [this, lane, snapped] (int result)
                 {
                     if (result == 1 && onImportRequestedAtPoint != nullptr)

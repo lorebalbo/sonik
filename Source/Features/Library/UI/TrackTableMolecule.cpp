@@ -1,5 +1,6 @@
 #include "TrackTableMolecule.h"
 #include "LibraryPalette.h"
+#include "../../Shared/Ui/SonikLookAndFeel.h"
 
 static constexpr int kRowHeight       = 24;
 static constexpr int kHeaderVisible   = 39; // visible header strip
@@ -13,7 +14,9 @@ static constexpr int kRowsVPad        = 8;  // vertical padding inside the rows 
 // The header rectangle reserved by JUCE is `kHeaderTotal` tall; we draw only
 // in the top `kHeaderVisible` and leave the bottom `kHeaderBottomGap` empty.
 // =============================================================================
-class TrackTableMolecule::HeaderLnF final : public juce::LookAndFeel_V4
+// Inherits SonikLookAndFeel so the header's right-click column-chooser popup
+// gets the app-wide DESIGN.md menu chrome.
+class TrackTableMolecule::HeaderLnF final : public sonik::ui::SonikLookAndFeel
 {
 public:
     void drawTableHeaderBackground (juce::Graphics& g,

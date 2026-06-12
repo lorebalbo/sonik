@@ -30,6 +30,7 @@ You must strictly adhere to these patterns to ensure a scalable, "vibe-coded" ar
 - All UI code **must** strictly conform to the design system defined in `DESIGN.md`. This is non-negotiable.
 - Key constraints from `DESIGN.md` to always enforce: strict monochrome palette (`#2d2d2d` / `#fdfdfd`), `Space Mono Regular` font, `2px solid #2d2d2d` borders on all buttons with explicit active/inactive fill inversion, zero `border-radius`, dithered patterns instead of gradients, pixel-art icons, and tonal layering for depth.
 - Before writing any UI component, consult `DESIGN.md` for the relevant component specification (waveforms, knobs, faders, jog wheels, library, etc.).
+- **Popup menus and combo boxes** are styled app-wide by `Source/Features/Shared/Ui/SonikLookAndFeel`, installed as the JUCE default LookAndFeel in `SonikApplication::initialise()`. Never restyle a `juce::PopupMenu` / `juce::ComboBox` per-component; a bare menu automatically picks up the DESIGN.md chrome. If a component needs a bespoke LookAndFeel for other widgets, inherit from `sonik::ui::SonikLookAndFeel` (not `juce::LookAndFeel_V4`) so its menus stay consistent.
 
 **3. State Management (Single Source of Truth)**
 - Use `juce::ValueTree` (or `juce::AudioProcessorValueTreeState`) as the central state. Implement the **Observer Pattern** (JUCE Listeners) so the UI reacts to state changes rather than actively polling.
