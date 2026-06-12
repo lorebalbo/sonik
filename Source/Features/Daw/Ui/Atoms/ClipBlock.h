@@ -43,9 +43,16 @@ public:
     // cache miss returns nullptr; this accessor never triggers analysis.
     using WaveformSource = std::function<WaveformData::Ptr (const juce::String& sourceFileId)>;
 
+    // Resolves a clip's sourceFileId (the original track's content hash) to a
+    // human-readable display name (the song's filename, no extension). Returns an
+    // empty string when the name cannot be resolved. Optional; when unset the
+    // block falls back to drawing the clip's musical length.
+    using NameSource = std::function<juce::String (const juce::String& sourceFileId)>;
+
     ClipBlock (juce::ValueTree clipNode,
                const TimelineTransform& transform,
-               WaveformSource waveformSource);
+               WaveformSource waveformSource,
+               NameSource nameSource = {});
 
     ~ClipBlock() override;
 
@@ -161,6 +168,12 @@ private:
     int64_t snapTimeline (int64_t sample, bool bypass) const;
 
     void reloadClip();
+
+    // The clip's header-band caption: the resolved song filename plus a stem
+    // suffix (" - Instrumental" / " - Vocals"). Empty when no name resolver is
+    // wired or the source cannot be resolved.
+    juce::String displayName() const;
+
     void paintWaveform   (juce::Graphics& g, juce::Rectangle<int> inner, const WaveformData& data);
     void paintPlaceholder (juce::Graphics& g, juce::Rectangle<int> inner);
     void paintGlitch      (juce::Graphics& g, juce::Rectangle<int> inner); // PRD-0097
@@ -190,7 +203,12 @@ private:
     juce::ValueTree          clipNode_;
     const TimelineTransform& transform_;
     WaveformSource           waveformSource_;
+    NameSource               nameSource_;
     DawClip                  clip_;
+
+    // Lane kind ("Original" / "Instrumental" / "Vocal") derived from the owning
+    // lane node; selects the waveform variant and the display-name suffix.
+    juce::String             laneKind_;
 
     // Last placement band applied by the owning lane, so the block can re-apply
     // its own bounds the instant its crop end grows (keeping width and waveform

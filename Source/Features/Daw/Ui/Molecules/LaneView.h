@@ -37,7 +37,8 @@ public:
     LaneView (ChannelGroup::LaneKind kind,
               const TimelineTransform& transform,
               juce::ValueTree laneTree = {},
-              ClipBlock::WaveformSource waveformSource = {});
+              ClipBlock::WaveformSource waveformSource = {},
+              ClipBlock::NameSource nameSource = {});
 
     ~LaneView() override;
 
@@ -101,6 +102,7 @@ private:
     juce::ValueTree            laneTree_;
     juce::ValueTree            clipsContainer_;
     ClipBlock::WaveformSource  waveformSource_;
+    ClipBlock::NameSource      nameSource_;
 
     // Clip blocks live in this child layer, which spans ONLY the content area
     // (right of the header gutter). Because JUCE clips a component's children to

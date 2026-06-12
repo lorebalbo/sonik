@@ -6,6 +6,8 @@
 #include "Features/AudioEngine/AudioEngine.h"
 #include "Features/AudioEngine/AudioFileLoader.h"
 #include "Features/Waveform/WaveformManager.h"
+#include "Features/Waveform/WaveformAnalyzer.h"
+#include "Features/Daw/Model/StemWaveformKey.h"
 #include "Features/BeatGrid/BeatGridManager.h"
 #include "Features/KeyDetection/KeyDetectionManager.h"
 #include "Features/Deck/UI/MainContentComponent.h"
@@ -138,6 +140,9 @@ private:
     std::unique_ptr<AudioFileLoader>  audioFileLoader;
     std::unique_ptr<Daw::MasterGridService> masterGridService;  // PRD-0064/0066
     std::unique_ptr<WaveformManager>  waveformManager;
+    // Generates per-stem waveform peaks (instrumental + vocal) when a separation
+    // completes, so the DAW's stem clips draw their own audio content.
+    std::unique_ptr<WaveformAnalyzer> stemWaveformAnalyzer;
     std::unique_ptr<BeatGridManager>  beatGridManager;
     std::unique_ptr<KeyDetectionManager> keyDetectionManager;
     std::unique_ptr<ModelManager>          modelManager;

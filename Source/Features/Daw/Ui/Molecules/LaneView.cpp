@@ -12,11 +12,13 @@ namespace Daw
 LaneView::LaneView (ChannelGroup::LaneKind kind,
                     const TimelineTransform& transform,
                     juce::ValueTree laneTree,
-                    ClipBlock::WaveformSource waveformSource)
+                    ClipBlock::WaveformSource waveformSource,
+                    ClipBlock::NameSource nameSource)
     : kind_ (kind),
       transform_ (transform),
       laneTree_ (std::move (laneTree)),
-      waveformSource_ (std::move (waveformSource))
+      waveformSource_ (std::move (waveformSource)),
+      nameSource_ (std::move (nameSource))
 {
     setInterceptsMouseClicks (false, true); // Children (ClipBlocks) receive mouse events.
 
@@ -91,7 +93,7 @@ void LaneView::rebuildClips()
 ClipBlock* LaneView::addClipBlockFor (juce::ValueTree clipNode)
 {
     auto* block = clipBlocks_.add (
-        new ClipBlock (clipNode, transform_, waveformSource_));
+        new ClipBlock (clipNode, transform_, waveformSource_, nameSource_));
 
     // Wire editing callbacks if a dispatcher is available.
     if (dispatcher_ != nullptr)

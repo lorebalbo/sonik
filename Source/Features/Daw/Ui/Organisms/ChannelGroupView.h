@@ -47,7 +47,8 @@ public:
                       juce::ValueTree deckTree,
                       const TimelineTransform& transform,
                       ClipBlock::WaveformSource waveformSource = {},
-                      AutomationModel* model = nullptr);
+                      AutomationModel* model = nullptr,
+                      ClipBlock::NameSource nameSource = {});
 
     ~ChannelGroupView() override;
 

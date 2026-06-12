@@ -109,6 +109,22 @@ public:
                     (const juce::String& sourceFileId) -> WaveformData::Ptr
                     {
                         return cache->get (sourceFileId);
+                    },
+                    // Resolve a clip's sourceFileId (the original track's content
+                    // hash) to the song's filename for the clip header caption.
+                    // The lane suffix (" - Instrumental" / " - Vocals") is added by
+                    // the ClipBlock itself from its lane kind. Reverse-looks up the
+                    // file path the same way the playback resolver does, then keeps
+                    // only the filename without extension. An unresolved id (e.g. an
+                    // imported source) returns empty -> the block falls back to its
+                    // musical-length caption.
+                    [&trackDb](const juce::String& sourceFileId) -> juce::String
+                    {
+                        const juce::String path =
+                            trackDb.getFilePathForContentHash (sourceFileId);
+                        if (path.isEmpty())
+                            return {};
+                        return juce::File (path).getFileNameWithoutExtension();
                     }),
           libraryComponent (std::make_unique<LibraryComponent> (rootState, trackDb, analysisQueue))
     {
