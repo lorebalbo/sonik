@@ -6,7 +6,6 @@ namespace
 {
     const juce::Colour kInk     { 0xFF2D2D2D };
     const juce::Colour kSurface { 0xFFFDFDFD };
-    const juce::Colour kHigh    { 0xFFE2E2E2 };   // surface-container-highest
 
     constexpr float kDragRangePixels = 140.0f;    // full sweep per drag
     constexpr float kFineMultiplier  = 0.25f;     // shift = 4× finer
@@ -179,88 +178,83 @@ void MixRotaryKnob::paint (juce::Graphics& g)
         displayArea = bounds.removeFromBottom (kDisplayHeight);
     }
 
-    // ── Knob circle (10 % smaller than available area) ──────────────────────
+    // ── Knob (pixel-art: ticks → ring → broken inner arc → needle) ──────────
     auto knobArea = bounds;
-    const int knobSizeFull = juce::jmin (knobArea.getWidth(), knobArea.getHeight());
-    const int knobSize     = (knobSizeFull * 9) / 10;   // 10 % smaller
+    const int knobSize = juce::jmin (knobArea.getWidth(), knobArea.getHeight());
 
     if (knobSize >= 8)
     {
         knobArea = knobArea.withSizeKeepingCentre (knobSize, knobSize);
         const auto knobRect = knobArea.toFloat();
-        const float cx = knobRect.getCentreX();
-        const float cy = knobRect.getCentreY();
-        const float radius = knobSize * 0.5f - 1.0f;
+        const float cx   = knobRect.getCentreX();
+        const float cy   = knobRect.getCentreY();
+        const float half = knobSize * 0.5f;
 
-        // Arc offset: juce::Path::addCentredArc treats 0 = 12 o'clock (CW),
-        // while the pointer maths uses 0 = 3 o'clock (standard trig).
-        // Adding halfPi aligns them.
-        constexpr float kArcAngleOffset = juce::MathConstants<float>::halfPi;
+        // Proportions traced from the DESIGN.md reference mock: square ticks
+        // orbit outside a thick ring; ring, clearance gap, inner arc and
+        // needle all share one stroke weight of ~10 % of the ring radius
+        // (clamped to 2 px so small knobs stay legible).
+        const float tickSize  = juce::jmax (2.0f, std::round (half * 0.11f));
+        const float tickOrbit = half - tickSize * 0.75f;
+        const float ringOuter = tickOrbit * 0.80f;
+        const float stroke    = juce::jmax (2.0f, std::round (ringOuter * 0.105f));
 
-        // Background arc track.
+        const float arcRadius  = ringOuter - stroke * 2.5f;   // arc centreline
+        const float needleTip  = ringOuter - stroke * 2.0f;   // arc outer edge
+        const float angle      = angleFor (currentValue);
+
+        g.setColour (kInk);
+
+        // 11 square ticks, one per 30 degrees across the 300-degree sweep,
+        // each rotated so a flat side faces the centre. The bottom 60-degree
+        // dead zone stays empty.
+        for (int i = 0; i <= 10; ++i)
         {
-            juce::Path arc;
-            arc.addCentredArc (cx, cy, radius, radius, 0.0f,
-                               kStartAngle + kArcAngleOffset,
-                               kEndAngle   + kArcAngleOffset,
-                               true);
-            g.setColour (kHigh);
-            g.strokePath (arc, juce::PathStrokeType (3.0f));
+            const float a = kStartAngle
+                          + (kEndAngle - kStartAngle)
+                              * (static_cast<float> (i) / 10.0f);
+            juce::Path square;
+            square.addRectangle (-tickSize * 0.5f, -tickSize * 0.5f,
+                                 tickSize, tickSize);
+            g.fillPath (square,
+                        juce::AffineTransform::rotation (a)
+                            .translated (cx + tickOrbit * std::cos (a),
+                                         cy + tickOrbit * std::sin (a)));
         }
 
-        // Value arc (filled portion from start / centre toward current angle).
+        // Solid outer ring with a white face inside.
+        g.fillEllipse (cx - ringOuter, cy - ringOuter,
+                       ringOuter * 2.0f, ringOuter * 2.0f);
+        const float face = ringOuter - stroke;
+        g.setColour (kSurface);
+        g.fillEllipse (cx - face, cy - face, face * 2.0f, face * 2.0f);
+
+        // Inner arc: a full circle except for a gap that travels with the
+        // needle, so the needle always points through open space.
         {
-            const float currentAngle = angleFor (currentValue);
-            float fromAngle = kStartAngle;
-            float toAngle   = currentAngle;
-            if (config.taper == Normalisation::Bipolar
-                || config.taper == Normalisation::DbTapered)
-            {
-                const float centreAngle = (kStartAngle + kEndAngle) * 0.5f;
-                if (currentAngle >= centreAngle)
-                {
-                    fromAngle = centreAngle;
-                    toAngle   = currentAngle;
-                }
-                else
-                {
-                    fromAngle = currentAngle;
-                    toAngle   = centreAngle;
-                }
-            }
+            // juce::Path::addCentredArc treats 0 = 12 o'clock (CW), while the
+            // needle maths uses 0 = 3 o'clock (standard trig); halfPi aligns.
+            constexpr float arcAngleOffset = juce::MathConstants<float>::halfPi;
+            const float gapHalf = juce::degreesToRadians (30.0f);
 
             juce::Path arc;
-            arc.addCentredArc (cx, cy, radius, radius, 0.0f,
-                               fromAngle + kArcAngleOffset,
-                               toAngle   + kArcAngleOffset,
+            arc.addCentredArc (cx, cy, arcRadius, arcRadius, 0.0f,
+                               angle + arcAngleOffset + gapHalf,
+                               angle + arcAngleOffset
+                                     + juce::MathConstants<float>::twoPi - gapHalf,
                                true);
             g.setColour (kInk);
-            g.strokePath (arc, juce::PathStrokeType (3.0f));
+            g.strokePath (arc, juce::PathStrokeType (stroke,
+                                                     juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::butt));
         }
 
-        // Pointer needle — single straight line from centre to arc edge.
-        {
-            const float angle = angleFor (currentValue);
-            const float outer = radius - 2.0f;
-            g.setColour (kInk);
-            g.drawLine (cx, cy,
-                        cx + outer * std::cos (angle),
-                        cy + outer * std::sin (angle),
-                        2.0f);
-        }
-
-        // 1-px white centre-detent notch at 12 o'clock (subtle reference mark).
-        {
-            const float centreAngle = (kStartAngle + kEndAngle) * 0.5f;
-            const float inner = radius - 4.0f;
-            const float outer = radius + 1.0f;
-            const float mx1 = cx + inner * std::cos (centreAngle);
-            const float my1 = cy + inner * std::sin (centreAngle);
-            const float mx2 = cx + outer * std::cos (centreAngle);
-            const float my2 = cy + outer * std::sin (centreAngle);
-            g.setColour (kSurface);
-            g.drawLine (mx1, my1, mx2, my2, 1.0f);
-        }
+        // Needle: straight line from the centre out through the arc gap.
+        g.setColour (kInk);
+        g.drawLine (cx, cy,
+                    cx + needleTip * std::cos (angle),
+                    cy + needleTip * std::sin (angle),
+                    stroke);
     }
 
     // ── Bottom display / label ───────────────────────────────────────────────

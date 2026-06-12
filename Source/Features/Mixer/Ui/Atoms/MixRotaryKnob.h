@@ -4,9 +4,11 @@
 //
 // A pixel-art rotary knob bound to a single juce::ValueTree property.
 // Strict DESIGN.md compliance: monochrome #2d2d2d / #fdfdfd palette, Space
-// Mono Regular typography, 2-px borders, zero border-radius, a 1-px white
-// centre-detent tick mark, no gradients (a dithered "lifted" face suggests
-// depth without breaking the 1-bit aesthetic).
+// Mono Regular typography, zero border-radius, no gradients. Visual layers
+// (outside-in): 11 square pixel ticks every 30 degrees (rotated to face the
+// centre, bottom 60-degree dead zone empty), a thick solid outer ring, a
+// white face, an inner arc broken by a gap that travels with the needle,
+// and a straight needle from the centre pointing through that gap.
 //
 // Interaction model (PRD-0059 §1.5.1 / §1.5.5):
 //   • Vertical click-drag (default; arc-drag explicitly rejected by PRD)
