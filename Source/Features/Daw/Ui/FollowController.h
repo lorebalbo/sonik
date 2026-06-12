@@ -17,6 +17,14 @@
 //   * Any manual scroll / zoom / pan disengages follow for the moment
 //     (notifyManualScroll()); pressing Play or Stop re-engages it, exactly like
 //     Logic's "catch when starting playback".
+//   * Follow ALSO re-engages on its own: after a manual scroll, once the now-line
+//     drops at/below the trigger fraction and then crosses back above it (a
+//     rising edge), update() resumes follow. This is the "catch up" case — the DJ
+//     scrolls ahead, playback advances, and the moment the now-line reaches 4/5
+//     of the viewport again the view starts tracking it once more. A backward
+//     scroll that leaves the now-line already past the trigger does NOT snap the
+//     view forward: the now-line must first dip below the trigger (re-arm) before
+//     a crossing counts, so reviewing earlier material is never interrupted.
 //==============================================================================
 
 namespace Daw
@@ -30,12 +38,49 @@ public:
 
     bool isEnabled() const noexcept { return enabled_; }
 
-    void setEnabled (bool shouldEnable) noexcept { enabled_ = shouldEnable; }
+    void setEnabled (bool shouldEnable) noexcept
+    {
+        enabled_ = shouldEnable;
+        armed_   = false; // explicit state changes start the auto-re-engage from a clean slate
+    }
 
-    void toggle() noexcept { enabled_ = ! enabled_; }
+    void toggle() noexcept { setEnabled (! enabled_); }
 
-    // A manual interaction disengages follow (no-op when already disabled).
-    void notifyManualScroll() noexcept { enabled_ = false; }
+    // A manual interaction disengages follow. Clearing the armed flag means a
+    // re-engage requires the now-line to first drop at/below the trigger again,
+    // so scrolling backward (now-line already past the trigger) will NOT yank the
+    // view forward — only a genuine "playback caught up" rising edge re-engages.
+    void notifyManualScroll() noexcept
+    {
+        enabled_ = false;
+        armed_   = false;
+    }
+
+    // Advance the auto-re-engage state machine; call once per refresh tick with
+    // the live now-line position. Only meaningful while follow is disengaged: it
+    // arms when the now-line sits at/below the trigger and re-engages follow the
+    // moment the now-line crosses back above it (a rising edge).
+    void update (double nowLineX, double viewportWidth) noexcept
+    {
+        if (enabled_ || viewportWidth <= 0.0)
+            return;
+
+        if (nowLineX > viewportWidth * kTriggerFraction)
+        {
+            // Above the trigger: only re-engage if we were armed by a prior dip
+            // below it (otherwise a backward scroll would snap the view forward).
+            if (armed_)
+            {
+                enabled_ = true;
+                armed_   = false;
+            }
+        }
+        else
+        {
+            // At/below the trigger: arm so the next upward crossing re-engages.
+            armed_ = true;
+        }
+    }
 
     // True when an auto-scroll should be applied this tick.
     bool shouldFollow (double nowLineX, double viewportWidth) const noexcept
@@ -54,6 +99,7 @@ public:
 
 private:
     bool enabled_ { true };
+    bool armed_   { false }; // re-engage pending: now-line dipped below the trigger
 };
 
 } // namespace Daw
