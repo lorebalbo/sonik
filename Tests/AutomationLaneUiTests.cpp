@@ -10,7 +10,12 @@
 //   * step vs linear interpolation produce different rendered geometry;
 //   * AUTO disclosure is hidden by default (group height unchanged) and reveal /
 //     collapse grow / restore the group height;
-//   * the playhead indicator computes the expected x via the shared transform.
+//   * the playhead indicator computes the expected x via the shared transform;
+//   * empty lanes paint the dimmed default-value line (continuous) / OFF
+//     baseline (boolean); a single breakpoint renders as a full-width held line;
+//   * editing gestures: a single click never creates a node; double-click on an
+//     empty spot creates one (selected, draggable); drag moves it; double-click
+//     on a node deletes it.
 //
 // All message/UI thread; no audio-thread state touched.
 //==============================================================================
@@ -23,7 +28,12 @@
 #include "Features/Daw/Ui/DawLayoutMetrics.h"
 #include "Features/Daw/Ui/Organisms/ChannelGroupStack.h"
 #include "Features/Daw/Ui/Organisms/ChannelGroupView.h"
+#include "Features/Daw/Editing/EditCommands.h"
+#include "Features/Daw/Playback/ArrangementCompiler.h"
+#include "Features/Daw/Playback/ArrangementPublisher.h"
+#include "Features/Daw/Playback/ArrangementRecompileTrigger.h"
 #include "Features/Daw/Automation/AutomationModel.h"
+#include "Features/Daw/Automation/ContinuousLane.h"
 #include "Features/Daw/Automation/Ui/ContinuousAutomationLaneView.h"
 #include "Features/Daw/Automation/Ui/BooleanAutomationLaneView.h"
 #include "Features/Daw/Automation/Ui/AutomationLaneStackView.h"
@@ -41,12 +51,18 @@ Daw::TimelineTransform makeTransform()
                                    /*viewportWidthPx*/ 800.0);
 }
 
-void paintInto (juce::Component& c, int w, int h)
+juce::Image paintToImage (juce::Component& c, int w, int h)
 {
     c.setBounds (0, 0, w, h);
     juce::Image img (juce::Image::RGB, juce::jmax (1, w), juce::jmax (1, h), true);
     juce::Graphics g (img);
     c.paintEntireComponent (g, false);
+    return img;
+}
+
+void paintInto (juce::Component& c, int w, int h)
+{
+    (void) paintToImage (c, w, h);
 }
 
 } // namespace
@@ -297,6 +313,143 @@ public:
             // Hidden when provider returns -1.
             view.setPlayheadProvider ([]() { return (std::int64_t) -1; });
             paintInto (view, laneW, laneH);
+        }
+
+        //----------------------------------------------------------------------
+        beginTest ("empty lanes paint the dimmed default line / OFF baseline");
+        {
+            auto daw = DawState::createDawBranch();
+            Daw::AutomationModel model (daw);
+            auto transform = makeTransform();
+
+            const int probeX = Daw::DawLayout::kTrackHeaderWidth + 400;
+
+            // Continuous filter: default 0.0 sits mid-body ([-1,+1] window).
+            {
+                auto node = model.getOrCreateContinuousLane ("A", "filter").getState();
+                Daw::ContinuousAutomationLaneView view (node, transform, &model, "filter");
+                auto img = paintToImage (view, laneW, laneH);
+                expect (img.getPixelAt (probeX, 8).getBrightness() > 0.95f,
+                        "body away from the default line is bare surface");
+                expect (img.getPixelAt (probeX, laneH / 2).getBrightness() < 0.92f,
+                        "dimmed default line painted at the filter centre value");
+            }
+
+            // Continuous volume: default 1.0 (full-open fader) sits at the top.
+            {
+                auto node = model.getOrCreateContinuousLane ("A", "volume").getState();
+                Daw::ContinuousAutomationLaneView view (node, transform, &model, "volume");
+                auto img = paintToImage (view, laneW, laneH);
+                expect (img.getPixelAt (probeX, Daw::AutomationLaneMetrics::kBodyInsetY + 1)
+                            .getBrightness() < 0.92f,
+                        "dimmed default line painted at the volume top value");
+            }
+
+            // Boolean: a dimmed OFF baseline along the bottom of the body.
+            {
+                auto node = model.getOrCreateBooleanLane ("A", "keyLock").getState();
+                Daw::BooleanAutomationLaneView view (node, transform, &model, "keyLock");
+                auto img = paintToImage (view, laneW, laneH);
+                expect (img.getPixelAt (probeX, laneH / 2).getBrightness() > 0.95f,
+                        "body above the baseline is bare surface");
+                expect (img.getPixelAt (probeX, laneH - 6).getBrightness() < 0.92f,
+                        "dimmed OFF baseline painted for an empty boolean lane");
+            }
+        }
+
+        //----------------------------------------------------------------------
+        beginTest ("a single breakpoint renders as a full-width held line");
+        {
+            auto daw = DawState::createDawBranch();
+            Daw::AutomationModel model (daw);
+            auto transform = makeTransform();
+
+            auto node = model.getOrCreateContinuousLane ("A", "filter").getState();
+            Daw::ContinuousLane lane (node);
+            lane.addBreakpoint (88200, 0.0, Daw::Interpolation::Linear); // mid-lane, mid-value
+
+            Daw::ContinuousAutomationLaneView view (node, transform, &model, "filter");
+            auto img = paintToImage (view, laneW, laneH);
+
+            // Full-strength ink at the held value, well left and right of the node
+            // (the curve holds the edge values, matching evaluateAt's semantics).
+            const int y = laneH / 2;
+            expect (img.getPixelAt (Daw::DawLayout::kTrackHeaderWidth + 8, y).getBrightness() < 0.5f,
+                    "held line reaches the lane's left edge");
+            expect (img.getPixelAt (laneW - 8, y).getBrightness() < 0.5f,
+                    "held line reaches the lane's right edge");
+        }
+
+        //----------------------------------------------------------------------
+        beginTest ("gestures: click never creates; double-click creates/deletes; drag moves");
+        {
+            auto daw = DawState::createDawBranch();
+            juce::UndoManager undo { 30000, 30 };
+            Daw::ArrangementPublisher publisher;
+            Daw::ArrangementRecompileTrigger trigger { daw, Daw::ArrangementCompiler{}, publisher };
+            Daw::EditCommandDispatcher dispatcher { daw, undo, trigger };
+            Daw::AutomationModel model (daw);
+
+            // xToSample clamps to [0, contentEnd], so the inverse mapping needs a
+            // real content length (makeTransform() leaves it 0 — forward-only).
+            const Daw::TimelineTransform::GridSnapshot grid;
+            Daw::TimelineTransform transform (grid,
+                                              /*pixelsPerBeat*/ 50.0,
+                                              /*leftEdgeSample*/ 0,
+                                              /*viewportWidthPx*/ 800.0,
+                                              (std::int64_t) (grid.samplesPerBeat * 32.0));
+
+            auto node = model.getOrCreateContinuousLane ("A", "filter").getState();
+            Daw::ContinuousAutomationLaneView view (node, transform, &model, "filter");
+            view.setBounds (0, 0, laneW, laneH);
+            view.setEditDispatcher (&dispatcher);
+
+            auto eventAt = [&view] (int x, int y, int clicks)
+            {
+                const juce::Point<float> p ((float) x, (float) y);
+                return juce::MouseEvent (juce::Desktop::getInstance().getMainMouseSource(),
+                                         p, juce::ModifierKeys(), 1.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                                         &view, &view, juce::Time::getCurrentTime(), p,
+                                         juce::Time::getCurrentTime(), clicks, false);
+            };
+
+            // 200 content px @ 50 px/beat = beat 4 (on-grid); mid y = filter 0.0.
+            const int bodyX = Daw::DawLayout::kTrackHeaderWidth + 200;
+            const int midY  = laneH / 2;
+
+            // A single click on the empty body must NOT create a node.
+            view.mouseDown (eventAt (bodyX, midY, 1));
+            view.mouseUp   (eventAt (bodyX, midY, 1));
+            expectEquals (view.getBreakpointCount(), 0, "single click does not create");
+
+            // Double-click the empty body: exactly one node, selected for dragging.
+            view.mouseDown        (eventAt (bodyX, midY, 2));
+            view.mouseDoubleClick (eventAt (bodyX, midY, 2));
+            view.mouseUp          (eventAt (bodyX, midY, 2));
+            expectEquals (view.getBreakpointCount(), 1, "double-click created one node");
+            expect (view.getSelectedBreakpoint().isValid(), "created node is selected");
+
+            Daw::ContinuousLane lane (node);
+            expectEquals (Daw::ContinuousLane::sampleOfNode (lane.getBreakpoint (0)),
+                          (std::int64_t) 88200, "created at the snapped beat");
+
+            // Press the node, drag right/up, release: ONE moved node, no duplicate.
+            const int targetX = Daw::DawLayout::kTrackHeaderWidth + 300; // beat 6
+            const int targetY = midY - 5;                               // filter 0.5
+            view.mouseDown (eventAt (bodyX,   midY,    1));
+            view.mouseDrag (eventAt (targetX, targetY, 1));
+            view.mouseUp   (eventAt (targetX, targetY, 1));
+            expectEquals (view.getBreakpointCount(), 1, "drag moved, not duplicated");
+            expectEquals (Daw::ContinuousLane::sampleOfNode (lane.getBreakpoint (0)),
+                          (std::int64_t) 132300, "moved to the snapped target beat");
+            expectWithinAbsoluteError (Daw::ContinuousLane::valueOfNode (lane.getBreakpoint (0)),
+                                       0.5, 0.05);
+
+            // Double-click the node at its new position deletes it.
+            view.mouseDown        (eventAt (targetX, targetY, 2));
+            view.mouseDoubleClick (eventAt (targetX, targetY, 2));
+            view.mouseUp          (eventAt (targetX, targetY, 2));
+            expectEquals (view.getBreakpointCount(), 0, "double-click on the node deletes it");
         }
     }
 };
