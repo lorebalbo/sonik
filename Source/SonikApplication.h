@@ -44,6 +44,7 @@
 #include "Features/Daw/Import/ImportClipPlacer.h"
 #include "Features/Daw/Import/AudioFileImporter.h"
 #include "Features/Midi/UI/MidiSettingsWindow.h"
+#include "Features/Shared/Ui/SonikLookAndFeel.h"
 #include <memory>
 
 class MainWindow final : public juce::DocumentWindow
@@ -101,6 +102,11 @@ public:
     void systemRequestedQuit() override;
 
 private:
+    // App-wide DESIGN.md LookAndFeel (popup menus, combo boxes). Installed as
+    // the JUCE default in initialise(); must outlive every window, so it is
+    // uninstalled and destroyed last in shutdown().
+    std::unique_ptr<sonik::ui::SonikLookAndFeel> lookAndFeel;
+
     std::unique_ptr<TrackDatabase>    trackDatabase;
     std::unique_ptr<sonik::midi::JuceMidiHost>      midiHost;           // PRD-0040
     std::unique_ptr<sonik::midi::MidiDeviceManager> midiDeviceManager;  // PRD-0040

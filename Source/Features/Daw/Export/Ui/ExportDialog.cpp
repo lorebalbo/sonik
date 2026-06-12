@@ -78,50 +78,6 @@ namespace
     };
 
     //--------------------------------------------------------------------------
-    // DESIGN.md monochrome look-and-feel for the ComboBoxes (no rounded JUCE
-    // chrome, no colour). 2px ink border, square, Space Mono, dimmed when
-    // disabled via tonal layering.
-    //--------------------------------------------------------------------------
-    class MonoLookAndFeel final : public juce::LookAndFeel_V4
-    {
-    public:
-        void drawComboBox (juce::Graphics& g, int width, int height, bool,
-                           int, int, int, int, juce::ComboBox& box) override
-        {
-            auto r = juce::Rectangle<int> (0, 0, width, height).toFloat();
-            g.setColour (box.isEnabled() ? kSurface : kDim);
-            g.fillRect (r);
-            g.setColour (box.isEnabled() ? kInk : kInk.withAlpha (0.35f));
-            g.drawRect (r, 2.0f);
-
-            // A pixel-art down chevron at the right (no anti-aliased icon).
-            const int s = 4;
-            const int cx = width - 14;
-            const int cy = height / 2 - 2;
-            g.setColour (box.isEnabled() ? kInk : kInk.withAlpha (0.4f));
-            for (int i = 0; i < 3; ++i)
-                g.fillRect (cx - i + 2, cy + i, s + (2 - i) * 2 - s + 2, 2);
-        }
-
-        juce::Font getComboBoxFont (juce::ComboBox&) override { return monoFont (11.0f); }
-        juce::Font getPopupMenuFont() override                { return monoFont (11.0f); }
-
-        void positionComboBoxText (juce::ComboBox& box, juce::Label& label) override
-        {
-            label.setBounds (6, 1, box.getWidth() - 22, box.getHeight() - 2);
-            label.setFont (monoFont (11.0f));
-            label.setColour (juce::Label::textColourId,
-                             box.isEnabled() ? kInk : kInk.withAlpha (0.4f));
-        }
-    };
-
-    MonoLookAndFeel& sharedLookAndFeel()
-    {
-        static MonoLookAndFeel laf;
-        return laf;
-    }
-
-    //--------------------------------------------------------------------------
     // Dithered drop shadow (DESIGN.md §4: 4px offset, 50% checkerboard, zero blur).
     //--------------------------------------------------------------------------
     void paintDitheredShadow (juce::Graphics& g, juce::Rectangle<int> panel, int offset)
@@ -192,7 +148,8 @@ private:
 ExportDialog::ExportDialog (ExportContext context)
     : context_ (std::move (context))
 {
-    setLookAndFeel (&sharedLookAndFeel());
+    // The ComboBoxes take the DESIGN.md monochrome chrome from the app-wide
+    // default LookAndFeel (SonikLookAndFeel).
 
     //---- Options-state controls ------------------------------------------------
     formatBox_ = std::make_unique<juce::ComboBox>();
@@ -326,8 +283,6 @@ ExportDialog::~ExportDialog()
         renderThread_->stopThread (5000);
         renderThread_.reset();
     }
-
-    setLookAndFeel (nullptr);
 }
 
 //==============================================================================

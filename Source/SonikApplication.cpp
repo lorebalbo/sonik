@@ -79,6 +79,11 @@ LibraryAnalysisQueue::JobExecutor makeStemExecutor (StemSeparationManager& stemM
 
 void SonikApplication::initialise (const juce::String& /*commandLine*/)
 {
+    // Install the DESIGN.md LookAndFeel before any UI exists so every popup
+    // menu and combo box in the app inherits the monochrome 1-bit chrome.
+    lookAndFeel = std::make_unique<sonik::ui::SonikLookAndFeel>();
+    juce::LookAndFeel::setDefaultLookAndFeel (lookAndFeel.get());
+
     auto dbPath = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                       .getChildFile ("Application Support")
                       .getChildFile ("Sonik")
@@ -1035,6 +1040,11 @@ void SonikApplication::shutdown()
     midiHost.reset();
 
     trackDatabase.reset();
+
+    // Every component is gone by now; restore the stock default before the
+    // LookAndFeel instance itself is destroyed.
+    juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+    lookAndFeel.reset();
 }
 
 void SonikApplication::systemRequestedQuit()
