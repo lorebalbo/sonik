@@ -15,7 +15,8 @@ namespace Daw
 DawPanel::DawPanel (MasterGridService& gridService,
                     juce::ValueTree dawBranch,
                     ChannelGroupStack::DeckResolver deckResolver,
-                    ClipBlock::WaveformSource waveformSource)
+                    ClipBlock::WaveformSource waveformSource,
+                    ClipBlock::NameSource clipNameSource)
     : gridService_ (gridService),
       dawBranch_   (dawBranch),  // retained copy (ValueTree ref-counts internally)
       transform_ (TimelineTransform::GridSnapshot{}, kDefaultPixelsPerBeat,
@@ -23,7 +24,8 @@ DawPanel::DawPanel (MasterGridService& gridService,
       automationModel_ (dawBranch), // same daw branch the stack/ruler observe
       ruler_ (gridService, transform_),
       stack_ (dawBranch, transform_, std::move (deckResolver),
-              std::move (waveformSource), &automationModel_)
+              std::move (waveformSource), &automationModel_,
+              std::move (clipNameSource))
 {
     addAndMakeVisible (ruler_);
 

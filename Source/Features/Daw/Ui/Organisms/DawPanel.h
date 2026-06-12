@@ -70,7 +70,8 @@ public:
     DawPanel (MasterGridService& gridService,
               juce::ValueTree dawBranch,
               ChannelGroupStack::DeckResolver deckResolver,
-              ClipBlock::WaveformSource waveformSource = {});
+              ClipBlock::WaveformSource waveformSource = {},
+              ClipBlock::NameSource clipNameSource = {});
     ~DawPanel() override;
 
     //--------------------------------------------------------------------------

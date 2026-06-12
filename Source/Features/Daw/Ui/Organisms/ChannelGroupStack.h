@@ -50,7 +50,8 @@ public:
                        const TimelineTransform& transform,
                        DeckResolver deckResolver,
                        ClipBlock::WaveformSource waveformSource = {},
-                       AutomationModel* model = nullptr);
+                       AutomationModel* model = nullptr,
+                       ClipBlock::NameSource nameSource = {});
 
     ~ChannelGroupStack() override;
 
@@ -118,6 +119,7 @@ private:
     DeckResolver      deckResolver_;
     ChannelResolver   channelResolver_;
     ClipBlock::WaveformSource waveformSource_;
+    ClipBlock::NameSource     nameSource_;
     AutomationModel*  automationModel_ { nullptr };
     AutomationLaneStackView::PlayheadProvider automationPlayheadProvider_;
 

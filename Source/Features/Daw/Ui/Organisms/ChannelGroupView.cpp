@@ -24,7 +24,8 @@ ChannelGroupView::ChannelGroupView (juce::ValueTree trackTree,
                                     juce::ValueTree deckTree,
                                     const TimelineTransform& transform,
                                     ClipBlock::WaveformSource waveformSource,
-                                    AutomationModel* model)
+                                    AutomationModel* model,
+                                    ClipBlock::NameSource nameSource)
     : trackTree_ (std::move (trackTree)),
       deckTree_  (std::move (deckTree)),
       header_ (static_cast<int> (trackTree_.getProperty (DawIDs::deckIndex))),
@@ -34,13 +35,13 @@ ChannelGroupView::ChannelGroupView (juce::ValueTree trackTree,
 
     lanes_[0] = std::make_unique<LaneView> (
         ChannelGroup::LaneKind::Original, transform,
-        ChannelGroup::findLane (trackTree_, ChannelGroup::LaneKind::Original), waveformSource);
+        ChannelGroup::findLane (trackTree_, ChannelGroup::LaneKind::Original), waveformSource, nameSource);
     lanes_[1] = std::make_unique<LaneView> (
         ChannelGroup::LaneKind::Instrumental, transform,
-        ChannelGroup::findLane (trackTree_, ChannelGroup::LaneKind::Instrumental), waveformSource);
+        ChannelGroup::findLane (trackTree_, ChannelGroup::LaneKind::Instrumental), waveformSource, nameSource);
     lanes_[2] = std::make_unique<LaneView> (
         ChannelGroup::LaneKind::Vocal, transform,
-        ChannelGroup::findLane (trackTree_, ChannelGroup::LaneKind::Vocal), waveformSource);
+        ChannelGroup::findLane (trackTree_, ChannelGroup::LaneKind::Vocal), waveformSource, nameSource);
 
     addAndMakeVisible (header_);
     for (auto& lane : lanes_)

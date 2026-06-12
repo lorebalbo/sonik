@@ -244,6 +244,10 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
         *deckStateManager, *trackDatabase,
         *modelManager, *audioEngine);
 
+    // Analyzes separated stems into waveform peaks so each DAW stem clip can draw
+    // its own audio content (instrumental vs vocal) instead of the original track.
+    stemWaveformAnalyzer = std::make_unique<WaveformAnalyzer> (*trackDatabase);
+
     // Wire stem-ready callback to deliver stems to audio engine (PRD-0021)
     stemSeparationManager->setStemReadyCallback (
         [this] (const juce::String& deckId, StemData::Ptr stems)
@@ -257,6 +261,31 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
                     stems->stems[StemData::Bass],
                     stems->stems[StemData::Other]);
             }
+
+            // Generate per-stem waveform peaks keyed by the lane-qualified id so a
+            // clip on the Instrumental / Vocal lane resolves its own peaks (the
+            // ClipBlock requests these same keys). Stored under composite keys; the
+            // analyzer no-ops when peaks are already cached (idempotent on reload).
+            if (stemWaveformAnalyzer == nullptr || stems == nullptr
+                || deckStateManager == nullptr)
+                return;
+
+            auto deckTree = deckStateManager->getDeckState (deckId);
+            const juce::String hash = deckTree.getChildWithName (IDs::TrackMetadata)
+                                              .getProperty (IDs::contentHash).toString();
+            if (hash.isEmpty())
+                return;
+
+            if (auto vocals = stems->getVocals())
+                stemWaveformAnalyzer->analyze (
+                    Daw::stemWaveformKey (hash, "Vocal"), vocals, {});
+
+            // Instrumental = drums + bass + other, matching the playback mix.
+            std::vector<AudioBufferHolder::Ptr> instrumental {
+                stems->getDrums(), stems->getBass(), stems->getOther() };
+            stemWaveformAnalyzer->analyzeSum (
+                Daw::stemWaveformKey (hash, "Instrumental"),
+                std::move (instrumental), {});
         });
 
     libraryAnalysisService = std::make_unique<LibraryAnalysisService> (*trackDatabase);
@@ -960,6 +989,10 @@ void SonikApplication::shutdown()
 
     // Stop waveform manager before engine
     waveformManager.reset();
+
+    // Join the stem waveform analyzer's thread pool before the database it writes
+    // peaks into is torn down.
+    stemWaveformAnalyzer.reset();
 
     // Stop beat grid manager before engine
     beatGridManager.reset();

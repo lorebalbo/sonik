@@ -11,12 +11,12 @@ class WaveformAnalyzer::AnalysisJob : public juce::ThreadPoolJob
 public:
     AnalysisJob (WaveformAnalyzer& owner,
                  const juce::String& hash,
-                 AudioBufferHolder::Ptr buf,
+                 std::vector<AudioBufferHolder::Ptr> bufs,
                  Callback cb)
         : juce::ThreadPoolJob ("WaveformAnalysis_" + hash),
           analyzer (owner),
           contentHash (hash),
-          buffer (std::move (buf)),
+          buffers (std::move (bufs)),
           callback (std::move (cb))
     {}
 
@@ -37,26 +37,79 @@ public:
         if (shouldExit())
             return jobHasFinished;
 
-        // 2. Analyze from PCM buffer
-        auto data = analyzeBuffer();
+        // 2. Resolve the working buffer: a single source is used directly; several
+        //    sources are summed here on the background thread (instrumental stem).
+        AudioBufferHolder::Ptr buffer = (buffers.size() == 1)
+                                            ? buffers.front()
+                                            : sumBuffers (buffers);
+        if (buffer == nullptr || shouldExit())
+            return jobHasFinished;
+
+        // 3. Analyze from PCM buffer
+        auto data = analyzeBuffer (*buffer);
         if (data == nullptr || shouldExit())
             return jobHasFinished;
 
-        // 3. Cache to SQLite
+        // 4. Cache to SQLite
         auto serialized = data->serialize();
         analyzer.db.storeWaveformData (contentHash, serialized);
 
-        // 4. Deliver result on message thread
+        // 5. Deliver result on message thread
         deliverResult (std::move (data));
         return jobHasFinished;
     }
 
 private:
-    WaveformData::Ptr analyzeBuffer()
+    // Mix several stem buffers into one (instrumental = drums + bass + other).
+    // Runs on the background thread. Skips null contributors; the output spans the
+    // shortest contributor so no read runs past a buffer's end.
+    static AudioBufferHolder::Ptr sumBuffers (const std::vector<AudioBufferHolder::Ptr>& bufs)
     {
-        const auto& audioBuffer = buffer->getBuffer();
-        const auto  sr          = buffer->getSampleRate();
-        const auto  numFrames   = buffer->getNumFrames();
+        int     numChannels = 0;
+        int64_t numFrames   = 0;
+        double  sampleRate  = 0.0;
+
+        for (const auto& b : bufs)
+        {
+            if (b == nullptr)
+                continue;
+            numChannels = juce::jmax (numChannels, b->getBuffer().getNumChannels());
+            numFrames   = (numFrames == 0) ? b->getNumFrames()
+                                           : juce::jmin (numFrames, b->getNumFrames());
+            sampleRate  = b->getSampleRate();
+        }
+
+        if (numChannels < 1 || numFrames <= 0 || sampleRate <= 0.0)
+            return nullptr;
+
+        const int frames = static_cast<int> (numFrames);
+        juce::AudioBuffer<float> out (numChannels, frames);
+        out.clear();
+
+        for (const auto& b : bufs)
+        {
+            if (b == nullptr)
+                continue;
+            const auto& src    = b->getBuffer();
+            const int   srcCh  = src.getNumChannels();
+            const int   n      = static_cast<int> (juce::jmin<int64_t> (numFrames, b->getNumFrames()));
+            for (int c = 0; c < numChannels; ++c)
+            {
+                // Fan a mono contributor across both output channels.
+                const int sc = juce::jmin (c, srcCh - 1);
+                out.addFrom (c, 0, src, sc, 0, n);
+            }
+        }
+
+        return AudioBufferHolder::Ptr (
+            new AudioBufferHolder (std::move (out), sampleRate, numFrames));
+    }
+
+    WaveformData::Ptr analyzeBuffer (const AudioBufferHolder& source)
+    {
+        const auto& audioBuffer = source.getBuffer();
+        const auto  sr          = source.getSampleRate();
+        const auto  numFrames   = source.getNumFrames();
         const int   numChannels = audioBuffer.getNumChannels();
 
         if (numFrames <= 0 || numChannels < 1 || sr <= 0.0)
@@ -191,10 +244,10 @@ private:
         });
     }
 
-    WaveformAnalyzer&      analyzer;
-    juce::String           contentHash;
-    AudioBufferHolder::Ptr buffer;
-    Callback               callback;
+    WaveformAnalyzer&                   analyzer;
+    juce::String                        contentHash;
+    std::vector<AudioBufferHolder::Ptr> buffers;
+    Callback                            callback;
 };
 
 // ============================================================================
@@ -215,6 +268,15 @@ void WaveformAnalyzer::analyze (const juce::String& contentHash,
                                 AudioBufferHolder::Ptr buffer,
                                 Callback callback)
 {
-    auto* job = new AnalysisJob (*this, contentHash, std::move (buffer), std::move (callback));
+    std::vector<AudioBufferHolder::Ptr> bufs { std::move (buffer) };
+    auto* job = new AnalysisJob (*this, contentHash, std::move (bufs), std::move (callback));
+    threadPool.addJob (job, true);
+}
+
+void WaveformAnalyzer::analyzeSum (const juce::String& cacheKey,
+                                   std::vector<AudioBufferHolder::Ptr> buffers,
+                                   Callback callback)
+{
+    auto* job = new AnalysisJob (*this, cacheKey, std::move (buffers), std::move (callback));
     threadPool.addJob (job, true);
 }

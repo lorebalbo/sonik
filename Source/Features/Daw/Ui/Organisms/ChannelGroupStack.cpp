@@ -13,11 +13,13 @@ ChannelGroupStack::ChannelGroupStack (juce::ValueTree dawBranch,
                                       const TimelineTransform& transform,
                                       DeckResolver deckResolver,
                                       ClipBlock::WaveformSource waveformSource,
-                                      AutomationModel* model)
+                                      AutomationModel* model,
+                                      ClipBlock::NameSource nameSource)
     : dawBranch_ (std::move (dawBranch)),
       transform_ (transform),
       deckResolver_ (std::move (deckResolver)),
       waveformSource_ (std::move (waveformSource)),
+      nameSource_ (std::move (nameSource)),
       automationModel_ (model)
 {
     tracks_ = dawBranch_.getChildWithName (DawIDs::tracks);
@@ -67,7 +69,8 @@ void ChannelGroupStack::rebuildGroups()
                                                  : juce::ValueTree();
 
         auto group = std::make_unique<ChannelGroupView> (node, deckTree, transform_,
-                                                         waveformSource_, automationModel_);
+                                                         waveformSource_, automationModel_,
+                                                         nameSource_);
         group->onPreferredHeightChanged = [this]() { notifyContentHeightChanged(); };
         if (automationPlayheadProvider_)
             group->setAutomationPlayheadProvider (automationPlayheadProvider_);

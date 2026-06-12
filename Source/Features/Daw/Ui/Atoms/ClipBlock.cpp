@@ -4,6 +4,8 @@
 
 #include "ClipBlock.h"
 
+#include "../../Model/StemWaveformKey.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -12,10 +14,12 @@ namespace Daw
 
 ClipBlock::ClipBlock (juce::ValueTree clipNode,
                       const TimelineTransform& transform,
-                      WaveformSource waveformSource)
+                      WaveformSource waveformSource,
+                      NameSource nameSource)
     : clipNode_ (std::move (clipNode)),
       transform_ (transform),
-      waveformSource_ (std::move (waveformSource))
+      waveformSource_ (std::move (waveformSource)),
+      nameSource_ (std::move (nameSource))
 {
     setInterceptsMouseClicks (true, false); // PRD-0084: enable editing interactions
     setWantsKeyboardFocus (true);
@@ -73,7 +77,28 @@ void ClipBlock::reloadClip()
         // PRD-0097: the daw tree is the single source of truth for the per-clip
         // "missing source" state; mirror it locally for paint().
         missingSource_ = static_cast<bool> (clipNode_.getProperty (DawClipIDs::missingSource));
+
+        // The lane kind (Original / Instrumental / Vocal) is owned by the lane
+        // node two levels up (clip -> clips -> lane). It selects this clip's
+        // waveform variant and the name suffix. Empty when the clip is unparented
+        // (isolated unit tests) -> the block behaves as an Original-lane clip.
+        laneKind_ = clipNode_.getParent().getParent()
+                             .getProperty (DawIDs::laneKind).toString();
     }
+}
+
+juce::String ClipBlock::displayName() const
+{
+    if (! nameSource_ || clip_.sourceFileId.isEmpty())
+        return {};
+
+    const juce::String base = nameSource_ (clip_.sourceFileId);
+    if (base.isEmpty())
+        return {};
+
+    if (laneKind_ == "Instrumental") return base + " - Instrumental";
+    if (laneKind_ == "Vocal")        return base + " - Vocals";
+    return base; // Original / unknown -> the bare filename
 }
 
 double ClipBlock::samplesPerPixelFor (const TimelineTransform& transform)
@@ -177,17 +202,29 @@ void ClipBlock::paint (juce::Graphics& g)
 
         if (band.getWidth() >= 44)
         {
-            const double spb = transform_.grid().samplesPerBeat;
-            if (spb > 0.0)
+            // The header band carries the clip's identity: the song's filename,
+            // suffixed with " - Instrumental" / " - Vocals" on the stem lanes so
+            // each clip reads as the audio it actually plays. When no name can be
+            // resolved (e.g. isolated tests / unresolved import) we fall back to
+            // the musical length so the band is never empty.
+            juce::String label = displayName();
+            if (label.isEmpty())
             {
-                const double beats = static_cast<double> (
-                    clip_.timelineLengthSamples (transform_.grid().bpm)) / spb;
-                const double bars = beats / DawState::kBeatsPerBar;
-                const juce::String label =
-                    (bars >= 0.95 ? juce::String (juce::roundToInt (bars))
-                                  : juce::String (bars, 1))
-                    + (bars >= 1.95 ? " BARS" : " BAR");
+                const double spb = transform_.grid().samplesPerBeat;
+                if (spb > 0.0)
+                {
+                    const double beats = static_cast<double> (
+                        clip_.timelineLengthSamples (transform_.grid().bpm)) / spb;
+                    const double bars = beats / DawState::kBeatsPerBar;
+                    label =
+                        (bars >= 0.95 ? juce::String (juce::roundToInt (bars))
+                                      : juce::String (bars, 1))
+                        + (bars >= 1.95 ? " BARS" : " BAR");
+                }
+            }
 
+            if (label.isNotEmpty())
+            {
                 g.setColour (selected ? kSurface : kInk);
                 g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(),
                                        7.0f, juce::Font::bold));
@@ -200,8 +237,13 @@ void ClipBlock::paint (juce::Graphics& g)
     // Resolve the shared waveform ONCE per paint. The accessor is backed by an
     // in-memory cache (WaveformCache), so this is an O(1) lookup rather than the
     // former SQLite-read-plus-deserialize that ran two-to-three times per repaint.
-    WaveformData::Ptr data = (waveformSource_ && clip_.sourceFileId.isNotEmpty())
-                                 ? waveformSource_ (clip_.sourceFileId)
+    // Resolve the waveform for THIS clip's audio content: the stem lanes qualify
+    // the base sourceFileId with their lane kind so the Instrumental clip draws
+    // the instrumental peaks and the Vocal clip the vocal peaks, instead of all
+    // three lanes sharing the original track's waveform.
+    const juce::String waveformKey = stemWaveformKey (clip_.sourceFileId, laneKind_);
+    WaveformData::Ptr data = (waveformSource_ && waveformKey.isNotEmpty())
+                                 ? waveformSource_ (waveformKey)
                                  : nullptr;
 
     if (data != nullptr && ! inner.isEmpty())
