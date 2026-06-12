@@ -71,7 +71,7 @@ void ThreeBandEq::processSample (float& left, float& right) noexcept
         {
             const float effective = knobSmoother_[b].getCurrentValue()
                                   * killSmoother_[b].getCurrentValue();
-            if (effective != coeffLinear_[b])
+            if (! juce::exactlyEqual (effective, coeffLinear_[b]))
             {
                 recomputeBand (b, effective);
                 coeffLinear_[b] = effective;

@@ -37,7 +37,7 @@ namespace Daw::Import
     {
         if (nativeSampleRate <= 0.0 || sessionSampleRate <= 0.0)
             return nativeLengthSamples;
-        if (nativeSampleRate == sessionSampleRate)
+        if (juce::exactlyEqual (nativeSampleRate, sessionSampleRate))
             return nativeLengthSamples;
 
         return (std::int64_t) std::llround (

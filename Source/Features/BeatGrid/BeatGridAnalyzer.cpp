@@ -5,8 +5,23 @@
 #include <algorithm>
 #include <numeric>
 
+// Essentia is third-party code that is not warning-clean under the project's
+// strict warning set; its headers live in /usr/local/include (a default search
+// path the compiler does not treat as a system directory), so the offending
+// diagnostics are silenced around the includes only.
+JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wsign-conversion",
+                                     "-Wzero-as-null-pointer-constant",
+                                     "-Wshorten-64-to-32",
+                                     "-Wextra-semi",
+                                     "-Wdeprecated-dynamic-exception-spec",
+                                     "-Wshadow-field-in-constructor",
+                                     "-Wfloat-conversion",
+                                     "-Wimplicit-float-conversion",
+                                     "-Wundefined-var-template",
+                                     "-Wunused-parameter")
 #include <essentia/algorithmfactory.h>
 #include <essentia/essentiamath.h>
+JUCE_END_IGNORE_WARNINGS_GCC_LIKE
 
 // ============================================================================
 // Essentia one-time initialisation (thread-safe via std::call_once)
@@ -237,7 +252,6 @@ private:
         double beatIntervalSamples = 60.0 * sr / finalBpm;
 
         // Convert ticks (in seconds at 44100) to source sample positions
-        double rateRatio = sr / essentiaRate;
         std::vector<double> tickSamples;
         tickSamples.reserve (ticks.size());
         for (auto t : ticks)

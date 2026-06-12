@@ -25,6 +25,11 @@ bool MixerMidiHandler::passSoftTakeover (const MidiMessageEvent& event,
                                             event.softTakeover);
 }
 
+// Chain-of-responsibility dispatch: this handler consumes only the mixer
+// categories and returns false for everything else. The switch is
+// intentionally non-exhaustive, so the exhaustiveness warning is silenced
+// for this one function.
+JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wswitch-enum")
 bool MixerMidiHandler::tryHandle (const MidiMessageEvent& event)
 {
     switch (event.category)
@@ -210,6 +215,7 @@ bool MixerMidiHandler::tryHandle (const MidiMessageEvent& event)
             return false;
     }
 }
+JUCE_END_IGNORE_WARNINGS_GCC_LIKE
 
 //==============================================================================
 // Private helpers

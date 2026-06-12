@@ -35,7 +35,7 @@ MixFader::~MixFader()
 void MixFader::setValue (float newValue)
 {
     const float v = clampAndDetent (newValue);
-    if (v != currentValue)
+    if (! juce::exactlyEqual (v, currentValue))
     {
         currentValue = v;
         commitToTree();
@@ -264,7 +264,7 @@ void MixFader::valueTreePropertyChanged (juce::ValueTree& changedTree,
         return;
     const float incoming = static_cast<float> (
         static_cast<double> (tree.getProperty (propertyId)));
-    if (incoming != currentValue)
+    if (! juce::exactlyEqual (incoming, currentValue))
     {
         currentValue = clampAndDetent (incoming);
         repaint();

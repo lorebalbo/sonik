@@ -9,7 +9,6 @@ namespace
     const juce::Colour kSurface { 0xFFFDFDFD };
     const juce::Colour kHigh    { 0xFFE2E2E2 };
 
-    constexpr int kMasterColW = 64;
     constexpr int kStripGap   = 2;
 }
 

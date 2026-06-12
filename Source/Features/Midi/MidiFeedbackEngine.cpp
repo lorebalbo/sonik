@@ -87,6 +87,11 @@ namespace sonik::midi
     //==========================================================================
     // Source resolution
     //==========================================================================
+    // This switch intentionally maps only the categories that HAVE a feedback
+    // source; every other category falls through to SourceKind::None. A new
+    // category without feedback must NOT force an edit here, so the
+    // exhaustiveness warning is silenced for this one function.
+    JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wswitch-enum")
     auto MidiFeedbackEngine::sourceKeyForBinding (const Binding& binding) -> SourceKey
     {
         const auto& tgt = ControlTargetRegistry::get (binding.target);
@@ -159,6 +164,7 @@ namespace sonik::midi
         }
         return out;
     }
+    JUCE_END_IGNORE_WARNINGS_GCC_LIKE
 
     std::optional<std::uint8_t>
     MidiFeedbackEngine::parseHotCueIndexFromTargetId (const char* id)
@@ -311,6 +317,8 @@ namespace sonik::midi
                 out.valid = true;
                 break;
             }
+            case SourceKind::None:             // early-returned above
+            case SourceKind::MixerChannelBool: // handled by the branch above
             default: break;
         }
         return out;
@@ -343,6 +351,7 @@ namespace sonik::midi
                                       ? (1.0f - v) : v;
                 return static_cast<std::uint8_t> (std::lround (out * 127.0f));
             }
+            case FeedbackStyle::None: // early-returned above
             default:
                 return std::nullopt;
         }

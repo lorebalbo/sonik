@@ -66,13 +66,13 @@ private:
         const auto statusKind = kind;
         auto cancel = sharedCancel;
 
-        return [aliveFlag, queue, jobForStatus = std::move (jobForStatus), statusKind, cancel] (int percent)
+        return [aliveFlag, queue, statusJob = std::move (jobForStatus), statusKind, cancel] (int percent)
         {
             if (! aliveFlag->load (std::memory_order_acquire)
                 || cancel->load (std::memory_order_acquire))
                 return;
 
-            queue->emitStatus (jobForStatus, statusKind, LibraryAnalysisQueue::JobStatus::Running,
+            queue->emitStatus (statusJob, statusKind, LibraryAnalysisQueue::JobStatus::Running,
                                juce::jlimit (0, 100, percent));
         };
     }
@@ -212,10 +212,10 @@ void LibraryAnalysisQueue::emitStatus (const PendingJob& job,
     statusUpdate.percent = juce::jlimit (0, 100, percent);
 
     auto aliveFlag = alive;
-    juce::MessageManager::callAsync ([aliveFlag, callback = std::move (callbackCopy), statusUpdate = std::move (statusUpdate)]() mutable
+    juce::MessageManager::callAsync ([aliveFlag, callback = std::move (callbackCopy), update = std::move (statusUpdate)]() mutable
     {
         if (aliveFlag->load (std::memory_order_acquire) && callback)
-            callback (statusUpdate);
+            callback (update);
     });
 }
 

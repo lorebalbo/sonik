@@ -86,6 +86,7 @@ ChannelGroup::LaneKind LiveProjectionTimer::laneKindFor (Lane lane)
         case kInstrumental: return ChannelGroup::LaneKind::Instrumental;
         case kVocal:        return ChannelGroup::LaneKind::Vocal;
         case kOriginal:
+        case kLaneCount:
         default:            return ChannelGroup::LaneKind::Original;
     }
 }
@@ -270,18 +271,18 @@ void LiveProjectionTimer::processTick()
             // two clips butt-join with no gap.
             std::array<std::int64_t, kLaneCount> seam { 0, 0, 0 };
             const std::int64_t pre = juce::jmax<std::int64_t> (0, seekFrom - dp.lastSourcePos);
-            for (int li = 0; li < kLaneCount; ++li)
+            for (size_t li = 0; li < static_cast<size_t> (kLaneCount); ++li)
             {
                 auto& lp = dp.lanes[li];
                 if (lp.active)
                 {
                     growLane (lp, seekFrom);
-                    seam[static_cast<size_t> (li)] = laneTimelineEnd (lp, stretchRatio);
+                    seam[li] = laneTimelineEnd (lp, stretchRatio);
                     finaliseLane (lp);
                 }
                 else
                 {
-                    seam[static_cast<size_t> (li)] = nowLineSample_ + pre;
+                    seam[li] = nowLineSample_ + pre;
                 }
             }
 
@@ -297,11 +298,11 @@ void LiveProjectionTimer::processTick()
             // Phase 2 — reopen wanted lanes at the seam, starting at the EXACT
             // in-point, and grow to the live position (capturing the post-jump
             // head that polling would otherwise have skipped).
-            for (int li = 0; li < kLaneCount; ++li)
+            for (size_t li = 0; li < static_cast<size_t> (kLaneCount); ++li)
             {
                 if (want[li])
                 {
-                    const std::int64_t rawStart = seam[static_cast<size_t> (li)];
+                    const std::int64_t rawStart = seam[li];
                     const std::int64_t start    = looping
                         ? rawStart
                         : snapStartToGrid (jumpAnchor, jumpInterval, seekTo, rawStart,
@@ -330,7 +331,7 @@ void LiveProjectionTimer::processTick()
             const bool keyLockChanged = dp.wasPlaying && playing && ! heuristicSeek
                                         && (deckKeyLock != dp.lastKeyLock);
 
-            for (int li = 0; li < kLaneCount; ++li)
+            for (size_t li = 0; li < static_cast<size_t> (kLaneCount); ++li)
             {
                 auto& lp = dp.lanes[li];
                 if (want[li])

@@ -50,8 +50,7 @@ public:
     /// @param ringCapacitySamples  Pre-allocated ring buffer length in project-
     ///                             rate samples (stereo).  Default = 2s @ 44.1kHz.
     explicit ClipStreamer (int ringCapacitySamples = 44100 * 2)
-        : ringCapacity_ (ringCapacitySamples)
-        , ringBuffer_   (2, ringCapacitySamples)
+        : ringBuffer_   (2, ringCapacitySamples)
         , fifo_         (ringCapacitySamples)
     {
         fifo_.reset();
@@ -579,7 +578,6 @@ private:
     bool                                     stretcherPrimed_   { false };
 
     // Ring buffer (pre-allocated, non-heap after construction).
-    const int                    ringCapacity_;
     juce::AudioBuffer<float>     ringBuffer_;
     juce::AbstractFifo           fifo_;
 

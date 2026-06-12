@@ -1,6 +1,15 @@
 #include "TrackDatabase.h"
 #include <sqlite3.h>
 
+namespace
+{
+    // SQLITE_STATIC expands to a literal 0 cast to a function pointer, which
+    // trips -Wzero-as-null-pointer-constant at every call site. This typed
+    // nullptr constant is semantically identical: no destructor, the bound
+    // string stays valid for the duration of the statement.
+    constexpr sqlite3_destructor_type kSqliteStatic = nullptr;
+}
+
 TrackDatabase::TrackDatabase (const juce::File& dbFile)
     : dbFileStored (dbFile)
 {
@@ -325,7 +334,7 @@ void TrackDatabase::saveSessionState (int deckCount, const juce::String& activeD
         sqlite3_stmt* stmt = nullptr;
         if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
         {
-            sqlite3_bind_text (stmt, 1, key, -1, SQLITE_STATIC);
+            sqlite3_bind_text (stmt, 1, key, -1, kSqliteStatic);
             sqlite3_bind_text (stmt, 2, value.toRawUTF8(), -1, SQLITE_TRANSIENT);
             sqlite3_step (stmt);
             sqlite3_finalize (stmt);
@@ -350,7 +359,7 @@ SessionData TrackDatabase::loadSessionState()
 
         if (sqlite3_prepare_v2 (dbHandle, sql, -1, &stmt, nullptr) == SQLITE_OK)
         {
-            sqlite3_bind_text (stmt, 1, key, -1, SQLITE_STATIC);
+            sqlite3_bind_text (stmt, 1, key, -1, kSqliteStatic);
             if (sqlite3_step (stmt) == SQLITE_ROW)
                 result = juce::String::fromUTF8 (
                     reinterpret_cast<const char*> (sqlite3_column_text (stmt, 0)));

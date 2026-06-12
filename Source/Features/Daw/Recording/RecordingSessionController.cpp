@@ -31,8 +31,6 @@ RecordingSessionController::RecordingSessionController (juce::ValueTree     dawB
                                                         MasterClockManager& clockManager,
                                                         RecordingClock*     clockOverride)
     : dawBranch_ (std::move (dawBranch)),
-      grid_ (grid),
-      clockManager_ (clockManager),
       ownedClock_ (clockOverride == nullptr
                        ? std::make_unique<LiveRecordingClock> (clockManager, grid)
                        : nullptr),

@@ -108,7 +108,7 @@ void AutomationCaptureTaps::flush (std::int64_t timelineSample)
             continue;
 
         const double value = (double) tap.sourceTree.getProperty (tap.property);
-        if (value == tap.lastValue)
+        if (juce::exactlyEqual (value, tap.lastValue))
             continue; // already terminates on the resting value
 
         if (timelineSample == tap.lastSample)

@@ -325,7 +325,7 @@ void MixRotaryKnob::mouseDrag (const juce::MouseEvent& e)
         newVal = 0.0f;
     }
 
-    if (newVal != currentValue)
+    if (! juce::exactlyEqual (newVal, currentValue))
     {
         currentValue = newVal;
         commitToTree();

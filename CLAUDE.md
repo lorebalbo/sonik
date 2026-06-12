@@ -70,11 +70,23 @@ cmake --build build --parallel
 ./build/Sonik_artefacts/Debug/Sonik.app/Contents/MacOS/Sonik
 ```
 
+### Build Target Layout (Compile-Once Architecture)
+The build is split so every translation unit compiles exactly once:
+- **`SonikJuce`** (static lib): all JUCE modules, compiled once. JUCE modules are INTERFACE targets whose sources attach to the target that links them directly, so ONLY this target may link `juce::juce_*` modules. Includes/defines are re-exported to consumers via `$<TARGET_PROPERTY:...>` generator expressions (the standard JUCE "shared code" pattern). JUCE config macros (`JUCE_WEB_BROWSER`, `JUCE_MODAL_LOOPS_PERMITTED`, etc.) live here as PUBLIC definitions and MUST stay identical for every consumer.
+- **`SonikCore`** (static lib): every feature slice under `Source/` except `Main.cpp`/`SonikApplication.cpp`. **New `.cpp`/`.h` files go into `SonikCore`'s source list — never into `Sonik` or `SonikTests`.** Has a precompiled header of the heavyweight JUCE module headers.
+- **`Sonik`** (GUI app): only `Main.cpp` + `SonikApplication.cpp`; links `SonikCore`.
+- **`SonikTests`**: only `Tests/*.cpp`; links `SonikCore` (production code is no longer recompiled for tests).
+- **`AutomationUiScreenshot`**: only the tool source; links `SonikCore`.
+
 ### Key Build Notes
 - JUCE 8 does NOT have a `juce_gui_app` module. Use `juce_gui_basics` and `juce_gui_extra` for application/window classes.
 - SQLite amalgamation is fetched directly from sqlite.org.
-- CPM.cmake is downloaded at configure time (no need to pre-install).
+- CPM.cmake is downloaded once at configure time and cached in the build directory.
 - Essentia is linked via `pkg-config`. Build from source with `CXXFLAGS="-std=c++17"` if Homebrew formula fails.
+- `build.sh` picks the Ninja generator for NEW build directories (existing ones keep their generator — switching requires wiping `build/`, which re-downloads all dependencies). `ccache` is auto-detected by CMake when installed (`brew install ccache`).
+- The build must stay **warning-free in project code**: `juce::juce_recommended_warning_flags` is applied to `SonikCore` and `Sonik` (NOT to `SonikJuce` — JUCE 8.0.6 itself is not warning-clean against newer macOS SDKs). Fix warnings at the source; the only sanctioned suppression is `JUCE_BEGIN/END_IGNORE_WARNINGS_GCC_LIKE ("-Wswitch-enum")` around intentionally partial chain-of-responsibility MIDI dispatch switches.
+- Under `-Wfloat-equal`, intentional exact float comparisons use `juce::exactlyEqual (a, b)`.
+- JUCE 8 API: construct fonts with `juce::Font (juce::FontOptions (...))`; measure text with `juce::GlyphArrangement::getStringWidth (font, text)` (the old `Font` ctors and `Font::getStringWidth` are deprecated).
 
 ### Installing Essentia from Source
 ```bash

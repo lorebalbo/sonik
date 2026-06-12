@@ -96,7 +96,7 @@ StemData::Ptr StemCache::loadCachedStems (const juce::String& contentHash,
 // ============================================================================
 
 bool StemCache::writeStemsToDisk (const juce::String& contentHash,
-                                   const juce::String& modelVersion,
+                                   const juce::String& /*modelVersion*/,
                                    const StemData& stems,
                                    double sampleRate)
 {

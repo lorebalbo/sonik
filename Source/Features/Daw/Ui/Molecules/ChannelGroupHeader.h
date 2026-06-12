@@ -135,7 +135,7 @@ public:
 
         // Row 1 — track name.
         g.setColour (kInk);
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::bold)));
         g.drawText (labelForDeck (deckIndex_),
                     juce::Rectangle<int> (12, 2, gutterW - 48,
                                           DawLayout::kGroupHeaderHeight / 2 - 2),
@@ -160,7 +160,7 @@ public:
         g.setColour (kInk);
         g.drawRect (autoBounds_, 2);
         g.setColour (automationRevealed_ ? kSurface : kInk);
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 8.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 8.0f, juce::Font::bold)));
         g.drawText (autoLabel_, autoBounds_.withTrimmedLeft (5).withTrimmedRight (12),
                     juce::Justification::centredLeft, false);
         g.setColour (automationRevealed_ ? kSurface : kInk);

@@ -164,7 +164,7 @@ public:
                 if (laneIdx < 0)
                     continue; // lane cap exceeded
 
-                auto& laneSnap = out.lanes[laneIdx];
+                auto& laneSnap = out.lanes[static_cast<size_t> (laneIdx)];
                 laneSnap.channelIndex = trackDeckIndex;
 
                 auto clipsNode = laneNode.getChildWithName (DawIDs::clips);
@@ -279,7 +279,8 @@ public:
                     const float linearGain = std::pow (10.0f, gainDb / 20.0f);
 
                     // Append ClipEvent.
-                    ClipEvent& ev        = laneSnap.events[laneSnap.count++];
+                    ClipEvent& ev        = laneSnap.events[static_cast<size_t> (laneSnap.count)];
+                    ++laneSnap.count;
                     ev.sourceFileId      = fileIdHash;
                     ev.sourceReadHandle  = handle;
                     ev.sourceStartSample = scaledSourceStart;
@@ -311,7 +312,7 @@ public:
                 // single-position scaling above). Such pairs are the two halves
                 // of one continuous take split by a jump/loop and must reproduce
                 // without the silence dip a sequential fade-out + fade-in causes.
-                for (int i = 0; i + 1 < laneSnap.count; ++i)
+                for (size_t i = 0; i + 1 < static_cast<size_t> (laneSnap.count); ++i)
                 {
                     if (laneSnap.events[i].timelineEndSample
                             == laneSnap.events[i + 1].timelineStartSample)

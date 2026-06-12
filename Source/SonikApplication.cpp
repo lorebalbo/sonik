@@ -48,10 +48,10 @@ LibraryAnalysisQueue::JobExecutor makeAnalysisExecutor (LibraryAnalysisService& 
                 completion->event.signal();
             },
             ctx.sharedCancel,
-            [progressFn = std::move (progressFn)] (int percent) mutable
+            [onProgress = std::move (progressFn)] (int percent) mutable
             {
-                if (progressFn)
-                    progressFn (percent);
+                if (onProgress)
+                    onProgress (percent);
             });
 
         return waitForAsyncCompletion (ctx, completion);

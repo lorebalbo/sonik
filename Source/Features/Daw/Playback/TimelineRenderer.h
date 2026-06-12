@@ -146,7 +146,7 @@ public:
         // 3. For each lane, find active clips and accumulate.
         for (int laneIdx = 0; laneIdx < snap.laneCount; ++laneIdx)
         {
-            const LaneSnapshot& lane = snap.lanes[laneIdx];
+            const LaneSnapshot& lane = snap.lanes[static_cast<size_t> (laneIdx)];
 
             // Clear lane scratch buffer.
             laneBuffer_.clear();
@@ -156,7 +156,7 @@ public:
             // Forward-scan (lane is sorted by timelineStartSample).
             for (int ci = 0; ci < lane.count; ++ci)
             {
-                const ClipEvent& ev = lane.events[ci];
+                const ClipEvent& ev = lane.events[static_cast<size_t> (ci)];
 
                 // Effective end includes a butt-joined clip's continuation tail
                 // so its fade-out can overlap the next clip's fade-in.

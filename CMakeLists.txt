@@ -10,12 +10,27 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Minimum macOS deployment version")
 endif()
 
-# Download CPM.cmake
-file(DOWNLOAD
-    https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.40.2/CPM.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake
-)
-include(${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake)
+#==============================================================================
+# Build accelerators (zero effect on the produced binaries)
+#==============================================================================
+# ccache transparently caches compiler output, so rebuilding after a clean or
+# a branch switch reuses previous results. Auto-detected and a no-op when not
+# installed (`brew install ccache` to enable it).
+find_program(SONIK_CCACHE_PROGRAM ccache)
+if(SONIK_CCACHE_PROGRAM)
+    set(CMAKE_C_COMPILER_LAUNCHER "${SONIK_CCACHE_PROGRAM}")
+    set(CMAKE_CXX_COMPILER_LAUNCHER "${SONIK_CCACHE_PROGRAM}")
+    message(STATUS "Sonik: ccache enabled (${SONIK_CCACHE_PROGRAM})")
+endif()
+
+# Download CPM.cmake once; previously this re-downloaded on every configure.
+set(SONIK_CPM_PATH "${CMAKE_CURRENT_BINARY_DIR}/cmake/CPM.cmake")
+if(NOT EXISTS "${SONIK_CPM_PATH}")
+    file(DOWNLOAD
+        https://github.com/cpm-cmake/CPM.cmake/releases/download/v0.40.2/CPM.cmake
+        "${SONIK_CPM_PATH}")
+endif()
+include("${SONIK_CPM_PATH}")
 
 # JUCE 8.0.6
 CPMAddPackage(
@@ -123,14 +138,6 @@ else()
         Source/Features/Daw/Export/NoMp3EncoderBackend.cpp)
 endif()
 
-# Sonik Application
-juce_add_gui_app(Sonik
-    PRODUCT_NAME "Sonik"
-    VERSION "0.1.0"
-    COMPANY_NAME "Sonik"
-    BUNDLE_ID "com.sonik.app"
-)
-
 # Bundled MIDI mapping profiles (PRD-0043).  Generates a static library
 # `SonikBinaryData` with `BinaryData::*` symbols for the embedded JSON files.
 juce_add_binary_data(SonikBinaryData
@@ -139,10 +146,72 @@ juce_add_binary_data(SonikBinaryData
         Resources/MidiMappings/generic-midi.json
 )
 
-target_sources(Sonik PRIVATE
-    Source/Main.cpp
-    Source/SonikApplication.h
-    Source/SonikApplication.cpp
+#==============================================================================
+# SonikJuce — every JUCE module, compiled exactly ONCE.
+#
+# JUCE modules are INTERFACE targets: their sources are compiled into whatever
+# target links them *directly*. Previously Sonik, SonikTests and
+# AutomationUiScreenshot each linked the modules directly, so every JUCE
+# translation unit was compiled three times. Linking the modules PRIVATE into
+# this static library compiles them once; the two generator expressions below
+# re-export the modules' include paths and compile definitions to consumers
+# (this is the standard JUCE "shared code" pattern — PRIVATE linkage stops the
+# module sources from propagating, the re-export keeps headers and JUCE config
+# macros identical in every consuming translation unit).
+#==============================================================================
+add_library(SonikJuce STATIC)
+
+target_link_libraries(SonikJuce
+    PRIVATE
+        juce::juce_gui_basics
+        juce::juce_gui_extra
+        juce::juce_audio_utils
+        juce::juce_audio_formats
+        juce::juce_audio_devices
+        juce::juce_audio_basics
+        juce::juce_cryptography
+        juce::juce_data_structures
+        juce::juce_core
+        juce::juce_events
+        juce::juce_dsp
+        juce::juce_graphics
+    PUBLIC
+        juce::juce_recommended_config_flags
+)
+
+# Note: juce_recommended_warning_flags is deliberately NOT applied here. JUCE
+# 8.0.6 itself is not warning-clean against newer macOS SDKs (e.g. the
+# NSEventTypeMouseCancelled -Wswitch-enum warning), and third-party code is
+# not ours to fix. Project targets keep the strict warning set.
+
+# JUCE configuration: PUBLIC so every consuming translation unit sees the same
+# JUCE config macros as the module sources compiled into this library.
+target_compile_definitions(SonikJuce
+    PUBLIC
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_STANDALONE_APPLICATION=1
+        # The tests drive the message loop with MessageManager::runDispatchLoopUntil,
+        # which only exists when this macro is set. It must match in the module
+        # sources (compiled here) and in every consumer, so it is PUBLIC.
+        JUCE_MODAL_LOOPS_PERMITTED=1
+        JUCE_APPLICATION_NAME_STRING="Sonik"
+        JUCE_APPLICATION_VERSION_STRING="0.1.0"
+    INTERFACE
+        $<TARGET_PROPERTY:SonikJuce,COMPILE_DEFINITIONS>
+)
+
+target_include_directories(SonikJuce
+    INTERFACE
+        $<TARGET_PROPERTY:SonikJuce,INCLUDE_DIRECTORIES>
+)
+
+#==============================================================================
+# SonikCore — every feature slice shared by the app, the tests and the tools,
+# compiled exactly ONCE. Previously SonikTests recompiled ~115 of these files
+# a second time and AutomationUiScreenshot a third time for a handful of them.
+#==============================================================================
+add_library(SonikCore STATIC
     Source/Features/Deck/DeckIdentifiers.h
     Source/Features/Deck/DeckStateManager.h
     Source/Features/Deck/DeckStateManager.cpp
@@ -474,53 +543,73 @@ target_sources(Sonik PRIVATE
     Source/Features/AudioEngine/AudioEngineMidiBridge.h
 )
 
-target_include_directories(Sonik PRIVATE Source)
-target_include_directories(Sonik PRIVATE ${RUBBERBAND_INCLUDE_DIRS})
+target_include_directories(SonikCore PUBLIC Source)
+target_include_directories(SonikCore SYSTEM PUBLIC ${RUBBERBAND_INCLUDE_DIRS})
 
-target_compile_definitions(Sonik PRIVATE
-    JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
-    JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:Sonik,JUCE_PRODUCT_NAME>"
-    JUCE_APPLICATION_VERSION_STRING="$<TARGET_PROPERTY:Sonik,JUCE_VERSION>"
-)
-
-target_link_libraries(Sonik PRIVATE
-    juce::juce_gui_basics
-    juce::juce_gui_extra
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_audio_basics
-    juce::juce_cryptography
-    juce::juce_data_structures
-    juce::juce_core
-    juce::juce_events
-    juce::juce_dsp
-    sqlite3
-    essentia
-    onnxruntime
-    ${RUBBERBAND_LINK_LIBRARIES}
-    SonikBinaryData
-    juce::juce_recommended_config_flags
-    juce::juce_recommended_warning_flags
+target_link_libraries(SonikCore
+    PUBLIC
+        SonikJuce
+        SonikBinaryData
+        sqlite3
+        essentia
+        onnxruntime
+        ${RUBBERBAND_LINK_LIBRARIES}
+    PRIVATE
+        juce::juce_recommended_warning_flags
 )
 
 # Conditionally link Apple frameworks for CoreML EP (macOS only)
 if(APPLE)
-    target_link_libraries(Sonik PRIVATE
+    target_link_libraries(SonikCore PUBLIC
         "-framework CoreML"
         "-framework Foundation"
     )
 endif()
 
-# PRD-0100: LAME MP3 backend (define + include + link) for the Sonik app.
+# PRD-0100: LAME MP3 backend. The SONIK_HAVE_LAME define is PUBLIC because
+# Mp3EncoderBackend.h (consumed by app and test translation units) checks it.
 if(SONIK_LAME_FOUND)
-    target_compile_definitions(Sonik PRIVATE SONIK_HAVE_LAME=1)
-    target_include_directories(Sonik PRIVATE ${SONIK_LAME_INCLUDE_DIR})
-    target_link_libraries(Sonik PRIVATE ${SONIK_LAME_LIBRARY})
+    target_compile_definitions(SonikCore PUBLIC SONIK_HAVE_LAME=1)
+    target_include_directories(SonikCore PRIVATE ${SONIK_LAME_INCLUDE_DIR})
+    target_link_libraries(SonikCore PUBLIC ${SONIK_LAME_LIBRARY})
 endif()
 
-# Test target
+# Precompiled header: the JUCE module headers below dominate the parse time of
+# every translation unit. Precompiling them once cuts compile time for the
+# whole library without changing any generated code.
+target_precompile_headers(SonikCore PRIVATE
+    <juce_gui_basics/juce_gui_basics.h>
+    <juce_data_structures/juce_data_structures.h>
+    <juce_audio_formats/juce_audio_formats.h>
+    <juce_audio_basics/juce_audio_basics.h>
+)
+
+#==============================================================================
+# Sonik Application — only the application entry point lives here; everything
+# else comes from SonikCore/SonikJuce.
+#==============================================================================
+juce_add_gui_app(Sonik
+    PRODUCT_NAME "Sonik"
+    VERSION "0.1.0"
+    COMPANY_NAME "Sonik"
+    BUNDLE_ID "com.sonik.app"
+)
+
+target_sources(Sonik PRIVATE
+    Source/Main.cpp
+    Source/SonikApplication.h
+    Source/SonikApplication.cpp
+)
+
+target_link_libraries(Sonik PRIVATE
+    SonikCore
+    juce::juce_recommended_warning_flags
+)
+
+#==============================================================================
+# Test target — only the test translation units live here; all production code
+# is linked from SonikCore (previously it was recompiled a second time).
+#==============================================================================
 add_executable(SonikTests
     Tests/TestRunner.cpp
     Tests/DeckStateTests.cpp
@@ -599,113 +688,6 @@ add_executable(SonikTests
     Tests/MixerUiAtomsTests.cpp
     Tests/MixerComponentTests.cpp
     Tests/ChannelStripUiTests.cpp
-    Source/Features/Mixer/Routing/ChannelStripProcessor.cpp
-    Source/Features/Mixer/Routing/MasterStage.cpp
-    Source/Features/Mixer/Dsp/ThreeBandEq.cpp
-    Source/Features/Mixer/Dsp/ChannelFilter.cpp
-    Source/Features/Library/LibraryQueryThread.cpp
-    Source/Features/Library/LibraryAnalysisService.cpp
-    Source/Features/Library/LibraryAnalysisQueue.cpp
-    Source/Features/Library/WatchFolderScanner.cpp
-    Source/Features/Library/UI/SidebarItemAtom.cpp
-    Source/Features/Library/UI/SidebarMolecule.cpp
-    Source/Features/Library/UI/LibraryStatusText.cpp
-    Source/Features/Deck/DeckStateManager.cpp
-    Source/Features/Deck/Database/TrackDatabase.cpp
-    Source/Features/AudioEngine/AudioEngine.cpp
-    Source/Features/AudioEngine/AudioFileLoader.cpp
-    Source/Features/Deck/UI/DeckShellComponent.cpp
-    Source/Features/Deck/UI/PitchFaderComponent.cpp
-    Source/Features/Deck/UI/GainKnobComponent.cpp
-    Source/Features/Deck/UI/TrackInfoComponent.cpp
-    Source/Features/Deck/UI/DeckLayoutManager.cpp
-    Source/Features/Waveform/WaveformAnalyzer.cpp
-    Source/Features/Waveform/WaveformManager.cpp
-    Source/Features/Waveform/OverviewWaveform.cpp
-    Source/Features/Waveform/DetailWaveform.cpp
-    Source/Features/BeatGrid/BeatGridAnalyzer.cpp
-    Source/Features/BeatGrid/BeatGridManager.cpp
-    Source/Features/KeyDetection/KeyDetectionAnalyzer.cpp
-    Source/Features/KeyDetection/KeyDetectionManager.cpp
-    Source/Features/TimeStretch/TimeStretcher.cpp
-    Source/Features/Cue/HotCueManager.cpp
-    Source/Features/Cue/HotCuePadComponent.cpp
-    Source/Features/Quantize/QuantizeButtonComponent.cpp
-    Source/Features/Loop/LoopEngine.cpp
-    Source/Features/Loop/LoopControlComponent.cpp
-    Source/Features/BeatJump/BeatJumpEngine.cpp
-    Source/Features/BeatJump/BeatJumpComponent.cpp
-    Source/Features/SlipMode/SlipButtonComponent.cpp
-    Source/Features/StemSeparation/OnnxInference.cpp
-    Source/Features/StemSeparation/ModelManager.cpp
-    Source/Features/StemSeparation/SpectralProcessor.cpp
-    Source/Features/StemSeparation/StemCache.cpp
-    Source/Features/StemSeparation/StemSeparationEngine.cpp
-    Source/Features/StemSeparation/StemSeparationManager.cpp
-    Source/Features/StemSeparation/UI/StemSeparateButton.cpp
-    Source/Features/StemSeparation/UI/StemToggleComponent.cpp
-    Source/Features/StemSeparation/UI/SourceModeToggleComponent.cpp
-    Source/Features/Sync/MasterClockPublisher.cpp
-    Source/Features/Sync/MasterClockManager.cpp
-    Source/Features/Sync/SyncEngine.cpp
-    Source/Features/Sync/PhaseLockEngine.cpp
-    Source/Features/Sync/UI/SyncButton.cpp
-    Source/Features/Sync/UI/MasterButton.cpp
-    Source/Features/Midi/JuceMidiHost.cpp
-    Source/Features/Midi/MidiDeviceManager.cpp
-    Source/Features/Midi/MidiMessageBridge.cpp
-    Source/Features/Midi/Migrations/MigrationRegistry.cpp
-    Source/Features/Midi/MappingParser.cpp
-    Source/Features/Midi/BindingResolver.cpp
-    Source/Features/Midi/MappingSerializer.cpp
-    Source/Features/Midi/MappingStore.cpp
-    Source/Features/Midi/Bundle/SonikMidiBundleSerializer.cpp
-    Source/Features/Midi/Bundle/MappingExportService.cpp
-    Source/Features/Midi/Bundle/MappingImportService.cpp
-    Source/Features/Midi/UI/MidiSettingsWindow.cpp
-    Source/Features/Midi/UI/MidiSettingsPanel.cpp
-    Source/Features/Midi/UI/Molecules/DeviceHeader.cpp
-    Source/Features/Midi/UI/Molecules/BindingTable.cpp
-    Source/Features/Midi/UI/Molecules/PortBindingControls.cpp
-    Source/Features/Midi/UI/Organisms/MidiImportDialog.cpp
-    Source/Features/Midi/UI/Organisms/MidiExportDialog.cpp
-    Source/Features/Midi/MidiFeedbackEngine.cpp
-    Source/Features/Midi/MidiOutputThread.cpp
-    Source/Features/Midi/MidiInboundRouter.cpp
-    Source/Features/Midi/SoftTakeoverManager.cpp
-    Source/Features/Mixer/State/MixerStateSchema.cpp
-    Source/Features/Mixer/State/MixerStateBridge.cpp
-    Source/Features/Mixer/State/MixerIdentifiers.cpp
-    Source/Features/Daw/State/DawState.cpp
-    Source/Features/Daw/Model/MasterGridService.cpp
-    Source/Features/Daw/Transform/TimelineTransform.cpp
-    Source/Features/Daw/Ui/Molecules/TimeRuler.cpp
-    Source/Features/Daw/Ui/Atoms/ClipBlock.cpp
-    Source/Features/Daw/Ui/Molecules/LaneView.cpp
-    Source/Features/Daw/Ui/Organisms/ChannelGroupView.cpp
-    Source/Features/Daw/Ui/Organisms/ChannelGroupStack.cpp
-    Source/Features/Daw/Ui/Organisms/DawPanel.cpp
-    Source/Features/Daw/Projection/LiveProjectionTimer.cpp
-    Source/Features/Daw/Recording/RecordingSessionController.cpp
-    Source/Features/Daw/Automation/AutomationCaptureTaps.cpp
-    Source/Features/Daw/Recording/PerformanceEventFifo.cpp
-    Source/Features/Daw/Recording/ClipPlacementEngine.cpp
-    Source/Features/Daw/Recording/AlignmentResolver.cpp
-    Source/Features/Mixer/Ui/Atoms/MixRotaryKnob.cpp
-    Source/Features/Mixer/Ui/Atoms/MixKillButton.cpp
-    Source/Features/Mixer/Ui/Atoms/MixAssignButton.cpp
-    Source/Features/Mixer/Ui/Atoms/MixLevelMeter.cpp
-    Source/Features/Mixer/Ui/Atoms/MixFader.cpp
-    Source/Features/Mixer/Ui/Molecules/ChannelStripEqSection.cpp
-    Source/Features/Mixer/Ui/Molecules/ChannelStripMeter.cpp
-    Source/Features/Mixer/Ui/Molecules/CrossfaderRail.cpp
-    Source/Features/Mixer/Ui/Organisms/ChannelStrip.cpp
-    Source/Features/Mixer/Ui/Organisms/MasterSection.cpp
-    Source/Features/Mixer/Ui/Organisms/MixerComponent.cpp
-    Source/MidiHandlers/DeckMidiHandler.cpp
-    Source/MidiHandlers/MixerMidiHandler.cpp
-    Source/MidiHandlers/LibraryMidiHandler.cpp
-    Source/MidiHandlers/CompositeMidiCommandHandler.cpp
     # PRD-0079 – PRD-0086: Timeline Playback Engine & Non-Destructive Clip Editing
     Tests/ArrangementSnapshotTests.cpp
     Tests/ClipStreamerTests.cpp
@@ -729,75 +711,26 @@ add_executable(SonikTests
     Tests/SessionIntegrationTests.cpp
     Tests/ImportClipTests.cpp
     Tests/ImportPipelineTests.cpp
-    Source/Features/Daw/Session/SessionMigrator.cpp
-    Source/Features/Daw/Session/SessionSerializer.cpp
-    Source/Features/Daw/Session/SourceIdResolver.cpp
-    Source/Features/Daw/Session/SessionSourceResolution.cpp
-    Source/Features/Daw/Session/SessionController.cpp
-    Source/Features/Daw/Session/Ui/SessionMenu.cpp
-    Source/Features/Daw/Session/Ui/SessionDialogs.cpp
-    Source/Features/Daw/Session/Ui/UnresolvedSourcesDialog.cpp
-    Source/Features/Daw/Import/ImportClipPlacer.cpp
-    Source/Features/Daw/Import/AudioFileImporter.cpp
     # PRD-0099: Offline Render Driver (driven headlessly by OfflineRenderDriverTests)
     Tests/OfflineRenderDriverTests.cpp
-    Source/Features/Daw/Export/OfflineRenderDriver.cpp
-    # PRD-0100: Audio Exporter
+    # PRD-0100 / PRD-0101: Audio Exporter + Export Dialog seams
     Tests/AudioExporterTests.cpp
-    Source/Features/Daw/Export/AudioExporter.cpp
-    # PRD-0101: Export Dialog, Progress & Cancel — the dialog .cpp is linked so
-    # the test agent can construct it headlessly (createExportDialogForTest) and
-    # call its pure seams (buildExportOptions / computeControlState /
-    # validateForExport). ExportRunner.h / ExportJobBuilder.h are header-only.
-    Source/Features/Daw/Export/Ui/ExportDialog.cpp
     Tests/AudioExportTests.cpp
     Tests/SessionRoundTripTests.cpp
-    ${SONIK_MP3_BACKEND_SOURCES}
 )
 
-target_include_directories(SonikTests PRIVATE Source Tests ${RUBBERBAND_INCLUDE_DIRS})
+target_include_directories(SonikTests PRIVATE Tests)
 
-target_compile_definitions(SonikTests PRIVATE
-    JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
-    JUCE_STANDALONE_APPLICATION=1
-    JUCE_UNIT_TESTS=1
-    JUCE_MODAL_LOOPS_PERMITTED=1
+target_link_libraries(SonikTests PRIVATE SonikCore)
+
+# Same precompiled header set as SonikCore: test translation units include the
+# same heavyweight JUCE headers.
+target_precompile_headers(SonikTests PRIVATE
+    <juce_gui_basics/juce_gui_basics.h>
+    <juce_data_structures/juce_data_structures.h>
+    <juce_audio_formats/juce_audio_formats.h>
+    <juce_audio_basics/juce_audio_basics.h>
 )
-
-target_link_libraries(SonikTests PRIVATE
-    juce::juce_gui_basics
-    juce::juce_gui_extra
-    juce::juce_audio_utils
-    juce::juce_audio_formats
-    juce::juce_audio_devices
-    juce::juce_audio_basics
-    juce::juce_cryptography
-    juce::juce_data_structures
-    juce::juce_core
-    juce::juce_events
-    juce::juce_dsp
-    sqlite3
-    essentia
-    onnxruntime
-    ${RUBBERBAND_LINK_LIBRARIES}
-    SonikBinaryData
-    juce::juce_recommended_config_flags
-)
-
-if(APPLE)
-    target_link_libraries(SonikTests PRIVATE
-        "-framework CoreML"
-        "-framework Foundation"
-    )
-endif()
-
-# PRD-0100: LAME MP3 backend for the test target (needed for the MP3 round-trip).
-if(SONIK_LAME_FOUND)
-    target_compile_definitions(SonikTests PRIVATE SONIK_HAVE_LAME=1)
-    target_include_directories(SonikTests PRIVATE ${SONIK_LAME_INCLUDE_DIR})
-    target_link_libraries(SonikTests PRIVATE ${SONIK_LAME_LIBRARY})
-endif()
 
 #==============================================================================
 # PRD-0093: AutomationUiScreenshot — standalone deterministic PNG render of the
@@ -805,27 +738,6 @@ endif()
 #==============================================================================
 add_executable(AutomationUiScreenshot
     Tools/AutomationUiScreenshot.cpp
-    Source/Features/Daw/State/DawState.cpp
-    Source/Features/Daw/Transform/TimelineTransform.cpp
-    Source/Features/Daw/Model/MasterGridService.cpp
-    Source/Features/Sync/MasterClockPublisher.cpp
 )
 
-target_include_directories(AutomationUiScreenshot PRIVATE Source)
-
-target_compile_definitions(AutomationUiScreenshot PRIVATE
-    JUCE_WEB_BROWSER=0
-    JUCE_USE_CURL=0
-    JUCE_STANDALONE_APPLICATION=1
-    JUCE_MODAL_LOOPS_PERMITTED=1
-)
-
-target_link_libraries(AutomationUiScreenshot PRIVATE
-    juce::juce_gui_basics
-    juce::juce_gui_extra
-    juce::juce_graphics
-    juce::juce_data_structures
-    juce::juce_core
-    juce::juce_events
-    juce::juce_recommended_config_flags
-)
+target_link_libraries(AutomationUiScreenshot PRIVATE SonikCore)

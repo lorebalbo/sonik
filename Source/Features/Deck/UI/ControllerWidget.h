@@ -141,7 +141,7 @@ public:
 
             for (int i = 0; i < 6; ++i)
             {
-                const bool active = (i >= 1 && i <= 4) && (kSizes[i - 1] == activeSize);
+                const bool active = (i >= 1 && i <= 4) && juce::exactlyEqual (kSizes[i - 1], activeSize);
                 drawBtn (g, getSizeBtnBounds (i), labels[i], active, hoveredBtn == 10 + i);
             }
         }

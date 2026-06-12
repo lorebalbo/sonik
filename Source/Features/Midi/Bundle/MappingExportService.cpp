@@ -50,11 +50,11 @@ namespace sonik::midi
 
             auto result = runExport (id, dest);
 
-            juce::MessageManager::callAsync ([callback = std::move (callback),
-                                              result   = std::move (result)]() mutable
+            juce::MessageManager::callAsync ([cb  = std::move (callback),
+                                              res = std::move (result)]() mutable
             {
-                if (callback)
-                    callback (result);
+                if (cb)
+                    cb (res);
             });
         });
     }

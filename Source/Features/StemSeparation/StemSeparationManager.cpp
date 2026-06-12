@@ -149,10 +149,10 @@ private:
 
         auto aliveFlag = manager.alive;
         auto callback = completion;
-        juce::MessageManager::callAsync ([aliveFlag, callback = std::move (callback), success]
+        juce::MessageManager::callAsync ([aliveFlag, cb = std::move (callback), success]
         {
-            if (aliveFlag->load (std::memory_order_acquire) && callback)
-                callback (success);
+            if (aliveFlag->load (std::memory_order_acquire) && cb)
+                cb (success);
         });
     }
 

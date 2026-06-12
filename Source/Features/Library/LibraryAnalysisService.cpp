@@ -153,14 +153,14 @@ void LibraryAnalysisService::analyzeTrack (const juce::String& filePath,
     auto* job = new DecodeJob (formatManager, filePath, contentHash, cancelFlag,
         [weakThis,
          movedCompletion = std::move (callback),
-         analyzerCancelFlag = std::move (analyzerCancelFlag),
+         cancelForAnalyzers = std::move (analyzerCancelFlag),
          progressFn = std::move (progressCallback)] (const juce::String& path,
                                                      const juce::String& hash,
                                                      AudioBufferHolder::Ptr holder) mutable
         {
             if (auto* self = weakThis.get())
                 self->runAnalyzers (path, hash, holder, std::move (movedCompletion),
-                                    analyzerCancelFlag, std::move (progressFn));
+                                    cancelForAnalyzers, std::move (progressFn));
         });
 
     decodePool.addJob (job, true);

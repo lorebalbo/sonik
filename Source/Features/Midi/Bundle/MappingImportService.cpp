@@ -45,11 +45,11 @@ namespace sonik::midi
 
             auto prepared = prepareImportFromFile (src);
 
-            juce::MessageManager::callAsync ([callback = std::move (callback),
-                                              prepared = std::move (prepared)]() mutable
+            juce::MessageManager::callAsync ([cb   = std::move (callback),
+                                              prep = std::move (prepared)]() mutable
             {
-                if (callback)
-                    callback (std::move (prepared));
+                if (cb)
+                    cb (std::move (prep));
             });
         });
     }

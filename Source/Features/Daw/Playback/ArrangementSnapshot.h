@@ -151,7 +151,7 @@ struct ArrangementSnapshot
     /// True if the snapshot has no clips on any lane.
     bool isEmpty() const noexcept
     {
-        for (int i = 0; i < laneCount; ++i)
+        for (size_t i = 0; i < static_cast<size_t> (laneCount); ++i)
             if (lanes[i].count > 0) return false;
         return true;
     }
@@ -160,7 +160,7 @@ struct ArrangementSnapshot
     int totalClipCount() const noexcept
     {
         int total = 0;
-        for (int i = 0; i < laneCount; ++i)
+        for (size_t i = 0; i < static_cast<size_t> (laneCount); ++i)
             total += lanes[i].count;
         return total;
     }

@@ -86,7 +86,7 @@ private:
     std::set<juce::String> getActiveContentHashes() const;
 
     DeckStateManager&  deckStateManager;
-    TrackDatabase&     trackDatabase;
+    [[maybe_unused]] TrackDatabase& trackDatabase; // injected dependency, reserved for cache bookkeeping
     ModelManager&      modelManager;
     AudioEngine&       audioEngine;
     StemCache          stemCache;

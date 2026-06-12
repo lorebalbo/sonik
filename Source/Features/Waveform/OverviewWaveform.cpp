@@ -349,7 +349,7 @@ void OverviewWaveform::paintTooltip (juce::Graphics& g)
     auto font = juce::Font (juce::FontOptions (11.0f));
     g.setFont (font);
 
-    int textWidth = font.getStringWidth (timeStr) + 8;
+    int textWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font, timeStr)) + 8;
     int textHeight = 16;
 
     float tipX = tooltipPixelX - static_cast<float> (textWidth) * 0.5f;

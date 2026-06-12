@@ -350,7 +350,7 @@ namespace sonik::midi::ui
                     return;
 
                 exportService->exportMappingAsync (mappingId, file,
-                    [this] (const ExportResult& res)
+                    [] (const ExportResult& res)
                     {
                         JUCE_ASSERT_MESSAGE_THREAD;
                         if (res.status == ExportResult::Status::Ok)

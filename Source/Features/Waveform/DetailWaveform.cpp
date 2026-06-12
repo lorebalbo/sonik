@@ -352,7 +352,8 @@ void DetailWaveform::paint (juce::Graphics& g)
                     {
                         g.setColour (cueColour);
                         g.setFont (juce::FontOptions (10.0f).withStyle ("Bold"));
-                        auto textWidth = g.getCurrentFont().getStringWidth (cue.label);
+                        const int textWidth = juce::roundToInt (
+                            juce::GlyphArrangement::getStringWidth (g.getCurrentFont(), cue.label));
                         float textX = pixelX - static_cast<float> (textWidth) * 0.5f;
                         textX = juce::jlimit (0.0f, w - static_cast<float> (textWidth), textX);
                         g.drawText (cue.label,
@@ -621,7 +622,7 @@ void DetailWaveform::paintTooltip (juce::Graphics& g)
     auto font = juce::Font (juce::FontOptions (11.0f));
     g.setFont (font);
 
-    int textWidth = font.getStringWidth (timeStr) + 8;
+    int textWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font, timeStr)) + 8;
     int textHeight = 16;
 
     float tipX = tooltipPixelX - static_cast<float> (textWidth) * 0.5f;

@@ -164,7 +164,7 @@ void DeckLayoutManager::applyLayout()
                                       juce::jmax (0, area.getWidth() / 4));
     const int gap       = (mixerColW > 0) ? mixerGap : 0;
 
-    auto rowFor = [this, mixerColW, gap, n] (juce::Rectangle<int> row,
+    auto rowFor = [mixerColW, gap, n] (juce::Rectangle<int> row,
                                              juce::Rectangle<int>& outLeft,
                                              juce::Rectangle<int>& outRight,
                                              juce::Rectangle<int>* outMixerCol)

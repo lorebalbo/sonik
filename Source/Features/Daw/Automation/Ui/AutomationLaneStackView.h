@@ -139,7 +139,9 @@ public:
     // Test access.
     AutomationLaneViewBase* getLaneView (int index) const
     {
-        return (index >= 0 && index < (int) laneViews_.size()) ? laneViews_[index].get() : nullptr;
+        return (index >= 0 && index < (int) laneViews_.size())
+                   ? laneViews_[static_cast<size_t> (index)].get()
+                   : nullptr;
     }
 
 private:

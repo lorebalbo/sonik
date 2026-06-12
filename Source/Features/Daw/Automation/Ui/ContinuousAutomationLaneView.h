@@ -354,7 +354,7 @@ private:
         const double y = valueToY (range_.clampToWindow (previewValue_), body);
 
         const juce::String text = formattedPreviewValue();
-        const juce::Font font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold);
+        const juce::Font font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold));
         const int w = juce::roundToInt (juce::GlyphArrangement::getStringWidth (font, text)) + 8;
         const int h = 14;
 

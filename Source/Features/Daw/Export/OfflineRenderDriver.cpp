@@ -105,10 +105,10 @@ int64_t OfflineRenderDriver::arrangementEndSample() const
 {
     int64_t end = 0;
     const auto& snap = config_.snapshot;
-    for (int lane = 0; lane < snap.laneCount; ++lane)
+    for (size_t lane = 0; lane < static_cast<size_t> (snap.laneCount); ++lane)
     {
         const auto& ln = snap.lanes[lane];
-        for (int ci = 0; ci < ln.count; ++ci)
+        for (size_t ci = 0; ci < static_cast<size_t> (ln.count); ++ci)
             end = juce::jmax (end, ln.events[ci].timelineEndSample);
     }
     return end;
@@ -175,10 +175,10 @@ void OfflineRenderDriver::primeStreamersForRange (int64_t rangeStart,
 
     const double projectRate = config_.renderSampleRate;
 
-    for (int lane = 0; lane < working_.laneCount; ++lane)
+    for (size_t lane = 0; lane < static_cast<size_t> (working_.laneCount); ++lane)
     {
         auto& ln = working_.lanes[lane];
-        for (int ci = 0; ci < ln.count; ++ci)
+        for (size_t ci = 0; ci < static_cast<size_t> (ln.count); ++ci)
         {
             ClipEvent& ev = ln.events[ci];
 
@@ -268,10 +268,10 @@ namespace
                              int64_t playhead,
                              int numSamples)
     {
-        for (int lane = 0; lane < snap.laneCount; ++lane)
+        for (size_t lane = 0; lane < static_cast<size_t> (snap.laneCount); ++lane)
         {
             const LaneSnapshot& ln = snap.lanes[lane];
-            for (int ci = 0; ci < ln.count; ++ci)
+            for (size_t ci = 0; ci < static_cast<size_t> (ln.count); ++ci)
             {
                 const ClipEvent& ev = ln.events[ci];
 

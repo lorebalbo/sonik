@@ -243,8 +243,8 @@ int DawPanel::contentLeftGutter() const noexcept
 
 bool DawPanel::gridChanged (const MasterGridService::GridContext& ctx) const
 {
-    return ctx.bpm               != lastBpm_
-        || ctx.samplesPerBeat    != lastSamplesPerBeat_
+    return ! juce::exactlyEqual (ctx.bpm, lastBpm_)
+        || ! juce::exactlyEqual (ctx.samplesPerBeat, lastSamplesPerBeat_)
         || ctx.phaseOriginSample != lastPhaseOrigin_
         || ctx.isPlaying         != lastIsPlaying_;
 }
@@ -764,14 +764,14 @@ void DawPanel::paint (juce::Graphics& g)
     // header). PRD-0096: the session file name (with its trailing dirty dot)
     // sits beneath the "ARRANGEMENT" label.
     g.setColour (kInk);
-    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::bold));
+    g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 12.0f, juce::Font::bold)));
     auto titleArea = header.withTrimmedLeft (12)
                            .withWidth (DawLayout::kTrackHeaderWidth - 12);
     if (sessionTitle_.isNotEmpty())
     {
         g.drawText ("ARRANGEMENT", titleArea.withTrimmedBottom (kHeaderHeight / 2 - 1),
                     juce::Justification::bottomLeft, false);
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::plain));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::plain)));
         g.drawText (sessionTitle_, titleArea.withTrimmedTop (kHeaderHeight / 2 + 1),
                     juce::Justification::topLeft, true);
     }
@@ -822,13 +822,13 @@ void DawPanel::paint (juce::Graphics& g)
         // Cell divider (1 px, surface) — an instrument-panel separation.
         g.fillRect (posCell.getRight(), lcdBounds_.getY() + 5, 1, lcdBounds_.getHeight() - 10);
 
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 14.0f, juce::Font::bold)));
         g.drawText (lcdPosition_, posCell.withTrimmedBottom (10),
                     juce::Justification::centredBottom, false);
         g.drawText (lcdTempo_, tempoCell.withTrimmedBottom (10),
                     juce::Justification::centredBottom, false);
 
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 7.0f, juce::Font::plain));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 7.0f, juce::Font::plain)));
         g.drawText ("POSITION", posCell.withTrimmedTop (lcdBounds_.getHeight() - 11),
                     juce::Justification::centredTop, false);
         g.drawText ("TEMPO", tempoCell.withTrimmedTop (lcdBounds_.getHeight() - 11),
@@ -843,7 +843,7 @@ void DawPanel::paint (juce::Graphics& g)
         g.setColour (kInk);
         g.drawRect (masterAutoBounds_, 2);
         g.setColour (masterAutoRevealed_ ? kSurface : kInk);
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold)));
         g.drawText ("TEMPO", masterAutoBounds_, juce::Justification::centred, false);
 
         // Consolidated snap dropdown: one control showing the live snap state
@@ -857,7 +857,7 @@ void DawPanel::paint (juce::Graphics& g)
         g.setColour (kInk);
         g.drawRect (snapBounds_, 2);
         g.setColour (snap_.enabled ? kSurface : kInk);
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold)));
         g.drawText (snapLabel, snapBounds_.withTrimmedLeft (8).withTrimmedRight (16),
                     juce::Justification::centredLeft, false);
         PixelIcons::drawDropdownCaret (g, snapBounds_.withTrimmedLeft (snapBounds_.getWidth() - 18));

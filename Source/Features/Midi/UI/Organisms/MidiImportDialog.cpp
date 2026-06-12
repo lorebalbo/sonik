@@ -26,7 +26,7 @@ namespace sonik::midi::ui
 
         void styleLabel (juce::Label& l, float fontSize, juce::Justification just = juce::Justification::topLeft)
         {
-            l.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), fontSize, juce::Font::plain));
+            l.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), fontSize, juce::Font::plain)));
             l.setColour (juce::Label::textColourId,       juce::Colour (kInk));
             l.setColour (juce::Label::backgroundColourId, juce::Colour (0x00000000));
             l.setJustificationType (just);

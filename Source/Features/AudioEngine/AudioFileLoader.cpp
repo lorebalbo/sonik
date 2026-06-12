@@ -320,10 +320,10 @@ public:
             // Report progress
             float prog = static_cast<float> (framesRead) / static_cast<float> (totalFrames);
             auto deckIdCopy = targetDeckId;
-            auto* ldr = &loader;
-            juce::MessageManager::callAsync ([ldr, deckIdCopy, prog]()
+            auto* progressLdr = &loader;
+            juce::MessageManager::callAsync ([progressLdr, deckIdCopy, prog]()
             {
-                auto deckTree = ldr->deckStateManager.getDeckState (deckIdCopy);
+                auto deckTree = progressLdr->deckStateManager.getDeckState (deckIdCopy);
                 if (deckTree.isValid())
                     deckTree.setProperty (IDs::loadingProgress, prog, nullptr);
             });

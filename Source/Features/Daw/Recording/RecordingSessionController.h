@@ -202,8 +202,6 @@ private:
     juce::ValueTree recordingNode();
 
     juce::ValueTree     dawBranch_;
-    MasterGridService&  grid_;
-    MasterClockManager& clockManager_;
 
     std::unique_ptr<LiveRecordingClock> ownedClock_; // used when no override given
     RecordingClock&                     clock_;

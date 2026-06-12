@@ -20,7 +20,7 @@ namespace sonik::midi::ui
                                         const juce::String& defaultMappingId)
         : entries (summaries)
     {
-        title.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 16.0f, juce::Font::plain));
+        title.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 16.0f, juce::Font::plain)));
         title.setColour (juce::Label::textColourId, juce::Colour (kInk));
         title.setText ("Export MIDI Mapping", juce::dontSendNotification);
         addAndMakeVisible (title);

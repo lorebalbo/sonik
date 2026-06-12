@@ -16,8 +16,8 @@ namespace
 
     juce::Font monoFont (float height, bool bold = false)
     {
-        return juce::Font (juce::Font::getDefaultMonospacedFontName(), height,
-                           bold ? juce::Font::bold : juce::Font::plain);
+        return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), height,
+                                              bold ? juce::Font::bold : juce::Font::plain));
     }
 
     //--------------------------------------------------------------------------

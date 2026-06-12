@@ -244,16 +244,16 @@ namespace Daw::Session
         // Re-run EPIC-0002 separation on the existing background thread; on
         // completion (message thread) re-resolve + clear flags.
         stemManager_.startSeparationForFile (parentPath, sourceFileId,
-            [this, sourceFileId, onComplete = std::move (onComplete)] (bool success)
+            [this, sourceFileId, onDone = std::move (onComplete)] (bool success)
             {
                 juce::MessageManager::callAsync (
-                    [this, sourceFileId, onComplete, success]
+                    [this, sourceFileId, onDone, success]
                     {
                         bool resolved = false;
                         if (success)
                             resolved = reresolveSource (sourceFileId);
-                        if (onComplete)
-                            onComplete (success && resolved);
+                        if (onDone)
+                            onDone (success && resolved);
                     });
             });
 

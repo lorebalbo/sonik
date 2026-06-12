@@ -226,8 +226,8 @@ void ClipBlock::paint (juce::Graphics& g)
             if (label.isNotEmpty())
             {
                 g.setColour (selected ? kSurface : kInk);
-                g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(),
-                                       7.0f, juce::Font::bold));
+                g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                                          7.0f, juce::Font::bold)));
                 g.drawText (label, band.withTrimmedLeft (5),
                             juce::Justification::centredLeft, false);
             }
@@ -441,6 +441,7 @@ void ClipBlock::updateCursorForZone (DragZone zone)
         case DragZone::Body:
             setMouseCursor (juce::MouseCursor::DraggingHandCursor);
             break;
+        case DragZone::None:
         default:
             setMouseCursor (juce::MouseCursor::NormalCursor);
             break;

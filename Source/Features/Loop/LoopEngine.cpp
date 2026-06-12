@@ -48,7 +48,7 @@ void LoopEngine::autoLoop (float beatCount)
     bool loopActive = static_cast<bool> (loopNode.getProperty (IDs::active, false));
 
     // Toggle off if same size is already active
-    if (loopActive && activeAutoBeats == beatCount)
+    if (loopActive && juce::exactlyEqual (activeAutoBeats, beatCount))
     {
         loopNode.setProperty (IDs::active, false, nullptr);
         activeAutoBeats = 0.0f;

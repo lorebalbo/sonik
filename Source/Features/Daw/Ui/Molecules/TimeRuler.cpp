@@ -84,7 +84,7 @@ void TimeRuler::refresh()
     const int tickBandTop = kHeaderBandHeight;
     for (int i = 0; i < static_cast<int> (ticks_.size()); ++i)
     {
-        const auto& info = ticks_[i];
+        const auto& info = ticks_[static_cast<size_t> (i)];
         auto*       comp = tickComponents_.getUnchecked (i);
 
         comp->setKind (info.kind);
@@ -119,7 +119,7 @@ void TimeRuler::paint (juce::Graphics& g)
 
     // Bar-number labels (Space Mono, ink, small) next to each bar tick.
     g.setColour (kInk);
-    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
+    g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain)));
 
     for (const auto& tick : ticks_)
     {

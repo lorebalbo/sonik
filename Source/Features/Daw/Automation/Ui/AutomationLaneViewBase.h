@@ -40,8 +40,8 @@ public:
     AutomationLaneViewBase (juce::ValueTree laneNode,
                             const TimelineTransform& transform,
                             AutomationModel* model)
-        : laneNode_ (std::move (laneNode)),
-          transform_ (transform),
+        : transform_ (transform),
+          laneNode_ (std::move (laneNode)),
           model_ (model)
     {
         // The lane itself is non-interactive except the bypass button hit-test we
@@ -270,7 +270,7 @@ private:
         // Parameter label (all-caps Space Mono), vertically centred, indented
         // beneath the track name like Logic's automation sub-track.
         g.setColour (enabled ? kInk : kInk.withAlpha (0.45f));
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 9.0f, juce::Font::bold)));
         g.drawText (paramLabel_,
                     cell.withTrimmedLeft (20).withTrimmedRight (
                         AutomationLaneMetrics::kBypassButtonWidth + 40),
@@ -278,7 +278,7 @@ private:
 
         // Max (top) / min (bottom) range labels, right-aligned before the
         // bypass button — they describe the lane's value axis.
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 7.0f, juce::Font::plain));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 7.0f, juce::Font::plain)));
         auto rangeCol = juce::Rectangle<int> (bypassButtonBounds_.getX() - 32,
                                               cell.getY() + 1,
                                               28,
@@ -294,7 +294,7 @@ private:
         g.setColour (kInk);
         g.drawRect (bypassButtonBounds_, 2);
         g.setColour (enabled ? kSurface : kInk);
-        g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 8.0f, juce::Font::bold));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 8.0f, juce::Font::bold)));
         g.drawText (enabled ? juce::String ("ON") : juce::String ("OFF"),
                     bypassButtonBounds_, juce::Justification::centred, false);
     }

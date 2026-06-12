@@ -215,12 +215,12 @@ void ChannelGroupView::refreshAutomationTransform()
 
 LaneView& ChannelGroupView::laneFor (ChannelGroup::LaneKind kind)
 {
-    return *lanes_[static_cast<int> (kind)];
+    return *lanes_[static_cast<size_t> (kind)];
 }
 
 bool ChannelGroupView::isLaneActive (ChannelGroup::LaneKind kind) const
 {
-    return lanes_[static_cast<int> (kind)]->isActive();
+    return lanes_[static_cast<size_t> (kind)]->isActive();
 }
 
 void ChannelGroupView::refreshClipLayout()

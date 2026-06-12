@@ -210,10 +210,10 @@ void ModelManager::ensureSeparationScript()
 void ModelManager::updateStemsStatus (const juce::String& newStatus,
                                       const juce::String& error)
 {
-    juce::MessageManager::callAsync ([rootState = this->rootState,
+    juce::MessageManager::callAsync ([stateCopy = this->rootState,
                                       newStatus, error]() mutable
     {
-        auto decksNode = rootState.getChildWithName (IDs::Decks);
+        auto decksNode = stateCopy.getChildWithName (IDs::Decks);
         for (int i = 0; i < decksNode.getNumChildren(); ++i)
         {
             auto stems = decksNode.getChild (i).getChildWithName (IDs::Stems);

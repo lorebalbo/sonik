@@ -19,7 +19,7 @@ LoopControlComponent::~LoopControlComponent()
 
 void LoopControlComponent::setActiveAutoLoopBeats (float beats)
 {
-    if (activeAutoBeats != beats)
+    if (! juce::exactlyEqual (activeAutoBeats, beats))
     {
         activeAutoBeats = beats;
         repaint();
@@ -104,7 +104,7 @@ void LoopControlComponent::paint (juce::Graphics& g)
         if (def.type == BtnType::Toggle)
             isActive = loopIsActive;
         else if (def.type == BtnType::AutoLoop)
-            isActive = loopIsActive && (activeAutoBeats == def.autoLoopBeats);
+            isActive = loopIsActive && juce::exactlyEqual (activeAutoBeats, def.autoLoopBeats);
         else if (def.type == BtnType::LoopIn)
             isActive = pendingIn;
 

@@ -55,6 +55,11 @@ void DeckMidiHandler::deregisterDeckEngines (std::uint8_t deckIndex) noexcept
     hotCueManagers[deckIndex]  = nullptr;
 }
 
+// Chain-of-responsibility dispatch: this handler consumes only the deck
+// categories and returns false for everything else (library/mixer categories
+// flow to the next handler). The switch is intentionally non-exhaustive, so
+// the exhaustiveness warning is silenced for this one function.
+JUCE_BEGIN_IGNORE_WARNINGS_GCC_LIKE ("-Wswitch-enum")
 bool DeckMidiHandler::tryHandle (const MidiMessageEvent& event)
 {
     // GlobalDeckIndex (255) signals a library or mixer category.
@@ -326,3 +331,4 @@ bool DeckMidiHandler::tryHandle (const MidiMessageEvent& event)
             return false;
     }
 }
+JUCE_END_IGNORE_WARNINGS_GCC_LIKE

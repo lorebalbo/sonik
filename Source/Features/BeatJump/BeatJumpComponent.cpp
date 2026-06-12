@@ -60,12 +60,15 @@ int BeatJumpComponent::regionToSizeIndex (Region r) noexcept
 {
     switch (r)
     {
-        case Region::Size0: return 0;
-        case Region::Size1: return 1;
-        case Region::Size2: return 2;
-        case Region::Size3: return 3;
-        default:            return -1;
+        case Region::Size0:    return 0;
+        case Region::Size1:    return 1;
+        case Region::Size2:    return 2;
+        case Region::Size3:    return 3;
+        case Region::None:
+        case Region::Backward:
+        case Region::Forward:  return -1;
     }
+    return -1;
 }
 
 juce::String BeatJumpComponent::formatSize (double beats) const
@@ -139,7 +142,7 @@ void BeatJumpComponent::paint (juce::Graphics& g)
         else                btnRegion = static_cast<Region> (static_cast<int> (Region::Size0) + (idx - 1));
 
         bool isSizeBtn   = (idx >= 1 && idx <= 4);
-        bool isActive    = isSizeBtn && (kSizes[idx - 1] == currentSize) && (! empty) && hasBg;
+        bool isActive    = isSizeBtn && juce::exactlyEqual (kSizes[idx - 1], currentSize) && (! empty) && hasBg;
         bool isHovered   = (hoveredRegion == btnRegion) && (! empty);
         bool isFlashing  = flashActive && (flashRegion == btnRegion);
 
@@ -269,7 +272,7 @@ void BeatJumpComponent::valueTreePropertyChanged (juce::ValueTree& changedTree,
         if (property == IDs::beatJumpSize)
         {
             double newSize = static_cast<double> (changedTree[property]);
-            if (newSize != currentSize)
+            if (! juce::exactlyEqual (newSize, currentSize))
             {
                 currentSize = newSize;
                 juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()

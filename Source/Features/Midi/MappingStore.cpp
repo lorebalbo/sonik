@@ -181,14 +181,14 @@ namespace sonik::midi
             catch (...) { /* never propagate */ }
 
             juce::MessageManager::callAsync ([weakThis,
-                                              sources = std::move (sources),
-                                              errors  = std::move (errors)]() mutable
+                                              collectedSources = std::move (sources),
+                                              collectedErrors  = std::move (errors)]() mutable
             {
                 // If the store was destroyed before this queued message ran, the
                 // weak reference is now null and we must NOT touch freed state.
                 if (auto* self = weakThis.get())
                 {
-                    self->loadUserProfileSources (std::move (sources), std::move (errors));
+                    self->loadUserProfileSources (std::move (collectedSources), std::move (collectedErrors));
                     self->onUserProfilesLoaded();
                 }
             });

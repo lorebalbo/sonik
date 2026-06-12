@@ -258,7 +258,7 @@ void LaneView::paint (juce::Graphics& g)
     g.fillRect (gutter - 2, bounds.getY(), 2, bounds.getHeight());
 
     g.setColour (active_ ? kInk : kInkDim);
-    g.setFont (juce::Font (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::bold));
+    g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::bold)));
     g.drawText (labelForKind (kind_),
                 headerCell.withTrimmedLeft (20).withTrimmedRight (6),
                 juce::Justification::centredLeft, false);

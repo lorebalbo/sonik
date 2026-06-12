@@ -45,7 +45,7 @@ void BeatJumpEngine::setJumpSize (double beats)
     // Validate against allowed sizes
     for (int i = 0; i < numJumpSizes; ++i)
     {
-        if (jumpSizes[i] == beats)
+        if (juce::exactlyEqual (jumpSizes[i], beats))
         {
             tree.setProperty (IDs::beatJumpSize, beats, nullptr);
             return;
@@ -60,7 +60,7 @@ void BeatJumpEngine::cycleJumpSize (bool forward)
     int currentIndex = 3; // default to 4.0
     for (int i = 0; i < numJumpSizes; ++i)
     {
-        if (jumpSizes[i] == current)
+        if (juce::exactlyEqual (jumpSizes[i], current))
         {
             currentIndex = i;
             break;

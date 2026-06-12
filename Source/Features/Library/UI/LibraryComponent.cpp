@@ -1153,48 +1153,48 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
 
     menu->showMenuAsync (
         juce::PopupMenu::Options{}.withTargetScreenArea (targetArea),
-        [safeThis, menu, rows = std::move (rows), rowIndex, deckIds = std::move (deckIds),
-         playlistIds = std::move (playlistIds)] (int choice) mutable
+        [safeThis, menu, ctxRows = std::move (rows), rowIndex, ctxDeckIds = std::move (deckIds),
+         ctxPlaylistIds = std::move (playlistIds)] (int choice) mutable
         {
             menu->setLookAndFeel (nullptr);
             if (safeThis == nullptr || choice == 0)
                 return;
 
-            if (choice >= kDeckBase && choice < kDeckBase + static_cast<int> (deckIds.size()))
+            if (choice >= kDeckBase && choice < kDeckBase + static_cast<int> (ctxDeckIds.size()))
             {
-                safeThis->loadTrackToDeck (rowIndex, deckIds[static_cast<size_t> (choice - kDeckBase)]);
+                safeThis->loadTrackToDeck (rowIndex, ctxDeckIds[static_cast<size_t> (choice - kDeckBase)]);
                 return;
             }
 
             if (choice == kAnalyze)
             {
-                safeThis->queueAnalysisRows (rows, false);
+                safeThis->queueAnalysisRows (ctxRows, false);
                 return;
             }
 
             if (choice == kForceAnalyze)
             {
-                safeThis->queueAnalysisRows (rows, true);
+                safeThis->queueAnalysisRows (ctxRows, true);
                 return;
             }
 
             if (choice == kSeparateStems)
             {
-                safeThis->queueStemRows (rows);
+                safeThis->queueStemRows (ctxRows);
                 return;
             }
 
-            if (choice == kRelocate && rows.size() == 1)
+            if (choice == kRelocate && ctxRows.size() == 1)
             {
-                safeThis->relocateTrackFile (rows.front().id, rows.front().filePath);
+                safeThis->relocateTrackFile (ctxRows.front().id, ctxRows.front().filePath);
                 return;
             }
 
             if (choice == kRemove)
             {
                 std::vector<int64_t> ids;
-                ids.reserve (rows.size());
-                for (const auto& row : rows)
+                ids.reserve (ctxRows.size());
+                for (const auto& row : ctxRows)
                     ids.push_back (row.id);
                 safeThis->removeTracksFromLibrary (ids);
                 return;
@@ -1202,7 +1202,7 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
 
             if (choice == kPlaylistPreparation)
             {
-                for (const auto& row : rows)
+                for (const auto& row : ctxRows)
                     safeThis->preparationTrackIds.push_back (row.id);
                 safeThis->sidebar.setPreparationCount (static_cast<int> (safeThis->preparationTrackIds.size()));
                 if (safeThis->currentSidebarContext == "preparation")
@@ -1213,23 +1213,23 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
             if (choice == kPlaylistNew)
             {
                 safeThis->pendingCreatePlaylistTrackIds.clear();
-                for (const auto& row : rows)
+                for (const auto& row : ctxRows)
                     safeThis->pendingCreatePlaylistTrackIds.push_back (row.id);
                 safeThis->sidebar.beginCreatePlaylist();
                 return;
             }
 
-            if (choice >= kPlaylistBase && choice < kPlaylistBase + static_cast<int> (playlistIds.size()))
+            if (choice >= kPlaylistBase && choice < kPlaylistBase + static_cast<int> (ctxPlaylistIds.size()))
             {
                 if (safeThis->queryThread == nullptr)
                     return;
 
                 std::vector<int64_t> ids;
-                ids.reserve (rows.size());
-                for (const auto& row : rows)
+                ids.reserve (ctxRows.size());
+                for (const auto& row : ctxRows)
                     ids.push_back (row.id);
 
-                const auto playlistId = playlistIds[static_cast<size_t> (choice - kPlaylistBase)];
+                const auto playlistId = ctxPlaylistIds[static_cast<size_t> (choice - kPlaylistBase)];
                 safeThis->queryThread->addTracksToPlaylist (playlistId, std::move (ids),
                     [safeThis] (bool ok, juce::String message, int64_t id)
                     {
@@ -1240,7 +1240,7 @@ void LibraryComponent::showContextMenu (int rowIndex, juce::Point<int> screenPos
             }
 
             if (choice > kRatingBase && choice <= kRatingBase + 5)
-                safeThis->setTrackRatingForRows (rows, choice - kRatingBase);
+                safeThis->setTrackRatingForRows (ctxRows, choice - kRatingBase);
         });
 }
 
@@ -1470,11 +1470,11 @@ void LibraryComponent::removeTracksFromLibrary (const std::vector<int64_t>& trac
 
     juce::AlertWindow::showAsync (options,
         [safeThis = juce::Component::SafePointer<LibraryComponent> (this),
-         performDeletion = std::move (performDeletion)] (int result) mutable
+         doDeletion = std::move (performDeletion)] (int result) mutable
         {
             if (safeThis == nullptr || result != 1)
                 return;
-            performDeletion();
+            doDeletion();
         });
 }
 
@@ -1600,14 +1600,14 @@ void LibraryComponent::confirmClearCollection()
     alert->enterModalState (true,
         juce::ModalCallbackFunction::create (
             [safeThis,
-             removeFolders   = std::move (removeFolders),
-             deletePlaylists = std::move (deletePlaylists)] (int result) mutable
+             removeFoldersToggle   = std::move (removeFolders),
+             deletePlaylistsToggle = std::move (deletePlaylists)] (int result) mutable
             {
                 if (safeThis == nullptr || result != 1)
                     return;
 
-                safeThis->clearCollection (removeFolders->getToggleState(),
-                                           deletePlaylists->getToggleState());
+                safeThis->clearCollection (removeFoldersToggle->getToggleState(),
+                                           deletePlaylistsToggle->getToggleState());
             }),
         true);
 }
@@ -2046,7 +2046,7 @@ void LibraryComponent::movePlaylistEntry (int64_t entryId, int newRowIndex)
 
     queryThread->movePlaylistEntry (playlistId, entryId, newRowIndex,
         [safeThis = juce::Component::SafePointer<LibraryComponent> (this)]
-        (bool ok, juce::String message, int64_t id)
+        (bool ok, juce::String message, int64_t)
         {
             if (safeThis == nullptr)
                 return;

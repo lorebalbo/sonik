@@ -461,7 +461,7 @@ void AudioEngine::setDeckBuffer (const juce::String& deckId, AudioBufferHolder::
             src.stretcherLatency = newStretcher->primeWithAudio (
                 buf.getReadPointer (0),
                 buf.getReadPointer (1),
-                holder->getNumFrames(),
+                static_cast<int> (holder->getNumFrames()),
                 maxBlock);
             src.timeStretcherOwned = newStretcher;
             src.timeStretcher.store (newStretcher, std::memory_order_release);
@@ -1261,7 +1261,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             const float publishedVelocity =
                 audioState->scratchVelocityPerSample.load (std::memory_order_relaxed);
 
-            if (publishedVelocity != source->prevScratchVelocityRead)
+            if (! juce::exactlyEqual (publishedVelocity, source->prevScratchVelocityRead))
             {
                 // Message thread published a new velocity: adopt it immediately.
                 source->scratchVelocityDecayed  = publishedVelocity;
@@ -2366,8 +2366,9 @@ void AudioEngine::audioDeviceIOCallbackWithContext (
             // Accumulate into the already-written output bus.
             for (int i = 0; i < numSamples; ++i)
             {
-                outL[i] = juce::jlimit (-1.0f, 1.0f, outL[i] + dawMasterFeedL_[i]);
-                outR[i] = juce::jlimit (-1.0f, 1.0f, outR[i] + dawMasterFeedR_[i]);
+                const auto fi = static_cast<size_t> (i);
+                outL[i] = juce::jlimit (-1.0f, 1.0f, outL[i] + dawMasterFeedL_[fi]);
+                outR[i] = juce::jlimit (-1.0f, 1.0f, outR[i] + dawMasterFeedR_[fi]);
             }
         }
     }

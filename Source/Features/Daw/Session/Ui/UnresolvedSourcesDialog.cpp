@@ -18,8 +18,8 @@ namespace
 
     juce::Font monoFont (float height, bool bold = false)
     {
-        return juce::Font (juce::Font::getDefaultMonospacedFontName(), height,
-                           bold ? juce::Font::bold : juce::Font::plain);
+        return juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), height,
+                                              bold ? juce::Font::bold : juce::Font::plain));
     }
 
     //--------------------------------------------------------------------------
@@ -60,7 +60,7 @@ namespace
         {
             const bool isStem = (src.kind == SourceKind::StemCache);
             action = std::make_unique<MonoButton> (isStem ? "Re-derive Stems" : "Relocate...");
-            action->onClick = [onAction = std::move (onAction)] { if (onAction) onAction(); };
+            action->onClick = [handler = std::move (onAction)] { if (handler) handler(); };
             addAndMakeVisible (*action);
         }
 

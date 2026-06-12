@@ -341,8 +341,9 @@ void TrackTableMolecule::paintRowBackground (juce::Graphics& g,
     // Seed the RNG with the row number so the noise is stable across repaints.
     if (row.isMissing != 0)
     {
-        juce::Random rng (static_cast<int64_t> (rowNumber) * 0x9E3779B97F4A7C15LL
-                          + static_cast<int64_t> (row.id));
+        const auto seed = static_cast<juce::uint64> (rowNumber) * 0x9E3779B97F4A7C15ULL
+                        + static_cast<juce::uint64> (row.id);
+        juce::Random rng (static_cast<juce::int64> (seed));
         g.setColour (LibraryPalette::primary());
         for (int y = 0; y < height; ++y)
             for (int x = 0; x < width; ++x)
