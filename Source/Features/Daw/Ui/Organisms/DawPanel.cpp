@@ -1116,7 +1116,8 @@ void DawPanel::mouseUp (const juce::MouseEvent& event)
         menu.showMenuAsync (
             juce::PopupMenu::Options()
                 .withTargetComponent (this)
-                .withTargetScreenArea (localAreaToGlobal (snapBounds_)),
+                .withTargetScreenArea (localAreaToGlobal (snapBounds_))
+                .withMinimumWidth (snapBounds_.getWidth()),
             [safe] (int result)
             {
                 if (safe == nullptr || result == 0)

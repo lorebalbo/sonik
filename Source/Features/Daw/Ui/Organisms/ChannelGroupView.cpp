@@ -190,7 +190,8 @@ void ChannelGroupView::showAutomationMenu()
         juce::PopupMenu::Options()
             .withTargetComponent (&header_)
             .withTargetScreenArea (
-                header_.localAreaToGlobal (header_.automationDropdownBounds())),
+                header_.localAreaToGlobal (header_.automationDropdownBounds()))
+            .withMinimumWidth (header_.automationDropdownBounds().getWidth()),
         [safe, params] (int result)
         {
             if (safe == nullptr || result == 0)

@@ -40,7 +40,8 @@ We utilize a sharp, pixel-aligned bitmap approach to maintain editorial clarity,
 Depth is achieved through **Tonal Layering** and **Pixel Offset**, not simulated light sources.
 
 * **The Layering Principle:** The central Mixer should appear "lifted" relative to the side Decks using the surface scale.
-* **Ambient Shadows (The Dithered Drop):** Context menus (e.g., right-click on a track) or effect tooltips use a **Dithered Shadow**. Apply a 2px or 4px offset with a 50% checkerboard pattern of `#2d2d2d`. Zero blur.
+* **Ambient Shadows (The Dithered Drop):** Effect tooltips and floating panels (e.g., the Export dialog) use a **Dithered Shadow**. Apply a 2px or 4px offset with a 50% checkerboard pattern of `#2d2d2d`. Zero blur.
+* **Popup & Dropdown Menus:** Flat, no shadow of any kind — just the surface fill and the 2px solid `#2d2d2d` border. A dropdown opened from a button matches the width of that button.
 * **Zero Roundedness:** All `border-radius` tokens are strictly `0px`. Sharp corners are mandatory to maintain orthographic integrity.
 
 ---

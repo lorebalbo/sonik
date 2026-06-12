@@ -16,10 +16,12 @@ namespace sonik::ui
 //
 // DESIGN.md rules enforced here:
 //   - strict monochrome palette (#2d2d2d ink on #fdfdfd surface)
-//   - 2px solid ink borders, zero border-radius
+//   - 2px solid ink borders, zero border-radius, no shadows
 //   - highlighted items use full fill inversion (ink fill, surface text)
-//   - dithered drop shadow: 2px offset, 50% checkerboard, zero blur
 //   - Space Mono (falls back to the platform monospaced font when absent)
+//
+// Dropdown menus opened from a button should match the button's width: pass
+// PopupMenu::Options().withMinimumWidth (button.getWidth()) at the call site.
 //==============================================================================
 class SonikLookAndFeel : public juce::LookAndFeel_V4
 {
@@ -51,8 +53,8 @@ public:
     juce::Font getPopupMenuFont() override;
     int getPopupMenuBorderSize() override;
 
-    // No native window shadow: the zero-blur dithered drop is painted by
-    // drawPopupMenuBackground instead (DESIGN.md forbids soft shadows).
+    // Menus carry no shadow at all — neither the native window drop shadow
+    // nor a painted one.
     int getMenuWindowFlags() override;
 
     //--------------------------------------------------------------------------

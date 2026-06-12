@@ -8,7 +8,6 @@ namespace
     const juce::Colour kSurface { 0xFFFDFDFD }; // DESIGN.md surface
     const juce::Colour kDimmed  { 0xFFE2E2E2 }; // surface-container-highest (disabled text)
 
-    constexpr int kShadowOffset = 2;  // dithered drop: 2px offset, zero blur
     constexpr int kBorderPx     = 2;  // mandatory 2px ink border
     constexpr int kTickColumn   = 14; // left column reserved for the tick block
     constexpr int kItemHeight   = 24;
@@ -52,26 +51,10 @@ juce::Font SonikLookAndFeel::monoFont (float height, bool bold) const
 //==============================================================================
 void SonikLookAndFeel::drawPopupMenuBackground (juce::Graphics& g, int width, int height)
 {
+    // Flat panel: surface fill + 2px ink border, no shadow of any kind.
     g.fillAll (kSurface);
-
-    // 2px ink border on the menu panel; the right/bottom strips are reserved
-    // for the dithered drop shadow.
-    const juce::Rectangle<int> panel (0, 0, width - kShadowOffset, height - kShadowOffset);
     g.setColour (kInk);
-    g.drawRect (panel, kBorderPx);
-
-    // JUCE owns the popup window chrome, so painting outside the window bounds
-    // is not possible. The dithered 2px-offset shadow (DESIGN.md §4: 50%
-    // checkerboard, zero blur) is painted as an internal right/bottom band.
-    for (int y = kShadowOffset; y < height; ++y)
-        for (int x = width - kShadowOffset; x < width; ++x)
-            if (((x + y) & 1) == 0)
-                g.fillRect (x, y, 1, 1);
-
-    for (int y = height - kShadowOffset; y < height; ++y)
-        for (int x = kShadowOffset; x < width - kShadowOffset; ++x)
-            if (((x + y) & 1) == 0)
-                g.fillRect (x, y, 1, 1);
+    g.drawRect (juce::Rectangle<int> (0, 0, width, height), kBorderPx);
 }
 
 void SonikLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const juce::Rectangle<int>& area,
@@ -150,8 +133,11 @@ void SonikLookAndFeel::getIdealPopupMenuItemSize (const juce::String& text, bool
 
     idealHeight = standardMenuItemHeight > 0 ? standardMenuItemHeight : kItemHeight;
 
+    // Text + tick column + side padding only. No extra slack: dropdown menus
+    // opened from a button match the button's width via withMinimumWidth, so
+    // the measured width must stay as tight as the drawing allows.
     const auto textWidth = juce::GlyphArrangement::getStringWidth (getPopupMenuFont(), text);
-    idealWidth = juce::roundToInt (textWidth) + kTickColumn + 16 + 14;
+    idealWidth = juce::roundToInt (textWidth) + kTickColumn + 16;
 }
 
 juce::Font SonikLookAndFeel::getPopupMenuFont()
@@ -161,14 +147,12 @@ juce::Font SonikLookAndFeel::getPopupMenuFont()
 
 int SonikLookAndFeel::getPopupMenuBorderSize()
 {
-    // 2px ink border + 2px breathing room; also clears the shadow band on the
-    // right/bottom edges.
-    return kBorderPx + kShadowOffset;
+    return kBorderPx + 2; // 2px ink border + 2px breathing room
 }
 
 int SonikLookAndFeel::getMenuWindowFlags()
 {
-    return 0; // no ComponentPeer::windowHasDropShadow — zero-blur rule
+    return 0; // no ComponentPeer::windowHasDropShadow — menus carry no shadow
 }
 
 //==============================================================================
