@@ -26,6 +26,10 @@
 #include "ArrangementPublisher.h"
 #include "ClipStreamer.h"
 
+#include "../../Mixer/State/MixerAtomicSnapshot.h"        // PRD-0052
+#include "../../Mixer/Routing/ChannelStripProcessor.h"    // PRD-0054
+#include "../../Mixer/Routing/ChannelStripSnapshot.h"     // PRD-0053
+
 namespace Daw
 {
 
@@ -79,6 +83,17 @@ public:
         laneBuffer_.setSize (2, blockSize, false, true, false);
         clipBuffer_.setSize (2, blockSize, false, true, false);
 
+        // EPIC-0011: per-channel (deck) group accumulators. A channel group's
+        // three lanes (Original / Instrumental / Vocal) are summed here, then run
+        // through that channel's mixer DSP so recorded automation (gain / EQ /
+        // filter) is applied to the group's playback — the SAME mixer parameters
+        // the live signal path uses, kept click-free by the strip's smoothers.
+        for (int g = 0; g < kNumGroups; ++g)
+        {
+            groupBuffer_[g].setSize (2, blockSize, false, true, false);
+            channelStrips_[g].prepareToPlay (sampleRate, blockSize, 2);
+        }
+
         // Ramp coefficient table: linear fade 0→1 over kRampLengthSamples.
         for (int i = 0; i < kRampLengthSamples; ++i)
             rampTable_[i] = static_cast<float> (i) / static_cast<float> (kRampLengthSamples - 1);
@@ -95,12 +110,21 @@ public:
     //--------------------------------------------------------------------------
 
     /// Called once per processBlock.  Reads the published snapshot, finds
-    /// active clips, copies + gains them, applies boundary ramps, and accumulates
-    /// into `masterFeed`.
+    /// active clips, copies + gains them, applies boundary ramps, sums each
+    /// channel group's lanes, runs the group through its mixer channel DSP
+    /// (so recorded automation is reproduced), and accumulates into `masterFeed`.
     ///
     /// @param masterFeed  Stereo buffer, caller-cleared; renderer ADDS into it.
     /// @param numSamples  Number of samples to render (≤ blockSize from prepare).
-    void renderBlock (juce::AudioBuffer<float>& masterFeed, int numSamples) noexcept
+    /// @param mixer       OPTIONAL per-channel mixer parameter snapshot (PRD-0052).
+    ///                    When non-null, each lane carrying a valid channelIndex
+    ///                    (0..3) is summed into its channel group and run through
+    ///                    that channel's gain/EQ/filter DSP — the path recorded
+    ///                    automation (PRD-0092) is replayed through. Lanes with no
+    ///                    channel (channelIndex < 0) and the null-mixer case fall
+    ///                    back to a straight sum into masterFeed (legacy / tests).
+    void renderBlock (juce::AudioBuffer<float>& masterFeed, int numSamples,
+                      const MixerAtomicSnapshot* mixer = nullptr) noexcept
     {
         // 1. Read playhead.
         const int64_t playhead = transportPlayhead_.load (std::memory_order_acquire);
@@ -112,6 +136,12 @@ public:
         // 2. Acquire a coherent snapshot via SeqLock.
         ArrangementSnapshot snap;
         publisher_.read (snap);
+
+        // Clear the per-channel group accumulators we may use this block.
+        bool groupActive[kNumGroups] = {};
+        if (mixer != nullptr)
+            for (int g = 0; g < kNumGroups; ++g)
+                groupBuffer_[g].clear();
 
         // 3. For each lane, find active clips and accumulate.
         for (int laneIdx = 0; laneIdx < snap.laneCount; ++laneIdx)
@@ -175,15 +205,57 @@ public:
                 laneHasSamples = true;
             }
 
-            // 4. Accumulate lane into masterFeed.
-            if (laneHasSamples)
+            if (! laneHasSamples)
+                continue;
+
+            // 4. Route the lane: into its channel group (so the group's mixer DSP
+            //    + automation is applied) when a mixer snapshot and a valid
+            //    channel are available; otherwise straight into masterFeed.
+            const int ch = lane.channelIndex;
+            if (mixer != nullptr && ch >= 0 && ch < kNumGroups)
             {
-                for (int ch = 0; ch < 2; ++ch)
-                {
-                    masterFeed.addFrom (ch, 0,
-                                       laneBuffer_.getReadPointer (ch),
-                                       numSamples);
-                }
+                for (int c = 0; c < 2; ++c)
+                    groupBuffer_[ch].addFrom (c, 0, laneBuffer_.getReadPointer (c), numSamples);
+                groupActive[ch] = true;
+            }
+            else
+            {
+                for (int c = 0; c < 2; ++c)
+                    masterFeed.addFrom (c, 0, laneBuffer_.getReadPointer (c), numSamples);
+            }
+        }
+
+        // 5. Run each active channel group through its mixer DSP and sum into
+        //    masterFeed. Gain / EQ / filter come from the SAME mixer atomics the
+        //    live signal reads — recorded automation drives them via PRD-0092 →
+        //    MixerStateBridge. The fader is forced to unity: the automatable group
+        //    parameters are gain / EQ / filter, and the live volume fader must not
+        //    silence recorded-arrangement playback.
+        if (mixer != nullptr)
+        {
+            for (int g = 0; g < kNumGroups; ++g)
+            {
+                if (! groupActive[g])
+                    continue;
+
+                const ChannelAtomicParams& a = mixer->channels[g];
+                ChannelStripSnapshot s;
+                s.gain     = a.gain.load     (std::memory_order_relaxed);
+                s.eqHigh   = a.eqHigh.load   (std::memory_order_relaxed);
+                s.eqMid    = a.eqMid.load    (std::memory_order_relaxed);
+                s.eqLow    = a.eqLow.load    (std::memory_order_relaxed);
+                s.filter   = a.filter.load   (std::memory_order_relaxed);
+                s.killHigh = a.killHigh.load (std::memory_order_relaxed);
+                s.killMid  = a.killMid.load  (std::memory_order_relaxed);
+                s.killLow  = a.killLow.load  (std::memory_order_relaxed);
+                s.fader    = 1.0f;
+
+                float* gl = groupBuffer_[g].getWritePointer (0);
+                float* gr = groupBuffer_[g].getWritePointer (1);
+                channelStrips_[g].process (gl, gr, gl, gr, numSamples, s);
+
+                for (int c = 0; c < 2; ++c)
+                    masterFeed.addFrom (c, 0, groupBuffer_[g].getReadPointer (c), numSamples);
             }
         }
     }
@@ -260,9 +332,19 @@ private:
     int    maxLanes_         { kMaxLanes };
     int    maxClipsPerLane_  { kMaxClipsPerLane };
 
+    // Number of mixer channel groups (decks A..D). One ChannelStripProcessor +
+    // group accumulator per channel so a group's lanes share one DSP pass.
+    static constexpr int kNumGroups = 4;
+
     // Pre-allocated lane accumulator + per-clip scratch (stereo, maxBlockSize_).
     juce::AudioBuffer<float>     laneBuffer_;
     juce::AudioBuffer<float>     clipBuffer_;
+
+    // EPIC-0011: per-channel group accumulators + their mixer DSP. Each strip
+    // owns persistent smoother / EQ / filter state across blocks (no meter slot,
+    // so metering is a no-op here) and is reset in prepare().
+    juce::AudioBuffer<float>     groupBuffer_[kNumGroups];
+    ChannelStripProcessor        channelStrips_[kNumGroups];
 
     // Anti-click ramp table.
     float rampTable_[kRampLengthSamples];
