@@ -491,7 +491,10 @@ void ClipBlock::mouseDown (const juce::MouseEvent& e)
 
         juce::Component::SafePointer<ClipBlock> safe (this);
         menu.showMenuAsync (
-            juce::PopupMenu::Options().withTargetComponent (this),
+            juce::PopupMenu::Options()
+                .withTargetComponent (this)
+                .withTargetScreenArea (
+                    juce::Rectangle<int> (e.getScreenX(), e.getScreenY(), 1, 1)),
             [safe, clipId] (int result)
             {
                 if (result != 1 || safe == nullptr)

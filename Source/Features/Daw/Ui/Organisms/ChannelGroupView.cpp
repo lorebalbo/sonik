@@ -187,7 +187,10 @@ void ChannelGroupView::showAutomationMenu()
 
     juce::Component::SafePointer<ChannelGroupView> safe (this);
     menu.showMenuAsync (
-        juce::PopupMenu::Options().withTargetComponent (&header_),
+        juce::PopupMenu::Options()
+            .withTargetComponent (&header_)
+            .withTargetScreenArea (
+                header_.localAreaToGlobal (header_.automationDropdownBounds())),
         [safe, params] (int result)
         {
             if (safe == nullptr || result == 0)

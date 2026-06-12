@@ -357,7 +357,9 @@ private:
         menu.addItem (3, "GRID", true, activeTab == "grid");
 
         menu.showMenuAsync (
-            juce::PopupMenu::Options().withTargetComponent (this),
+            juce::PopupMenu::Options()
+                .withTargetComponent (this)
+                .withTargetScreenArea (localAreaToGlobal (getModeBtnBounds())),
             [safeThis = juce::Component::SafePointer<ControllerWidget> (this)] (int result)
             {
                 if (safeThis == nullptr) return;
