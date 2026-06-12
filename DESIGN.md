@@ -63,7 +63,7 @@ Depth is achieved through **Tonal Layering** and **Pixel Offset**, not simulated
 
 ### Mixer: Knobs (EQ/Filter) & Faders (Line/Crossfader)
 
-* **Knobs:** Constructed in pure pixel-art style. The zero position (center-detent) is marked by a single 1px white line.
+* **Knobs:** Constructed in pure pixel-art style, built from four monochrome layers (outside-in): 11 small square ticks placed every 30 degrees across the 300-degree sweep (each square rotated so a flat side faces the center; the bottom 60-degree dead zone stays empty), a thick solid `primary` outer ring, a `surface` white face, and an inner `primary` arc broken by a gap that travels with the needle. The needle is a straight thick line from the center pointing out through that gap. Ring, inner arc, and needle all share a single stroke weight (~10% of the ring radius, minimum 2px).
 * **Faders:** Vertical and horizontal (crossfader) tracks using `surface-container-highest`. The fader "cap" (handle) is a massive, solid black rectangular block.
 
 ### Track Library (The Browser)
