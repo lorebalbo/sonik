@@ -44,7 +44,8 @@ namespace Daw
 
 class DawPanel final : public juce::Component,
                        public juce::FileDragAndDropTarget,
-                       private juce::Timer
+                       private juce::Timer,
+                       private juce::ValueTree::Listener
 {
 public:
     //--------------------------------------------------------------------------
@@ -288,6 +289,21 @@ private:
     void timerCallback() override;
     void rebuildTransform();
     bool gridChanged (const MasterGridService::GridContext& ctx) const;
+
+    // Grouped-tracks mute/solo: a muted/solo flip anywhere in the daw branch
+    // changes which lanes the compiler admits, so the published snapshot must
+    // be rebuilt (the lane dimming itself is the ChannelGroupStack's own
+    // observation; this listener only drives playback).
+    void valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier& property) override
+    {
+        if ((property == DawIDs::muted || property == DawIDs::solo)
+            && recompileTrigger_ != nullptr)
+            recompileTrigger_->requestRecompile();
+    }
+    void valueTreeChildAdded   (juce::ValueTree&, juce::ValueTree&) override {}
+    void valueTreeChildRemoved (juce::ValueTree&, juce::ValueTree&, int) override {}
+    void valueTreeChildOrderChanged (juce::ValueTree&, int, int) override {}
+    void valueTreeParentChanged (juce::ValueTree&) override {}
 
     void layoutBody();
 

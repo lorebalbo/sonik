@@ -23,6 +23,7 @@
 
 #include "../DawLayoutMetrics.h"
 #include "../Atoms/ClipBlock.h"
+#include "../Atoms/MuteSoloButton.h"
 #include "../../Model/ChannelGroup.h"
 #include "../../Transform/TimelineTransform.h"
 #include "../../Editing/EditCommands.h"
@@ -50,6 +51,13 @@ public:
 
     bool isActive() const noexcept { return active_; }
     void setActive (bool shouldBeActive);
+
+    // Grouped-tracks mute/solo: whether this lane currently SOUNDS under the
+    // combined group/lane mute/solo flags (MuteSolo). An inaudible lane
+    // is dimmed with the same dither treatment as a source-mode-inactive one.
+    // The owning ChannelGroupView computes this (it sees the global solo state).
+    bool isAudible() const noexcept { return audible_; }
+    void setAudible (bool shouldBeAudible);
 
     int getNumClipBlocks() const noexcept { return clipBlocks_.size(); }
 
@@ -112,7 +120,13 @@ private:
 
     juce::OwnedArray<ClipBlock> clipBlocks_;
     bool                        active_ { true };
+    bool                        audible_ { true };
     Daw::EditCommandDispatcher* dispatcher_ { nullptr };
+
+    // Grouped-tracks mute/solo: per-lane M / S toggles in the header cell,
+    // writing the lane node's flags (the ValueTree single source of truth).
+    MuteSoloButton muteButton_ { "M", DawIDs::muted };
+    MuteSoloButton soloButton_ { "S", DawIDs::solo };
 
     // PRD-0102: shared snap settings + selection (owned by DawPanel), forwarded
     // to each ClipBlock at creation and on setClipInteraction().

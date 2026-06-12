@@ -132,6 +132,11 @@ DawPanel::DawPanel (MasterGridService& gridService,
     dispatcher_ = std::make_unique<Daw::EditCommandDispatcher> (
         dawBranch_, undoManager_, *recompileTrigger_);
 
+    // Grouped-tracks mute/solo: observe the daw branch so a header M / S flip
+    // republishes the arrangement snapshot (audio follows the buttons).
+    if (dawBranch_.isValid())
+        dawBranch_.addListener (this);
+
     // Wire the dispatcher into all existing lane views.
     stack_.setEditDispatcher (dispatcher_.get());
 
@@ -157,6 +162,8 @@ DawPanel::DawPanel (MasterGridService& gridService,
 
 DawPanel::~DawPanel()
 {
+    if (dawBranch_.isValid())
+        dawBranch_.removeListener (this);
     stopTimer();
 }
 

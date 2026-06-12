@@ -25,6 +25,8 @@
 
 #include "../DawLayoutMetrics.h"
 #include "../Atoms/PixelIcons.h"
+#include "../Atoms/MuteSoloButton.h"
+#include "../../State/DawState.h"
 #include "../../../Mixer/State/MixerIdentifiers.h"
 
 namespace Daw
@@ -34,7 +36,11 @@ class ChannelGroupHeader final : public juce::Component,
                                  private juce::ValueTree::Listener
 {
 public:
-    explicit ChannelGroupHeader (int deckIndex) : deckIndex_ (deckIndex) {}
+    explicit ChannelGroupHeader (int deckIndex) : deckIndex_ (deckIndex)
+    {
+        addAndMakeVisible (muteButton_);
+        addAndMakeVisible (soloButton_);
+    }
 
     ~ChannelGroupHeader() override
     {
@@ -48,6 +54,14 @@ public:
     // Fired when the automation-parameter dropdown is clicked. The owner (the
     // ChannelGroupView) shows the parameter menu and applies the selection.
     std::function<void()> onAutomationDropdown;
+
+    // Grouped-tracks mute/solo: the M / S toggles write the group-level flags
+    // directly onto the track node (the daw.tracks[i] single source of truth).
+    void setTrackTree (juce::ValueTree trackTree)
+    {
+        muteButton_.setTargetTree (trackTree);
+        soloButton_.setTargetTree (std::move (trackTree));
+    }
 
     //--------------------------------------------------------------------------
     // Mixer channel wiring (volume fader). The header reads/writes the channel
@@ -107,8 +121,11 @@ public:
         const int gutterW = DawLayout::kTrackHeaderWidth;
         const int rowH    = DawLayout::kGroupHeaderHeight / 2;
 
-        // Row 1: collapse toggle flush with the gutter's right padding.
+        // Row 1: collapse toggle flush with the gutter's right padding, with the
+        // group M / S toggles stacked to its left.
         toggleBounds_ = juce::Rectangle<int> (gutterW - 30, 5, 20, 18);
+        soloButton_.setBounds (gutterW - 30 - 22, 5, 18, 18);
+        muteButton_.setBounds (gutterW - 30 - 44, 5, 18, 18);
 
         // Row 2: volume fader left, automation dropdown filling the remainder.
         const int row2Y = rowH;
@@ -133,11 +150,11 @@ public:
         g.fillRect (bounds.getX(), bounds.getY(), bounds.getWidth(), 2);
         g.fillRect (gutterW - 2, bounds.getY(), 2, bounds.getHeight());
 
-        // Row 1 — track name.
+        // Row 1 — track name (trimmed clear of the M / S / collapse cluster).
         g.setColour (kInk);
         g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::bold)));
         g.drawText (labelForDeck (deckIndex_),
-                    juce::Rectangle<int> (12, 2, gutterW - 48,
+                    juce::Rectangle<int> (12, 2, gutterW - 90,
                                           DawLayout::kGroupHeaderHeight / 2 - 2),
                     juce::Justification::centredLeft, false);
 
@@ -255,6 +272,8 @@ private:
     bool                 automationRevealed_ { false };
     bool                 draggingFader_ { false };
     juce::String         autoLabel_ { "OFF" };
+    MuteSoloButton       muteButton_ { "M", DawIDs::muted };
+    MuteSoloButton       soloButton_ { "S", DawIDs::solo };
     juce::ValueTree      channelTree_;
     juce::Rectangle<int> toggleBounds_;
     juce::Rectangle<int> faderBounds_;

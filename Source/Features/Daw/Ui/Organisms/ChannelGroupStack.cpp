@@ -195,6 +195,20 @@ void ChannelGroupStack::paint (juce::Graphics& g)
     g.fillAll (kBodyBg);
 }
 
+void ChannelGroupStack::refreshAudibility()
+{
+    for (const auto& g : groups_)
+        if (g != nullptr)
+            g->refreshAudibility();
+}
+
+void ChannelGroupStack::valueTreePropertyChanged (juce::ValueTree&, const juce::Identifier& property)
+{
+    // A mute/solo flip anywhere re-evaluates every group (global solo scope).
+    if (property == DawIDs::muted || property == DawIDs::solo)
+        refreshAudibility();
+}
+
 void ChannelGroupStack::valueTreeChildAdded (juce::ValueTree& parent, juce::ValueTree& child)
 {
     if (parent == tracks_ && child.hasType (DawIDs::track))

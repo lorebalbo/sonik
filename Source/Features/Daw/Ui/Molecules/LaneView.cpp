@@ -27,6 +27,13 @@ LaneView::LaneView (ChannelGroup::LaneKind kind,
     clipLayer_.setInterceptsMouseClicks (false, true); // Pass through to ClipBlock children.
     addAndMakeVisible (clipLayer_);
 
+    // Per-lane M / S toggles (children, so they receive clicks even though the
+    // lane itself never intercepts the mouse).
+    muteButton_.setTargetTree (laneTree_);
+    soloButton_.setTargetTree (laneTree_);
+    addAndMakeVisible (muteButton_);
+    addAndMakeVisible (soloButton_);
+
     if (laneTree_.isValid())
     {
         clipsContainer_ = laneTree_.getChildWithName (DawIDs::clips);
@@ -46,6 +53,14 @@ void LaneView::setActive (bool shouldBeActive)
     if (active_ == shouldBeActive)
         return;
     active_ = shouldBeActive;
+    repaint();
+}
+
+void LaneView::setAudible (bool shouldBeAudible)
+{
+    if (audible_ == shouldBeAudible)
+        return;
+    audible_ = shouldBeAudible;
     repaint();
 }
 
@@ -203,6 +218,13 @@ void LaneView::layoutClips()
 
 void LaneView::resized()
 {
+    // M / S toggles right-aligned in the header cell, clear of the gutter's
+    // 2-px right edge and vertically centred in the lane row.
+    const int gutter = DawLayout::kTrackHeaderWidth;
+    const int btnY   = (getHeight() - 18) / 2;
+    soloButton_.setBounds (gutter - 2 - 6 - 18, btnY, 18, 18);
+    muteButton_.setBounds (gutter - 2 - 6 - 18 - 22, btnY, 18, 18);
+
     layoutClips();
 }
 
@@ -244,8 +266,9 @@ void LaneView::paint (juce::Graphics& g)
     g.setColour (contentToneForKind (kind_));
     g.fillRect (contentCell);
 
-    // Inactive lanes: sparse monochrome dither overlay (no colour, no hide).
-    if (! active_)
+    // Inactive or silenced (mute/solo) lanes: sparse monochrome dither overlay
+    // (no colour, no hide).
+    if (! active_ || ! audible_)
         paintInactiveDither (g, contentCell);
 
     // ---- Lane header cell: flat, Logic-style — the row's tonal step does the
@@ -257,10 +280,10 @@ void LaneView::paint (juce::Graphics& g)
     g.setColour (kInk);
     g.fillRect (gutter - 2, bounds.getY(), 2, bounds.getHeight());
 
-    g.setColour (active_ ? kInk : kInkDim);
+    g.setColour ((active_ && audible_) ? kInk : kInkDim);
     g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::bold)));
     g.drawText (labelForKind (kind_),
-                headerCell.withTrimmedLeft (20).withTrimmedRight (6),
+                headerCell.withTrimmedLeft (20).withTrimmedRight (52),
                 juce::Justification::centredLeft, false);
 }
 
