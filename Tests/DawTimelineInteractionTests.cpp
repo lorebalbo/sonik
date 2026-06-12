@@ -68,6 +68,57 @@ public:
         }
 
         //----------------------------------------------------------------------
+        beginTest ("FollowController auto-re-engages when the now-line crosses "
+                   "the trigger again after a manual scroll (rising edge)");
+        {
+            Daw::FollowController fc; // enabled by default
+
+            // The DJ scrolls the view: follow disengages.
+            fc.notifyManualScroll();
+            expect (! fc.isEnabled());
+
+            // Scrolling ahead leaves the now-line well before the trigger.
+            // Ticking arms a re-engage but must not follow yet.
+            fc.update (/*nowLineX*/ 200.0, /*width*/ 1000.0);
+            expect (! fc.isEnabled());
+            expect (! fc.shouldFollow (200.0, 1000.0));
+
+            // Playback advances but is still below the trigger (0.80): no resume.
+            fc.update (700.0, 1000.0);
+            expect (! fc.isEnabled());
+
+            // The now-line crosses 4/5 of the viewport -> follow resumes, and the
+            // very same tick should request an auto-scroll.
+            fc.update (850.0, 1000.0);
+            expect (fc.isEnabled());
+            expect (fc.shouldFollow (850.0, 1000.0));
+        }
+
+        //----------------------------------------------------------------------
+        beginTest ("FollowController does NOT auto-re-engage on a backward scroll "
+                   "that leaves the now-line already past the trigger");
+        {
+            Daw::FollowController fc;
+            fc.notifyManualScroll();
+            expect (! fc.isEnabled());
+
+            // The DJ scrolled backward to review earlier material, so the now-line
+            // is already past the trigger. Without first dipping below it, follow
+            // must stay disengaged (otherwise the view would snap forward).
+            fc.update (950.0, 1000.0);
+            expect (! fc.isEnabled());
+            fc.update (980.0, 1000.0);
+            expect (! fc.isEnabled());
+
+            // Only after the now-line dips below the trigger (arming) and then
+            // crosses it again does follow re-engage.
+            fc.update (300.0, 1000.0); // arm
+            expect (! fc.isEnabled());
+            fc.update (900.0, 1000.0); // rising-edge cross
+            expect (fc.isEnabled());
+        }
+
+        //----------------------------------------------------------------------
         beginTest ("FollowController re-anchors to the re-anchor fraction (4/5)");
         {
             expectWithinAbsoluteError (Daw::FollowController::reanchorTargetX (1000.0),

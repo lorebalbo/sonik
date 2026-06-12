@@ -435,7 +435,7 @@ void DawPanel::applyFollowIfNeeded()
 {
     // A ruler scrub is a manual gesture: the DJ drives the cursor, so the view
     // must not auto-chase it (clicking near the right edge would yank the view).
-    if (scrubbing_ || ! followController_.isEnabled())
+    if (scrubbing_)
         return;
 
     // Follow whatever currently drives the shared playhead — playback OR
@@ -446,6 +446,11 @@ void DawPanel::applyFollowIfNeeded()
 
     const double viewportWidth = transform_.getViewportWidth();
     const double nowLineX = transform_.sampleToX (sample);
+
+    // Advance the auto-re-engage state machine every tick, even while follow is
+    // disengaged: after a manual scroll it re-engages on its own once playback
+    // catches up and the now-line crosses the trigger fraction (4/5) again.
+    followController_.update (nowLineX, viewportWidth);
 
     if (! followController_.shouldFollow (nowLineX, viewportWidth))
         return;
