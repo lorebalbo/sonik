@@ -1,46 +1,20 @@
 #include "QuantizeButtonComponent.h"
+#include "Features/Shared/Ui/SonikDraw.h"
 
 void QuantizeButtonComponent::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds();
-    bool isEmpty = (deckStatus == "empty");
+    const bool isEmpty = (deckStatus == "empty");
 
-    // Determine overall opacity
-    float alpha = 1.0f;
-    if (isEmpty)
-        alpha = 0.3f;
-    else if (enabled && ! hasBeatgrid)
-        alpha = 0.5f;
+    // Half-strength when quantize is on but no beatgrid exists yet (the
+    // setting is latched, the snapping has nothing to snap to).
+    const float partial = (! isEmpty && enabled && ! hasBeatgrid) ? 0.5f : 1.0f;
 
-    if (enabled && ! isEmpty)
-    {
-        // ON state: dark background
-        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (alpha));
-        g.fillRect (bounds);
-
-        // Border 2px
-        g.setColour (juce::Colour (0xFF2D2D2D));
-        g.drawRect (bounds, 2);
-
-        // Label in light colour
-        g.setColour (juce::Colour (0xFFF9F9F9).withAlpha (alpha));
-    }
-    else
-    {
-        // OFF state: light background
-        g.setColour (juce::Colour (0xFFF9F9F9).withAlpha (alpha));
-        g.fillRect (bounds);
-
-        // Border 2px
-        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (alpha));
-        g.drawRect (bounds, 2);
-
-        // Label in dark colour — full opacity to match SYNC style
-        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (alpha));
-    }
-
-    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-    g.drawText ("QUANTIZE", bounds, juce::Justification::centred);
+    sonik::ui::draw::paintLatchButton (g, getLocalBounds(), "QUANT",
+                                       { .active  = enabled,
+                                         .hover   = isMouseOver(),
+                                         .pressed = false,
+                                         .enabled = ! isEmpty,
+                                         .alpha   = partial });
 }
 
 void QuantizeButtonComponent::mouseDown (const juce::MouseEvent&)
@@ -78,7 +52,10 @@ void QuantizeButtonComponent::valueTreePropertyChanged (juce::ValueTree& changed
             juce::MessageManager::callAsync ([safeThis = juce::Component::SafePointer (this)]()
             {
                 if (safeThis != nullptr)
+                {
+                    safeThis->updateCursor();
                     safeThis->repaint();
+                }
             });
         }
     }

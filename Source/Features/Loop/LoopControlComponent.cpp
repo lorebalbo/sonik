@@ -1,4 +1,7 @@
 #include "LoopControlComponent.h"
+#include "Features/Shared/Ui/SonikTheme.h"
+
+namespace theme = sonik::ui::theme;
 
 LoopControlComponent::LoopControlComponent (juce::ValueTree deck)
     : deckTree (deck),
@@ -111,13 +114,13 @@ void LoopControlComponent::paint (juce::Graphics& g)
         // Background
         juce::Colour bg;
         if (empty)
-            bg = juce::Colour (0xFFF9F9F9);
+            bg = theme::surface();
         else if (isActive)
-            bg = juce::Colour (0xFF2D2D2D);
+            bg = theme::ink();
         else if (i == hoveredButton)
-            bg = juce::Colour (0xFFE5E5E5);
+            bg = theme::containerHighest();
         else
-            bg = juce::Colour (0xFFF9F9F9);
+            bg = theme::surface();
 
         g.setColour (bg);
         g.fillRect (area);
@@ -125,23 +128,23 @@ void LoopControlComponent::paint (juce::Graphics& g)
         // Border (2px). Because adjacent buttons within a group overlap by 2px,
         // each drawRect reuses its neighbours border, producing a single shared
         // 2px line — the "attached" look from Figma.
-        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (empty ? 0.3f : 1.0f));
-        g.drawRect (area, 2);
+        g.setColour (theme::ink().withAlpha (empty ? theme::kDisabledAlpha : 1.0f));
+        g.drawRect (area, theme::kBorderPx);
 
         // Text / label
         juce::Colour textColor;
         if (empty)
-            textColor = juce::Colour (0xFF2D2D2D).withAlpha (0.3f);
+            textColor = theme::inkDisabled();
         else if (isActive)
-            textColor = juce::Colour (0xFFF9F9F9);
+            textColor = theme::surface();
         else
-            textColor = juce::Colour (0xFF2D2D2D);
+            textColor = theme::ink();
 
         if (def.type == BtnType::Toggle && ! loopIsActive && loopIsDefined && ! empty)
-            textColor = juce::Colour (0xFF2D2D2D).withAlpha (0.5f);
+            textColor = theme::ink().withAlpha (0.5f);
 
         g.setColour (textColor);
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+        g.setFont (theme::mono (theme::kFontBody));
         g.drawText (def.label, area, juce::Justification::centred);
     }
 }
@@ -197,6 +200,9 @@ void LoopControlComponent::mouseMove (const juce::MouseEvent& e)
     if (idx != hoveredButton)
     {
         hoveredButton = idx;
+        setMouseCursor (idx >= 0 && ! isDeckEmpty()
+                            ? juce::MouseCursor::PointingHandCursor
+                            : juce::MouseCursor::NormalCursor);
         repaint();
     }
 }

@@ -512,6 +512,15 @@ void DeckShellComponent::paint (juce::Graphics& g)
         g.fillRect (headerBounds);
     }
 
+    // Recessed display strip between the MASTER/SYNC and QUANT/SLIP groups.
+    if (! controlFieldBounds.isEmpty())
+    {
+        g.setColour (juce::Colour (0xFFFDFDFD));
+        g.fillRect (controlFieldBounds);
+        g.setColour (juce::Colour (0xFF2D2D2D));
+        g.drawRect (controlFieldBounds, 2);
+    }
+
     // CUE label button — active/dark tab at right of Frame 55 row
     if (! cueLabelBounds.isEmpty())
     {
@@ -570,11 +579,11 @@ void DeckShellComponent::resized()
         controlRowFull.removeFromRight (kSidebarGap);
         auto controlRow  = controlRowFull;
 
-        // Four buttons with three 10 px gaps (Figma spec)
-        const int ctrlGap = 10;
-        const int availW  = controlRow.getWidth() - 3 * ctrlGap;
-        const int btnW    = availW / 4;
-        const int lastBtnW = controlRow.getWidth() - 3 * (btnW + ctrlGap);
+        // Figma "Deck" control row grouping: MASTER SYNC at the left, a wide
+        // recessed display strip in the middle, then QUANT SLIP grouped at the
+        // right; KEY occupies the pitch-sidebar column to the far right.
+        const int ctrlGap = 4;
+        const int btnW    = juce::jmin (62, juce::jmax (40, controlRow.getWidth() / 6));
 
         if (masterButton != nullptr)
             masterButton->setBounds (controlRow.removeFromLeft (btnW));
@@ -584,12 +593,16 @@ void DeckShellComponent::resized()
             syncButton->setBounds (controlRow.removeFromLeft (btnW));
         controlRow.removeFromLeft (ctrlGap);
 
-        if (quantizeButton != nullptr)
-            quantizeButton->setBounds (controlRow.removeFromLeft (btnW));
-        controlRow.removeFromLeft (ctrlGap);
-
         if (slipButton != nullptr)
-            slipButton->setBounds (controlRow.removeFromLeft (lastBtnW));
+            slipButton->setBounds (controlRow.removeFromRight (btnW));
+        controlRow.removeFromRight (ctrlGap);
+
+        if (quantizeButton != nullptr)
+            quantizeButton->setBounds (controlRow.removeFromRight (btnW));
+        controlRow.removeFromRight (ctrlGap);
+
+        // The remaining span is the recessed display field (painted in paint()).
+        controlFieldBounds = controlRow;
 
         if (keyLockButton != nullptr)
             keyLockButton->setBounds (keyArea);
@@ -673,19 +686,13 @@ void DeckShellComponent::resized()
     if (controllerWidget != nullptr)
         controllerWidget->setBounds (controllerRow.withWidth (leftPanelW + kSidebarGap + kPitchSidebarW));
 
-    bounds.removeFromTop (kBelowFrameGap);
-
-    // --- Row 5: Hot Cue Pads (1-9) | CUE label (Frame 55) ---
-    auto cuePadsRow = bounds.removeFromTop (kCuePadsH);
-    {
-        auto cueTab = cuePadsRow.removeFromRight (kPitchSidebarW);
-        cuePadsRow.removeFromRight (kSidebarGap);
-
-        if (hotCuePadComponent != nullptr)
-            hotCuePadComponent->setBounds (cuePadsRow);
-
-        cueLabelBounds = cueTab;
-    }
+    // The hot-cue pad row (Frame 55) is intentionally not laid out — the Figma
+    // deck ends at the transport / beat-jump strip. Hot cues remain available
+    // via the waveform and MIDI, so the manager stays live; only the on-deck
+    // pad grid is hidden.
+    if (hotCuePadComponent != nullptr)
+        hotCuePadComponent->setVisible (false);
+    cueLabelBounds = {};
 }
 
 // --- Mouse ---

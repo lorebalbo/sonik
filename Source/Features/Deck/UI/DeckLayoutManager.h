@@ -86,8 +86,8 @@ private:
     static constexpr int minDeckWidth    = 420;
     static constexpr int minDeckHeight   = 280;
     // Fixed preferred height per deck — matches DeckShellComponent::kMinDeckH.
-    // 20 + 59 + 8 + 23 + 8 + 193 + 12 + 23 + 12 + 23 + 20 = 401 px.
-    static constexpr int kPreferredDeckH = 401;
+    // 12 + 54 + 6 + 23 + 6 + 118 + 8 + 23 + 12 = 262 px (compact 4-row Figma deck).
+    static constexpr int kPreferredDeckH = 262;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckLayoutManager)
 };

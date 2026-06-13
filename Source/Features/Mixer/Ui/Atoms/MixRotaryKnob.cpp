@@ -1,11 +1,12 @@
 #include "MixRotaryKnob.h"
+#include "Features/Shared/Ui/SonikTheme.h"
 
 #include <cmath>
 
 namespace
 {
-    const juce::Colour kInk     { 0xFF2D2D2D };
-    const juce::Colour kSurface { 0xFFFDFDFD };
+    const juce::Colour kInk     = sonik::ui::theme::ink();
+    const juce::Colour kSurface = sonik::ui::theme::surface();
 
     constexpr float kDragRangePixels = 140.0f;    // full sweep per drag
     constexpr float kFineMultiplier  = 0.25f;     // shift = 4× finer
@@ -262,8 +263,7 @@ void MixRotaryKnob::paint (juce::Graphics& g)
         return;
 
     g.setColour (kInk);
-    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                  9.0f, juce::Font::plain));
+    g.setFont (sonik::ui::theme::mono (sonik::ui::theme::kFontSmall));
 
     if (hasBottomLabel)
     {

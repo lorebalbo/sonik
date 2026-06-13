@@ -138,12 +138,17 @@ else()
         Source/Features/Daw/Export/NoMp3EncoderBackend.cpp)
 endif()
 
-# Bundled MIDI mapping profiles (PRD-0043).  Generates a static library
-# `SonikBinaryData` with `BinaryData::*` symbols for the embedded JSON files.
+# Bundled MIDI mapping profiles (PRD-0043) and the DESIGN.md typeface (Space
+# Mono, SIL OFL — see Assets/Fonts/OFL.txt). Embedding the font guarantees the
+# design-system typography renders identically on every machine instead of
+# silently falling back to the platform monospaced font.  Generates a static
+# library `SonikBinaryData` with `BinaryData::*` symbols.
 juce_add_binary_data(SonikBinaryData
     SOURCES
         Resources/MidiMappings/behringer-ddm4000.json
         Resources/MidiMappings/generic-midi.json
+        Assets/Fonts/SpaceMono-Regular.ttf
+        Assets/Fonts/SpaceMono-Bold.ttf
 )
 
 #==============================================================================
@@ -212,6 +217,9 @@ target_include_directories(SonikJuce
 # a second time and AutomationUiScreenshot a third time for a handful of them.
 #==============================================================================
 add_library(SonikCore STATIC
+    Source/Features/Shared/Ui/SonikTheme.h
+    Source/Features/Shared/Ui/SonikDraw.h
+    Source/Features/Shared/Ui/SonikDraw.cpp
     Source/Features/Shared/Ui/SonikLookAndFeel.h
     Source/Features/Shared/Ui/SonikLookAndFeel.cpp
     Source/Features/Deck/DeckIdentifiers.h

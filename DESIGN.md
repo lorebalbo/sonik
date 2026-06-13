@@ -59,6 +59,8 @@ Depth is achieved through **Tonal Layering** and **Pixel Offset**, not simulated
   * **Active state:** `#2d2d2d` fill, `#fdfdfd` text, `2px solid #2d2d2d` border.
   * **Inactive state:** `#fdfdfd` fill, `#2d2d2d` text, `2px solid #2d2d2d` border.
   * No transition animations or fades — state changes are instant.
+
+Hover on an inactive button steps the fill to `surface-container-highest` (`#e2e2e2`) instantly; pressing previews the full inversion. Disabled controls render their ink at 35% alpha. Every clickable element shows the pointing-hand cursor while it can actually respond to a click.
 * **Jog Wheels / Phase Meters:** Instead of simulating a round vinyl record, use 1-bit pixel arcs or a brutal, square linear phase indicator. If using a circular shape, apply a dithered shadow in the bottom-right quadrant.
 
 ### Mixer: Knobs (EQ/Filter) & Faders (Line/Crossfader)

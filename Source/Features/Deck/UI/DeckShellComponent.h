@@ -194,14 +194,14 @@ private:
     //   ── kBelowFrameGap (12px) ──
     //   5. Hot Cue pads 1-9 | CUE label         (kCuePadsH)
     // -----------------------------------------------------------------------
-    static constexpr int kPad              = 20;   // outer padding
-    static constexpr int kGap              = 8;    // gap within Frame 50 rows
-    static constexpr int kBelowFrameGap    = 12;   // gap between Frame 50 and rows below
-    static constexpr int kHeaderH          = 59;   // Deck Header height
+    static constexpr int kPad              = 12;   // outer padding (Figma deck p-[10])
+    static constexpr int kGap              = 6;    // gap within Frame 50 rows
+    static constexpr int kBelowFrameGap    = 8;    // gap between Frame 50 and rows below
+    static constexpr int kHeaderH          = 54;   // Deck Header height
     static constexpr int kControlRowH      = 23;   // MASTER / SYNC / QUANT / SLIP row height
-    static constexpr int kMainH            = 193;  // Stems / Waveform / Pitch section height
-    static constexpr int kControllerH      = 23;   // LOOP strip height (was 86)
-    static constexpr int kCuePadsH         = 23;   // Hot cue pads row height
+    static constexpr int kMainH            = 118;  // Stems / Waveform / Pitch section height
+    static constexpr int kControllerH      = 23;   // transport + beat-jump strip
+    static constexpr int kCuePadsH         = 0;    // Hot cue pad row removed (not in Figma)
     static constexpr int kStemsSidebarW    = 23;   // Vertical stems sidebar width
     static constexpr int kPitchSidebarW    = 70;   // Time & Pitch section width
     static constexpr int kSidebarGap       = 8;    // gap between panel and sidebar
@@ -222,12 +222,15 @@ private:
     // Painted bounds of the CUE label in the cue pads row (right side, 70px)
     juce::Rectangle<int> cueLabelBounds;
 
+    // Recessed display field between the MASTER/SYNC and QUANT/SLIP button
+    // groups in the control row (Figma "Deck" load/display strip).
+    juce::Rectangle<int> controlFieldBounds;
+
     // Minimum deck height derived from above constants
     static constexpr int kMinDeckH = kPad + kHeaderH         + kGap
                                    + kControlRowH            + kGap
                                    + kMainH                  + kBelowFrameGap
-                                   + kControllerH            + kBelowFrameGap
-                                   + kCuePadsH               + kPad;
+                                   + kControllerH            + kPad;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DeckShellComponent)
 };

@@ -19,7 +19,7 @@ public:
     {
         g.fillAll (LibraryPalette::containerLowest());
         g.setColour (LibraryPalette::primary());
-        g.setFont (juce::FontOptions ("Space Grotesk", 13.0f, juce::Font::plain));
+        g.setFont (juce::Font (LibraryPalette::bodyFont()));
         g.drawText (juce::CharPointer_UTF8 ("\xc3\x97"), // UTF-8 ×
                     getLocalBounds(), juce::Justification::centred);
     }
@@ -43,7 +43,7 @@ SearchBarAtom::SearchBarAtom()
     editor.setReturnKeyStartsNewLine (false);
     editor.setScrollbarsShown (false);
     editor.setPopupMenuEnabled (false);
-    editor.setTextToShowWhenEmpty ("Search library...",
+    editor.setTextToShowWhenEmpty ("Search...",
                                    LibraryPalette::primary().withAlpha (0.5f));
     editor.applyFontToAllText (juce::Font (LibraryPalette::bodyFont()));
     editor.setColour (juce::TextEditor::backgroundColourId,
@@ -126,7 +126,7 @@ void SearchBarAtom::textEditorTextChanged (juce::TextEditor& e)
 
 void SearchBarAtom::textEditorFocusLost (juce::TextEditor&)
 {
-    editor.setTextToShowWhenEmpty ("Search library...",
+    editor.setTextToShowWhenEmpty ("Search...",
                                    LibraryPalette::primary().withAlpha (0.5f));
 }
 
@@ -157,7 +157,7 @@ void SearchBarAtom::focusOfChildComponentChanged (FocusChangeType)
     }
     else if (!editor.hasKeyboardFocus (false))
     {
-        editor.setTextToShowWhenEmpty ("Search library...",
+        editor.setTextToShowWhenEmpty ("Search...",
                                        LibraryPalette::primary().withAlpha (0.5f));
     }
 }

@@ -1,50 +1,16 @@
 #include "StemSeparateButton.h"
 #include "../StemSeparationManager.h"
 #include "../../AudioEngine/AudioEngine.h"
+#include "Features/Shared/Ui/SonikDraw.h"
 #include <cmath>
 
 // Design-system palette (DESIGN.md §1 — strictly monochrome)
-static const juce::Colour kLight  { 0xFFFDFDFD };   // surface
-static const juce::Colour kDark   { 0xFF2D2D2D };   // ink
+static const juce::Colour kLight  = sonik::ui::theme::surface();
+static const juce::Colour kDark   = sonik::ui::theme::ink();
 
 static constexpr double kMinDurationForStems = 5.0;
 
-namespace
-{
-    /// DESIGN.md §2 "Dithered Gradients": a checkerboard of #2d2d2d ink whose
-    /// coverage rises with `density` (0 = empty, 1 = solid). No gradients, no
-    /// colour. Used for the in-progress separation fill in place of a coloured
-    /// progress bar.
-    void fillDithered (juce::Graphics& g, juce::Rectangle<int> area, float density)
-    {
-        if (area.isEmpty())
-            return;
-
-        density = juce::jlimit (0.0f, 1.0f, density);
-
-        const int x0 = area.getX();
-        const int y0 = area.getY();
-        const int w  = area.getWidth();
-        const int h  = area.getHeight();
-
-        // 2x2 ordered (Bayer-ish) dither thresholds — same vocabulary as the
-        // mixer VU meters so the whole app shares one dithering language.
-        static const float kThresholds[4] = { 0.20f, 0.60f, 0.80f, 0.40f };
-
-        g.setColour (kDark);
-        for (int row = 0; row < h; ++row)
-        {
-            const int y = y0 + row;
-            for (int col = 0; col < w; ++col)
-            {
-                const int x = x0 + col;
-                const int cellIdx = ((x & 1) << 1) | (y & 1);
-                if (density >= kThresholds[cellIdx])
-                    g.fillRect (x, y, 1, 1);
-            }
-        }
-    }
-}
+using sonik::ui::draw::fillDithered;
 
 // ---------------------------------------------------------------------------
 const juce::StringArray& StemSeparateButton::phaseLabels() noexcept
@@ -198,6 +164,14 @@ void StemSeparateButton::refreshState()
         consecutiveErrors = 0;
 
     lastStatus = currentStatus;
+
+    // Pointer cursor only while the button actually responds to a click
+    // (mirrors the guards in mouseDown).
+    const bool clickable = ! isEmpty
+                        && ! (isShortTrack && currentStatus == "none")
+                        && currentStatus != "model_unavailable";
+    setMouseCursor (clickable ? juce::MouseCursor::PointingHandCursor
+                              : juce::MouseCursor::NormalCursor);
 }
 
 // ---------------------------------------------------------------------------

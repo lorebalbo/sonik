@@ -50,6 +50,7 @@ private:
 
     void paintAlbumArt    (juce::Graphics& g, juce::Rectangle<int> area);
     void paintTextInfo    (juce::Graphics& g, juce::Rectangle<int> area);
+    void paintTimeInfo    (juce::Graphics& g, juce::Rectangle<int> area);
     void paintBpmKeyInfo  (juce::Graphics& g, juce::Rectangle<int> area);
     void paintDeckBadge   (juce::Graphics& g, juce::Rectangle<int> area);
     void paintTrashIcon   (juce::Graphics& g, juce::Rectangle<int> area, juce::Colour col);
@@ -93,7 +94,8 @@ private:
     // Layout constants matching Figma Deck Header
     static constexpr int artWidth    = 70;   // art column width (matches Figma 70x59)
     static constexpr int badgeWidth  = 70;   // deck identifier badge width
-    static constexpr int bpmColWidth = 48;   // BPM/key numbers column
+    static constexpr int timeColWidth = 56;  // remaining/elapsed time column (Figma left readout)
+    static constexpr int bpmColWidth = 56;   // BPM/key numbers column
     static constexpr int colGap      = 8;    // gap between columns
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TrackInfoComponent)

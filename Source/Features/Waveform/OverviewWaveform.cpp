@@ -224,14 +224,14 @@ void OverviewWaveform::paint (juce::Graphics& g)
             if (pixelX < -4.0f || pixelX > w + 4.0f)
                 continue;
 
-            auto cueColour = HotCueColors::getColour (cue.colorIndex);
-
+            // Strict monochrome (DESIGN.md §2): cue markers are ink, not the
+            // stored cue colour — that stays as metadata for controller LEDs.
             // Triangle only (no vertical line) on overview
             juce::Path triangle;
             triangle.addTriangle (pixelX - 4.0f, 0.0f,
                                   pixelX + 4.0f, 0.0f,
                                   pixelX,        8.0f);
-            g.setColour (cueColour);
+            g.setColour (juce::Colour (0xFF2D2D2D));
             g.fillPath (triangle);
         }
     }

@@ -56,8 +56,9 @@ public:
           hotCuePads  (cuePads),
           beatJumpCtrl (beatJump)
     {
-        // Normalise: "cue" tab removed in new design — fall back to "loop"
-        activeTab = tree.getProperty (IDs::controllerTab, "loop").toString();
+        // Normalise: "cue" tab removed in new design. Default to "jump" so the
+        // deck's bottom strip reads "JUMP" with the beat-jump arrows (Figma).
+        activeTab = tree.getProperty (IDs::controllerTab, "jump").toString();
         if (activeTab == "cue")
             activeTab = "loop";
 

@@ -330,7 +330,10 @@ void DetailWaveform::paint (juce::Graphics& g)
                 if (pixelX < -8.0f || pixelX > w + 8.0f)
                     continue;
 
-                auto cueColour = HotCueColors::getColour (cue.colorIndex);
+                // Strict monochrome (DESIGN.md §2): cue markers are ink, not
+                // the stored cue colour — that stays as metadata for
+                // controller LEDs.
+                const auto cueColour = juce::Colour (0xFF2D2D2D);
 
                 // Vertical line at 50% opacity
                 g.setColour (cueColour.withAlpha (0.5f));

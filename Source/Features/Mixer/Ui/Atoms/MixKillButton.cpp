@@ -1,9 +1,9 @@
 #include "MixKillButton.h"
+#include "Features/Shared/Ui/SonikDraw.h"
 
 namespace
 {
-    const juce::Colour kInk     { 0xFF2D2D2D };
-    const juce::Colour kSurface { 0xFFFDFDFD };
+    namespace theme = sonik::ui::theme;
 }
 
 MixKillButton::MixKillButton (juce::ValueTree boundTree,
@@ -14,6 +14,8 @@ MixKillButton::MixKillButton (juce::ValueTree boundTree,
       label (std::move (labelText))
 {
     setOpaque (false);
+    setRepaintsOnMouseActivity (true); // instant hover feedback (DESIGN.md §6)
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
     readFromTree();
     tree.addListener (this);
 }
@@ -42,22 +44,13 @@ void MixKillButton::paintLatchedButton (juce::Graphics& g,
                                          const juce::String& text) const
 {
     const auto bounds = getLocalBounds();
-
-    // Fill (full inversion on active state — DESIGN.md §5).
-    g.setColour (isActiveNow ? kInk : kSurface);
-    g.fillRect (bounds);
-
-    // 2-px solid border, zero radius.
-    g.setColour (kInk);
-    g.drawRect (bounds, 2);
-
-    // Centred Space Mono Regular label.
-    g.setColour (isActiveNow ? kSurface : kInk);
     const float fontHeight = juce::jlimit (8.0f, 12.0f,
                                             static_cast<float> (bounds.getHeight()) * 0.55f);
-    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                  fontHeight, juce::Font::plain));
-    g.drawText (text, bounds, juce::Justification::centred, false);
+
+    sonik::ui::draw::paintLatchButton (g, bounds, text,
+                                       { .active = isActiveNow,
+                                         .hover  = isMouseOver() },
+                                       fontHeight);
 }
 
 void MixKillButton::paint (juce::Graphics& g)
@@ -71,14 +64,14 @@ void MixKillButton::paint (juce::Graphics& g)
 
         if (active)
         {
-            g.setColour (kInk);
+            g.setColour (theme::ink());
             g.fillEllipse (circle);
         }
         else
         {
-            g.setColour (kSurface);
+            g.setColour (isMouseOver() ? theme::containerHighest() : theme::surface());
             g.fillEllipse (circle);
-            g.setColour (kInk);
+            g.setColour (theme::ink());
             g.drawEllipse (circle, 1.5f);
         }
         return;

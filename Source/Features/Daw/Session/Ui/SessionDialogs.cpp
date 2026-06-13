@@ -3,6 +3,7 @@
 //==============================================================================
 
 #include "SessionDialogs.h"
+#include "Features/Shared/Ui/SonikDraw.h"
 
 namespace Daw::Session::Ui
 {
@@ -171,15 +172,7 @@ namespace
 
         static void paintDitheredShadow (juce::Graphics& g, juce::Rectangle<int> panel)
         {
-            auto shadow = panel.translated (kShadowOffset, kShadowOffset);
-            g.saveState();
-            g.reduceClipRegion (shadow);
-            g.setColour (kInk);
-            for (int y = shadow.getY(); y < shadow.getBottom(); y += 2)
-                for (int x = shadow.getX() + ((y / 2) % 2) * 2;
-                     x < shadow.getRight(); x += 4)
-                    g.fillRect (x, y, 2, 2); // 50% checkerboard, zero blur
-            g.restoreState();
+            sonik::ui::draw::drawDitheredShadow (g, panel, kShadowOffset);
         }
 
         void dismissWith (int index)

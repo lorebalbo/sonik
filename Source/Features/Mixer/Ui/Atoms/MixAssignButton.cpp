@@ -1,10 +1,5 @@
 #include "MixAssignButton.h"
-
-namespace
-{
-    const juce::Colour kInk     { 0xFF2D2D2D };
-    const juce::Colour kSurface { 0xFFFDFDFD };
-}
+#include "Features/Shared/Ui/SonikDraw.h"
 
 MixAssignButton::MixAssignButton (juce::ValueTree boundTree,
                                    juce::Identifier propertyIdIn,
@@ -14,6 +9,8 @@ MixAssignButton::MixAssignButton (juce::ValueTree boundTree,
       label (std::move (labelText))
 {
     setOpaque (false);
+    setRepaintsOnMouseActivity (true); // instant hover feedback (DESIGN.md §6)
+    setMouseCursor (juce::MouseCursor::PointingHandCursor);
     readFromTree();
     tree.addListener (this);
 }
@@ -40,19 +37,13 @@ void MixAssignButton::toggle()
 void MixAssignButton::paint (juce::Graphics& g)
 {
     const auto bounds = getLocalBounds();
-
-    g.setColour (active ? kInk : kSurface);
-    g.fillRect (bounds);
-
-    g.setColour (kInk);
-    g.drawRect (bounds, 2);
-
-    g.setColour (active ? kSurface : kInk);
     const float fontHeight = juce::jlimit (8.0f, 12.0f,
                                             static_cast<float> (bounds.getHeight()) * 0.55f);
-    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                  fontHeight, juce::Font::plain));
-    g.drawText (label, bounds, juce::Justification::centred, false);
+
+    sonik::ui::draw::paintLatchButton (g, bounds, label,
+                                       { .active = active,
+                                         .hover  = isMouseOver() },
+                                       fontHeight);
 }
 
 void MixAssignButton::mouseUp (const juce::MouseEvent& e)

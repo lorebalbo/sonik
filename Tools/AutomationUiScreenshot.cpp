@@ -12,6 +12,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include "Features/Shared/Ui/SonikLookAndFeel.h"
 #include "Features/Daw/State/DawState.h"
 #include "Features/Daw/Transform/TimelineTransform.h"
 #include "Features/Daw/Automation/AutomationModel.h"
@@ -48,6 +49,15 @@ void savePng (juce::Component& comp, int w, int h, const juce::File& out)
 int main()
 {
     juce::ScopedJuceInitialiser_GUI gui;
+
+    // Same chrome as the app: embedded Space Mono + monochrome widget styling.
+    sonik::ui::SonikLookAndFeel lookAndFeel;
+    juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
+
+    // Diagnostic: confirm every font request resolves to the embedded family.
+    if (auto tf = juce::Font (juce::FontOptions ("AnyNameAtAll", 12.0f,
+                                                 juce::Font::plain)).getTypefacePtr())
+        std::cout << "resolved typeface: " << tf->getName() << std::endl;
 
     const int width   = 900;
     const int laneH   = AutomationLaneMetrics::kAutomationLaneHeight;
@@ -175,5 +185,6 @@ int main()
     std::cout << "Wrote: /tmp/automation_ui_tempo.png" << std::endl;
     std::cout << "composite size: " << width << "x" << totalH << std::endl;
 
+    juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
     return 0;
 }

@@ -109,17 +109,16 @@ TrackTableMolecule::TrackTableMolecule()
     const int ns = juce::TableHeaderComponent::notSortable;
     const int df = juce::TableHeaderComponent::defaultFlags;
 
+    // Figma frame22 library: PREVIEW / TITLE / ARTISTS / ALBUM / BPM / KEY.
+    // The 24 px now-playing indicator stays (DESIGN.md "[>]" affordance);
+    // DURATION / RATING / PLAYS / STATUS are intentionally omitted to match.
     hdr.addColumn ("",         ColIndicator, 24,   24,  24,  ns);
-    hdr.addColumn ("PREVIEW",  ColPreview,   56,   40,  120, ns);
-    hdr.addColumn ("TITLE",    ColTitle,    200,   40,  800, df);
-    hdr.addColumn ("ARTISTS",  ColArtist,   140,   40,  400, df);
-    hdr.addColumn ("ALBUM",    ColAlbum,    160,   40,  500, df);
-    hdr.addColumn ("BPM",      ColBpm,       60,   40,  120, df);
-    hdr.addColumn ("KEY",      ColKey,       48,   40,  100, df);
-    hdr.addColumn ("DURATION", ColDuration,  72,   40,  120, df);
-    hdr.addColumn ("RATING",   ColRating,    80,   80,   80, ns);
-    hdr.addColumn ("PLAYS",    ColPlayed,    48,   48,   80, df);
-    hdr.addColumn ("STATUS",   ColStatus,    96,   80,  140, ns);
+    hdr.addColumn ("PREVIEW",  ColPreview,  120,   60,  220, ns);
+    hdr.addColumn ("TITLE",    ColTitle,    260,   40,  800, df);
+    hdr.addColumn ("ARTISTS",  ColArtist,   220,   40,  500, df);
+    hdr.addColumn ("ALBUM",    ColAlbum,    240,   40,  600, df);
+    hdr.addColumn ("BPM",      ColBpm,      120,   40,  220, df);
+    hdr.addColumn ("KEY",      ColKey,      120,   40,  220, df);
 
     hdr.addListener (this);
 

@@ -147,24 +147,26 @@ public:
             expect (Daw::DawPanel::kExpandedHeight != Daw::DawPanel::kCollapsedHeight,
                     "the two states must have distinct heights");
 
-            expect (panel.isExpanded(), "panel starts expanded");
-            expectEquals (panel.getPreferredHeight(), Daw::DawPanel::kExpandedHeight);
+            // The panel now starts collapsed (deck-forward default matching the
+            // Figma layout); expand/collapse is still driven by setExpanded.
+            expect (! panel.isExpanded(), "panel starts collapsed");
+            expectEquals (panel.getPreferredHeight(), Daw::DawPanel::kCollapsedHeight);
 
             int callbacks = 0;
             panel.onPreferredHeightChanged = [&callbacks] { ++callbacks; };
 
-            panel.setExpanded (false);
-            expect (! panel.isExpanded());
-            expectEquals (panel.getPreferredHeight(), Daw::DawPanel::kCollapsedHeight);
-            expectEquals (callbacks, 1, "reflow callback fired on collapse");
-
             panel.setExpanded (true);
             expect (panel.isExpanded());
             expectEquals (panel.getPreferredHeight(), Daw::DawPanel::kExpandedHeight);
-            expectEquals (callbacks, 2, "reflow callback fired on expand");
+            expectEquals (callbacks, 1, "reflow callback fired on expand");
+
+            panel.setExpanded (false);
+            expect (! panel.isExpanded());
+            expectEquals (panel.getPreferredHeight(), Daw::DawPanel::kCollapsedHeight);
+            expectEquals (callbacks, 2, "reflow callback fired on collapse");
 
             // Idempotent set does not fire the callback again.
-            panel.setExpanded (true);
+            panel.setExpanded (false);
             expectEquals (callbacks, 2, "no callback when state is unchanged");
         }
     }

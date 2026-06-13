@@ -1,10 +1,6 @@
 #include "SlipButtonComponent.h"
 #include "../AudioEngine/AudioEngine.h"
-
-// Design-system palette
-static const juce::Colour kBlack  { 0xFF2D2D2D };
-static const juce::Colour kWhite  { 0xFFF9F9F9 };
-static const juce::Colour kSurface { 0xFFF9F9F9 };
+#include "Features/Shared/Ui/SonikDraw.h"
 
 static constexpr juce::int64 kShortPressThresholdMs = 300;
 
@@ -25,6 +21,9 @@ SlipButtonComponent::SlipButtonComponent (juce::ValueTree deckTree,
     isEmpty     = tree.getProperty (IDs::playbackStatus).toString() == "empty";
 
     setTooltip ("Slip Mode (timeline continues during loops, jumps, and reverse)");
+    setRepaintsOnMouseActivity (true); // instant hover feedback (DESIGN.md §6)
+    setMouseCursor (isEmpty ? juce::MouseCursor::NormalCursor
+                            : juce::MouseCursor::PointingHandCursor);
 
     startTimerHz (30);
 }
@@ -38,50 +37,21 @@ SlipButtonComponent::~SlipButtonComponent()
 // ---------------------------------------------------------------------------
 void SlipButtonComponent::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat();
-
-    float alpha = isEmpty ? 0.3f : 1.0f;
-
-    if (slipEnabled)
+    // Displaced pulsing: the active fill breathes [0.55 .. 1.0] so a slipped
+    // (displaced) playhead is impossible to miss.
+    float pulse = 1.0f;
+    if (slipEnabled && slipDisplaced && ! isEmpty)
     {
-        // Displaced pulsing: alpha oscillates [0.55 .. 1.0]
-        float pulseAlpha = 1.0f;
-        if (slipDisplaced && ! isEmpty)
-        {
-            float sinVal = std::sin (pulsePhase); // [-1, 1]
-            pulseAlpha = 0.55f + 0.45f * ((sinVal + 1.0f) * 0.5f); // [0.55, 1.0]
-            alpha *= pulseAlpha;
-        }
-
-    // Active: dark fill, light text
-    g.setColour (kBlack.withAlpha (alpha));
-    g.fillRect (bounds);
-
-    g.setColour (kWhite.withAlpha (alpha));
-    }
-    else
-    {
-        // Inactive: light fill, dark text at 50 % opacity
-        g.setColour (kSurface.withAlpha (alpha));
-        g.fillRect (bounds);
-
-        g.setColour (kBlack.withAlpha (alpha * 0.5f));
+        const float sinVal = std::sin (pulsePhase); // [-1, 1]
+        pulse = 0.55f + 0.45f * ((sinVal + 1.0f) * 0.5f);
     }
 
-    // Border (2px)
-    g.setColour (kBlack.withAlpha (alpha));
-    g.drawRect (bounds.toNearestInt(), 2);
-
-    // Label
-    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-
-    juce::String label = "SLIP";
-    if (slipEnabled)
-        g.setColour (kWhite.withAlpha (alpha));
-    else
-        g.setColour (kBlack.withAlpha (alpha));
-
-    g.drawText (label, bounds.toNearestInt(), juce::Justification::centred, false);
+    sonik::ui::draw::paintLatchButton (g, getLocalBounds(), "SLIP",
+                                       { .active  = slipEnabled,
+                                         .hover   = isMouseOver(),
+                                         .pressed = false,
+                                         .enabled = ! isEmpty,
+                                         .alpha   = pulse });
 }
 
 // ---------------------------------------------------------------------------
@@ -141,6 +111,8 @@ void SlipButtonComponent::valueTreePropertyChanged (juce::ValueTree& t,
                 safe->tree.getProperty (IDs::slipEnabled, false));
             safe->isEmpty = safe->tree.getProperty (IDs::playbackStatus)
                                 .toString() == "empty";
+            safe->setMouseCursor (safe->isEmpty ? juce::MouseCursor::NormalCursor
+                                                : juce::MouseCursor::PointingHandCursor);
             safe->repaint();
         });
     }

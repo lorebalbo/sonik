@@ -19,6 +19,8 @@ public:
         deckStatus = tree.getProperty (IDs::playbackStatus, "empty").toString();
 
         setTooltip ("Quantize: snap cues, loops, and jumps to beat positions");
+        setRepaintsOnMouseActivity (true); // instant hover feedback (DESIGN.md §6)
+        updateCursor();
         tree.addListener (this);
     }
 
@@ -44,6 +46,12 @@ private:
         if (bg.isValid())
             return static_cast<double> (bg.getProperty (IDs::bpm, 0.0));
         return 0.0;
+    }
+
+    void updateCursor()
+    {
+        setMouseCursor (deckStatus == "empty" ? juce::MouseCursor::NormalCursor
+                                              : juce::MouseCursor::PointingHandCursor);
     }
 
     juce::ValueTree tree;

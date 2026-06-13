@@ -1,4 +1,7 @@
 #include "BeatJumpComponent.h"
+#include "Features/Shared/Ui/SonikTheme.h"
+
+namespace theme = sonik::ui::theme;
 
 BeatJumpComponent::BeatJumpComponent (juce::ValueTree tree)
     : deckTree (tree)
@@ -118,7 +121,7 @@ void BeatJumpComponent::paint (juce::Graphics& g)
 {
     bool empty  = isDeckEmpty();
     bool hasBg  = hasBeatgrid();
-    float alpha = empty ? 0.3f : 1.0f;
+    float alpha = empty ? theme::kDisabledAlpha : 1.0f;
 
     // Check if flash is still active
     bool flashActive = false;
@@ -158,28 +161,28 @@ void BeatJumpComponent::paint (juce::Graphics& g)
         if (isFlashing || isActive)
         {
             // Active / flashing: inverted (dark bg, light text)
-            bg = juce::Colour (0xFF2D2D2D).withAlpha (alpha);
-            fg = juce::Colour (0xFFF9F9F9).withAlpha (alpha);
+            bg = theme::ink().withAlpha (alpha);
+            fg = theme::surface().withAlpha (alpha);
         }
         else if (isHovered)
         {
-            bg = juce::Colour (0xFFE5E5E5).withAlpha (alpha);
-            fg = juce::Colour (0xFF2D2D2D).withAlpha (alpha);
+            bg = theme::containerHighest().withAlpha (alpha);
+            fg = theme::ink().withAlpha (alpha);
         }
         else
         {
-            bg = juce::Colour (0xFFF9F9F9).withAlpha (alpha);
-            fg = juce::Colour (0xFF2D2D2D).withAlpha (alpha);
+            bg = theme::surface().withAlpha (alpha);
+            fg = theme::ink().withAlpha (alpha);
         }
 
         g.setColour (bg);
         g.fillRect (bounds);
 
-        g.setColour (juce::Colour (0xFF2D2D2D).withAlpha (alpha));
-        g.drawRect (bounds, 2);
+        g.setColour (theme::ink().withAlpha (alpha));
+        g.drawRect (bounds, theme::kBorderPx);
 
         g.setColour (fg);
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+        g.setFont (theme::mono (theme::kFontBody));
         g.drawText (label, bounds, juce::Justification::centred);
     }
 }
@@ -235,6 +238,10 @@ void BeatJumpComponent::mouseMove (const juce::MouseEvent& e)
     if (newRegion != hoveredRegion)
     {
         hoveredRegion = newRegion;
+
+        setMouseCursor (hoveredRegion != Region::None && ! isDeckEmpty()
+                            ? juce::MouseCursor::PointingHandCursor
+                            : juce::MouseCursor::NormalCursor);
 
         switch (hoveredRegion)
         {

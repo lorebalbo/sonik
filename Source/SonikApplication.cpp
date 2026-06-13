@@ -84,6 +84,9 @@ void SonikApplication::initialise (const juce::String& /*commandLine*/)
     lookAndFeel = std::make_unique<sonik::ui::SonikLookAndFeel>();
     juce::LookAndFeel::setDefaultLookAndFeel (lookAndFeel.get());
 
+    // One desktop-level tooltip window for the whole app (700 ms hover delay).
+    tooltipWindow = std::make_unique<juce::TooltipWindow> (nullptr, 700);
+
     auto dbPath = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                       .getChildFile ("Application Support")
                       .getChildFile ("Sonik")
@@ -1040,6 +1043,10 @@ void SonikApplication::shutdown()
     midiHost.reset();
 
     trackDatabase.reset();
+
+    // The tooltip window is a desktop component styled by the LookAndFeel,
+    // so it must go before the LookAndFeel does.
+    tooltipWindow.reset();
 
     // Every component is gone by now; restore the stock default before the
     // LookAndFeel instance itself is destroyed.

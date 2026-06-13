@@ -2,13 +2,15 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "../DeckStateManager.h"
+#include "Features/Shared/Ui/SonikTheme.h"
 #include "Features/Mixer/State/MixerStateSchema.h"
 #include "Features/Mixer/State/MixerMeterSnapshot.h"
 #include "Features/Mixer/State/MixerIdentifiers.h"
 #include "Features/Mixer/Ui/Atoms/MixRotaryKnob.h"
 #include "Features/Mixer/Ui/Atoms/MixLevelMeter.h"
 
-class GlobalToolbar final : public juce::Component
+class GlobalToolbar final : public juce::Component,
+                            private juce::Timer
 {
 public:
     GlobalToolbar (DeckStateManager& deckState,
@@ -20,18 +22,25 @@ public:
                        makeMasterKnobConfig()),
           masterMeter (mixerMeters.master, juce::String())
     {
-        // Title
+        // Title — Space Mono bold ink, like a printed chassis label.
         titleLabel.setText ("SONIK", juce::dontSendNotification);
-        titleLabel.setFont (juce::FontOptions (16.0f).withStyle ("Bold"));
-        titleLabel.setColour (juce::Label::textColourId, juce::Colours::black);
+        titleLabel.setFont (sonik::ui::theme::mono (16.0f, true));
+        titleLabel.setColour (juce::Label::textColourId, sonik::ui::theme::ink());
         titleLabel.setJustificationType (juce::Justification::centredLeft);
         addAndMakeVisible (titleLabel);
 
-        // Add Deck button
+        // Live clock — echoes the Figma header status cluster (HH:MM, ink mono).
+        clockLabel.setFont (sonik::ui::theme::mono (12.0f, false));
+        clockLabel.setColour (juce::Label::textColourId, sonik::ui::theme::ink());
+        clockLabel.setJustificationType (juce::Justification::centredRight);
+        addAndMakeVisible (clockLabel);
+        updateClock();
+        startTimerHz (1);
+
+        // Add Deck button — chrome comes from SonikLookAndFeel (flat surface
+        // fill, 2px ink border, instant hover/press inversion).
         addDeckButton.setButtonText ("ADD DECK");
-        addDeckButton.setColour (juce::TextButton::buttonColourId, juce::Colours::black);
-        addDeckButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xFFF9F9F9));
-        addDeckButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xFFF9F9F9));
+        addDeckButton.setMouseCursor (juce::MouseCursor::PointingHandCursor);
         addDeckButton.onClick = [this]()
         {
             if (onAddDeckClicked)
@@ -41,9 +50,8 @@ public:
 
         // PRD-0048: MIDI settings button.
         midiButton.setButtonText ("MIDI");
-        midiButton.setColour (juce::TextButton::buttonColourId, juce::Colours::black);
-        midiButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xFFF9F9F9));
-        midiButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xFFF9F9F9));
+        midiButton.setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        midiButton.setTooltip ("MIDI controller mappings");
         midiButton.onClick = [this]()
         {
             if (onMidiClicked)
@@ -60,7 +68,7 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.setColour (juce::Colour (0xFFE2E2E2)); // surface-container-highest
+        g.setColour (sonik::ui::theme::containerHighest());
         g.fillRect (getLocalBounds());
     }
 
@@ -68,6 +76,11 @@ public:
     {
         auto bounds = getLocalBounds().reduced (8, 0);
         titleLabel.setBounds (bounds.removeFromLeft (200));
+
+        // Far-right live clock (Figma status cluster).
+        clockLabel.setBounds (bounds.removeFromRight (52).withSizeKeepingCentre (52, getHeight()));
+        bounds.removeFromRight (10);
+
         addDeckButton.setBounds (bounds.removeFromRight (100).withSizeKeepingCentre (100, 28));
         bounds.removeFromRight (8); // gap
         midiButton.setBounds (bounds.removeFromRight (80).withSizeKeepingCentre (80, 28));
@@ -96,6 +109,14 @@ public:
         updateAddDeckButton();
     }
 
+    void timerCallback() override { updateClock(); }
+
+    void updateClock()
+    {
+        const auto now = juce::Time::getCurrentTime();
+        clockLabel.setText (now.formatted ("%H:%M"), juce::dontSendNotification);
+    }
+
     // Test accessors.
     MixRotaryKnob& getMasterKnob() noexcept  { return masterKnob; }
     MixLevelMeter& getMasterMeter() noexcept { return masterMeter; }
@@ -119,6 +140,7 @@ private:
 
     DeckStateManager& deckStateManager;
     juce::Label       titleLabel;
+    juce::Label       clockLabel;
     juce::TextButton  addDeckButton;
     juce::TextButton  midiButton;
     MixRotaryKnob     masterKnob;

@@ -371,6 +371,12 @@ void TrackInfoComponent::paint (juce::Graphics& g)
     auto bpmKeyArea = area.removeFromRight (bpmColWidth);
     paintBpmKeyInfo (g, bpmKeyArea);
 
+    // 3b. Time column (remaining / elapsed) — Figma's left readout block,
+    // sitting immediately left of the BPM/key column.
+    area.removeFromRight (colGap);
+    auto timeArea = area.removeFromRight (timeColWidth);
+    paintTimeInfo (g, timeArea);
+
     // 4. Text info (title / artist / album) — remaining space
     area.removeFromLeft (colGap);
     paintTextInfo (g, area);
@@ -460,6 +466,44 @@ void TrackInfoComponent::paintTextInfo (juce::Graphics& g, juce::Rectangle<int> 
 
     // Album — 10px
     g.drawText (displayAlbum, albumArea, juce::Justification::centredLeft, true);
+}
+
+void TrackInfoComponent::paintTimeInfo (juce::Graphics& g, juce::Rectangle<int> area)
+{
+    // Two stacked, right-aligned readouts matching Figma: remaining time
+    // (big, top) and elapsed time (small, below).
+    auto content = area.withTrimmedTop (4).withTrimmedBottom (4);
+    const int rowH = content.getHeight() / 3;
+    auto remainArea  = content.removeFromTop (rowH);
+    auto elapsedArea = content.removeFromTop (rowH);
+
+    auto formatTime = [] (int64_t samples, double sr, bool negative) -> juce::String
+    {
+        if (sr <= 0.0) sr = 44100.0;
+        const int totalSecs = (int) std::floor (std::abs ((double) samples) / sr);
+        const int mins = totalSecs / 60;
+        const int secs = totalSecs % 60;
+        juce::String s = juce::String (mins).paddedLeft ('0', 2)
+                       + ":" + juce::String (secs).paddedLeft ('0', 2);
+        return negative ? "-" + s : s;
+    };
+
+    int64_t playhead = 0;
+    if (auto* audioState = deckStateManager.getAudioState (deckId))
+        playhead = audioState->playheadPosition.load (std::memory_order_relaxed);
+
+    const bool loaded = totalSamples > 0;
+    const int64_t remaining = loaded ? juce::jmax<int64_t> (0, totalSamples - playhead) : 0;
+
+    auto remainStr  = loaded ? formatTime (remaining, sampleRate, true)  : juce::String ("-00:00");
+    auto elapsedStr = loaded ? formatTime (playhead,  sampleRate, false) : juce::String ("00:00");
+
+    g.setColour (juce::Colour (0xFF2D2D2D));
+    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+    g.drawText (remainStr, remainArea, juce::Justification::centredRight, false);
+
+    g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 10.0f, juce::Font::plain));
+    g.drawText (elapsedStr, elapsedArea, juce::Justification::centredRight, false);
 }
 
 void TrackInfoComponent::paintBpmKeyInfo (juce::Graphics& g, juce::Rectangle<int> area)

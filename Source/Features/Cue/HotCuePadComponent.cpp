@@ -1,4 +1,7 @@
 #include "HotCuePadComponent.h"
+#include "Features/Shared/Ui/SonikTheme.h"
+
+namespace theme = sonik::ui::theme;
 
 // ---------------------------------------------------------------------------
 // Color/Label popup shown on right-click
@@ -17,9 +20,9 @@ public:
         labelEditor.setFont (juce::FontOptions (12.0f));
         labelEditor.setText (currentLabel, juce::dontSendNotification);
         labelEditor.setInputRestrictions (12);
-        labelEditor.setColour (juce::TextEditor::backgroundColourId, juce::Colour (0xFFF9F9F9));
-        labelEditor.setColour (juce::TextEditor::outlineColourId,    juce::Colour (0xFF000000));
-        labelEditor.setColour (juce::TextEditor::textColourId,       juce::Colour (0xFF000000));
+        labelEditor.setColour (juce::TextEditor::backgroundColourId, theme::surface());
+        labelEditor.setColour (juce::TextEditor::outlineColourId,    theme::ink());
+        labelEditor.setColour (juce::TextEditor::textColourId,       theme::ink());
         labelEditor.setJustification (juce::Justification::centredLeft);
 
         labelEditor.onReturnKey = [this]()
@@ -41,11 +44,11 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        g.fillAll (juce::Colour (0xFFF3F3F4));
+        g.fillAll (theme::containerLow());
 
         // Draw border
-        g.setColour (juce::Colour (0xFF000000));
-        g.drawRect (getLocalBounds(), 1);
+        g.setColour (theme::ink());
+        g.drawRect (getLocalBounds(), theme::kBorderPx);
 
         // Draw 4x4 color grid
         for (int row = 0; row < 4; ++row)
@@ -62,14 +65,14 @@ public:
                 // Selection indicator
                 if (colorIdx == selectedColor)
                 {
-                    g.setColour (juce::Colour (0xFF000000));
+                    g.setColour (theme::ink());
                     g.drawRect (bounds, 2);
                 }
             }
         }
 
         // Label header
-        g.setColour (juce::Colour (0xFF000000));
+        g.setColour (theme::ink());
         g.setFont (juce::FontOptions (11.0f).withStyle ("Bold"));
         g.drawText ("LABEL", margin, colorGridBottom + 4, totalWidth - margin * 2, 14,
                      juce::Justification::centredLeft);
@@ -201,65 +204,38 @@ void HotCuePadComponent::paint (juce::Graphics& g)
 {
     bool empty = isDeckEmpty();
 
-    // Per-pad fill colors when a cue is set (pads 1–9)
-    static const juce::Colour padActiveColors[9] = {
-        juce::Colour (0xFF18FFFF), // 1: Cyan
-        juce::Colour (0xFF00B0FF), // 2: Sky Blue
-        juce::Colour (0xFF2979FF), // 3: Blue
-        juce::Colour (0xFF651FFF), // 4: Deep Violet
-        juce::Colour (0xFFD500F9), // 5: Violet
-        juce::Colour (0xFFF50057), // 6: Magenta
-        juce::Colour (0xFFFF4081), // 7: Pink
-        juce::Colour (0xFFFF8A80), // 8: Salmon
-        juce::Colour (0xFFFF1744), // 9: Red
-    };
-
     for (int i = 0; i < numPads; ++i)
     {
         auto bounds = getPadBounds (i);
         bool active = isCueActive (i);
 
-        // Monochrome design system:
-        //   unset pad  → light background  (#F9F9F9), dark text
-        //   set pad    → per-pad color fill, border stays #2D2D2D
-        //   empty deck → both dimmed at 30% opacity
+        // Strict monochrome (DESIGN.md §2/§5): a set cue is communicated by
+        // full fill inversion, not colour. The stored colour index is kept as
+        // cue metadata (controller LED feedback), it just never reaches the
+        // screen.
+        //   unset pad  → surface fill, ink number; hover steps to the tonal fill
+        //   set pad    → ink fill, surface number; pressed flashes back to surface
+        //   empty deck → dimmed to the standard disabled strength
         juce::Colour bg, border, textColor;
 
         if (empty)
         {
-            bg        = juce::Colour (0xFFF9F9F9);
-            border    = juce::Colour (0xFF2D2D2D).withAlpha (0.3f);
-            textColor = juce::Colour (0xFF2D2D2D).withAlpha (0.3f);
+            bg        = theme::surface();
+            border    = theme::inkDisabled();
+            textColor = theme::inkDisabled();
         }
         else if (active)
         {
-            juce::Colour baseColor = padActiveColors[i];
-            juce::Colour activeBg;
-            if (i == pressedPad)
-                activeBg = baseColor.darker (0.3f);
-            else if (i == hoveredPad)
-                activeBg = baseColor.brighter (0.15f);
-            else
-                activeBg = baseColor;
-
-            // Auto text color: dark on bright colors, light on dark colors
-            float lum = 0.299f * baseColor.getFloatRed()
-                      + 0.587f * baseColor.getFloatGreen()
-                      + 0.114f * baseColor.getFloatBlue();
-
-            bg        = activeBg;
-            border    = juce::Colour (0xFF2D2D2D);
-            textColor = (lum > 0.5f) ? juce::Colour (0xFF2D2D2D) : juce::Colour (0xFFF9F9F9);
+            const bool pressed = (i == pressedPad);
+            bg        = pressed ? theme::containerHighest() : theme::ink();
+            border    = theme::ink();
+            textColor = pressed ? theme::ink() : theme::surface();
         }
         else
         {
-            juce::Colour inactiveBg = juce::Colour (0xFFF9F9F9);
-            if (i == hoveredPad)
-                inactiveBg = juce::Colour (0xFFE5E5E5);
-
-            bg        = inactiveBg;
-            border    = juce::Colour (0xFF2D2D2D);
-            textColor = juce::Colour (0xFF2D2D2D);
+            bg        = (i == hoveredPad) ? theme::containerHighest() : theme::surface();
+            border    = theme::ink();
+            textColor = theme::ink();
         }
 
         g.setColour (bg);
@@ -272,7 +248,7 @@ void HotCuePadComponent::paint (juce::Graphics& g)
 
         // Pad number (1–9), Space Mono 13px
         g.setColour (textColor);
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
+        g.setFont (theme::mono (theme::kFontBody));
         g.drawText (juce::String (i + 1), bounds, juce::Justification::centred);
     }
 }
@@ -287,6 +263,9 @@ void HotCuePadComponent::mouseMove (const juce::MouseEvent& e)
     if (pad != hoveredPad)
     {
         hoveredPad = pad;
+        setMouseCursor (pad >= 0 && ! isDeckEmpty()
+                            ? juce::MouseCursor::PointingHandCursor
+                            : juce::MouseCursor::NormalCursor);
         repaint();
     }
 }

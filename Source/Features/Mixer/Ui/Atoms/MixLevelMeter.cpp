@@ -1,56 +1,17 @@
 #include "MixLevelMeter.h"
 #include "../../State/MixerMeterSnapshot.h"
+#include "Features/Shared/Ui/SonikDraw.h"
 
 #include <atomic>
 #include <cmath>
 
 namespace
 {
-    const juce::Colour kInk     { 0xFF2D2D2D };
-    const juce::Colour kSurface { 0xFFFDFDFD };
-    const juce::Colour kHigh    { 0xFFE2E2E2 };   // empty-bar surface
+    namespace theme = sonik::ui::theme;
 
     constexpr int kChassisPad = 2;     // space inside the 2-px border
     constexpr int kBarGap     = 2;     // gap between L and R bars
     constexpr int kClipBoxPx  = 6;     // clip indicator size
-
-    /// Dithered checkerboard: pixels at (x + y) parity below threshold
-    /// belong to the "lit" set. Threshold is driven by fill density.
-    /// 0.0 → empty (no pixels lit), 1.0 → solid (every pixel lit).
-    void fillDithered (juce::Graphics& g,
-                       juce::Rectangle<int> area,
-                       float density)
-    {
-        if (area.isEmpty()) return;
-        const int x0 = area.getX();
-        const int y0 = area.getY();
-        const int w  = area.getWidth();
-        const int h  = area.getHeight();
-
-        // Density steps from 0..1 control how many of the 8x8 dither
-        // cells are filled, plus a final pass to solid as density → 1.
-        const int  totalRows = juce::jmax (1, h);
-        const int  litRows   = juce::roundToInt (density * static_cast<float> (totalRows));
-
-        // Fill bottom-up.
-        g.setColour (kInk);
-        for (int row = 0; row < litRows; ++row)
-        {
-            const int y = y0 + h - 1 - row;
-            // Density at this row: lower rows always solid; top rows speckle.
-            const float rowDensity = juce::jlimit (0.0f, 1.0f,
-                                                    density - row / static_cast<float> (totalRows));
-            for (int col = 0; col < w; ++col)
-            {
-                const int x = x0 + col;
-                // Bayer-ish 2x2 ordered dither cutoff.
-                const int cellIdx = ((x & 1) << 1) | (y & 1);
-                static const float kThresholds[4] = { 0.20f, 0.60f, 0.80f, 0.40f };
-                if (rowDensity >= kThresholds[cellIdx])
-                    g.fillRect (x, y, 1, 1);
-            }
-        }
-    }
 }
 
 //==============================================================================
@@ -159,7 +120,7 @@ void MixLevelMeter::paintMeterBar (juce::Graphics& g,
 {
     // Empty-bar chassis (surface-container-highest) — provides shape
     // before the dither overlay.
-    g.setColour (kHigh);
+    g.setColour (theme::containerHighest());
     g.fillRect (area);
 
     const float clampedFill = juce::jlimit (0.0f, 1.0f, fill);
@@ -170,7 +131,7 @@ void MixLevelMeter::paintMeterBar (juce::Graphics& g,
                                               area.getBottom() - litHeight,
                                               area.getWidth(),
                                               litHeight);
-        fillDithered (g, litRect, clampedFill);
+        sonik::ui::draw::fillDitheredMeter (g, litRect, clampedFill);
     }
 
     // Peak-hold tick — a 1-px ink line at the peak-hold height.
@@ -179,7 +140,7 @@ void MixLevelMeter::paintMeterBar (juce::Graphics& g,
     {
         const int holdY = area.getBottom()
                         - juce::roundToInt (clampedHold * static_cast<float> (area.getHeight()));
-        g.setColour (kInk);
+        g.setColour (theme::ink());
         g.fillRect (area.getX(), holdY, area.getWidth(), 1);
     }
 }
@@ -189,10 +150,10 @@ void MixLevelMeter::paint (juce::Graphics& g)
     const auto bounds = getLocalBounds();
 
     // Chassis background and 2-px ink border (DESIGN.md §5).
-    g.setColour (kSurface);
+    g.setColour (theme::surface());
     g.fillRect (bounds);
-    g.setColour (kInk);
-    g.drawRect (bounds, 2);
+    g.setColour (theme::ink());
+    g.drawRect (bounds, theme::kBorderPx);
 
     auto inner = bounds.reduced (kChassisPad + 2);
     if (inner.isEmpty())
@@ -204,12 +165,12 @@ void MixLevelMeter::paint (juce::Graphics& g)
                                               kClipBoxPx, kClipBoxPx);
         if (cachedClip)
         {
-            g.setColour (kInk);
+            g.setColour (theme::ink());
             g.fillRect (clipBox);
         }
         else
         {
-            g.setColour (kInk);
+            g.setColour (theme::ink());
             g.drawRect (clipBox, 1);
         }
         inner.removeFromTop (kClipBoxPx + 2);
@@ -219,9 +180,8 @@ void MixLevelMeter::paint (juce::Graphics& g)
     if (chassisLabel.isNotEmpty())
     {
         auto labelArea = inner.removeFromBottom (10);
-        g.setColour (kInk);
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                      8.0f, juce::Font::plain));
+        g.setColour (theme::ink());
+        g.setFont (theme::mono (8.0f));
         g.drawText (chassisLabel, labelArea, juce::Justification::centred);
     }
 

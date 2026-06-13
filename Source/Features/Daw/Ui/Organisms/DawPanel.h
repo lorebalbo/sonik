@@ -408,7 +408,7 @@ private:
     // onMetronomeToggle and renders the active/inactive fill from this flag.
     bool metronomeOn_ { false };
 
-    bool expanded_ { true };
+    bool expanded_ { false };
     bool fullSize_ { false };
 
     // PRD-0096: current session indicator drawn in the header (already carries

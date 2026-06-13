@@ -107,6 +107,12 @@ private:
     // uninstalled and destroyed last in shutdown().
     std::unique_ptr<sonik::ui::SonikLookAndFeel> lookAndFeel;
 
+    // App-wide tooltip display. Without a TooltipWindow instance, the
+    // tooltips that components set via SettableTooltipClient never show.
+    // Desktop-parented so tooltips work in every window (main + MIDI
+    // settings); styled by SonikLookAndFeel::drawTooltip.
+    std::unique_ptr<juce::TooltipWindow> tooltipWindow;
+
     std::unique_ptr<TrackDatabase>    trackDatabase;
     std::unique_ptr<sonik::midi::JuceMidiHost>      midiHost;           // PRD-0040
     std::unique_ptr<sonik::midi::MidiDeviceManager> midiDeviceManager;  // PRD-0040

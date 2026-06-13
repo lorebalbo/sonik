@@ -3,10 +3,12 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_data_structures/juce_data_structures.h>
 #include "../DeckIdentifiers.h"
+#include "Features/Shared/Ui/SonikDraw.h"
 
 /// Small toggle button for key-lock (master tempo).
-/// Active: white text on black background. Inactive: black text on #E2E2E2.
+/// Standard DESIGN.md latch: full fill inversion when active.
 class KeyLockButton final : public juce::Component,
+                             public juce::SettableTooltipClient,
                              private juce::ValueTree::Listener
 {
 public:
@@ -14,6 +16,9 @@ public:
         : tree (deckTree)
     {
         enabled = static_cast<bool> (tree.getProperty (IDs::keyLockEnabled, false));
+        setTooltip ("Key Lock: keep the musical key constant while pitch-bending");
+        setRepaintsOnMouseActivity (true); // instant hover feedback (DESIGN.md §6)
+        setMouseCursor (juce::MouseCursor::PointingHandCursor);
         tree.addListener (this);
     }
 
@@ -24,20 +29,9 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        auto bounds = getLocalBounds();
-
-        // Background
-        g.setColour (enabled ? juce::Colour (0xFF2D2D2D) : juce::Colour (0xFFF9F9F9));
-        g.fillRect (bounds);
-
-        // Border (2px, always dark)
-        g.setColour (juce::Colour (0xFF2D2D2D));
-        g.drawRect (bounds, 2);
-
-        // Label
-        g.setColour (enabled ? juce::Colour (0xFFF9F9F9) : juce::Colour (0xFF2D2D2D));
-        g.setFont (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(), 13.0f, juce::Font::plain));
-        g.drawText ("KEY", bounds, juce::Justification::centred);
+        sonik::ui::draw::paintLatchButton (g, getLocalBounds(), "KEY",
+                                           { .active = enabled,
+                                             .hover  = isMouseOver() });
     }
 
     void mouseDown (const juce::MouseEvent&) override
